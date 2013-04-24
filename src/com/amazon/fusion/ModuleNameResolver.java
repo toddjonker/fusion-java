@@ -1,10 +1,11 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.ion.util.IonTextUtils.printQuotedSymbol;
 import static com.amazon.ion.util.IonTextUtils.printString;
 import java.io.File;
+import java.io.IOException;
 
 /**
  *
@@ -86,8 +87,20 @@ final class ModuleNameResolver
 
         if ("quote".equals(form))
         {
-            String libName = check.requiredNonEmptySymbol("module name", 1);
-            ModuleIdentity id = ModuleIdentity.intern(libName);
+            SyntaxSymbol name = check.requiredSymbol("module name", 1);
+
+            // TODO FUSION-79 Should there be separate syntax forms for
+            //   builtins versus local modules?
+            ModuleIdentity id;
+            if (ModuleIdentity.isValidBuiltinName(name.stringValue()))
+            {
+                id = ModuleIdentity.internBuiltinName(name.stringValue());
+            }
+            else
+            {
+                ModuleIdentity.validateLocalName(name);
+                id = ModuleIdentity.internLocalName(name.stringValue());
+            }
 
             ModuleRegistry reg = eval.findCurrentNamespace().getRegistry();
             if (reg.lookup(id) == null)
@@ -103,6 +116,7 @@ final class ModuleNameResolver
     /**
      * Locates and loads a module from the registered repositories.
      *
+     * @param libName is always treated as an absolute module path.
      * @param stx is used for error messaging; may be null.
      *
      * @throws ModuleNotFoundFailure if the module could not be found.
@@ -111,6 +125,7 @@ final class ModuleNameResolver
                               SyntaxValue stx)
         throws FusionException
     {
+        // TODO FUSION-79 Support relative module paths
         if (! libName.startsWith("/")) libName = "/" + libName;
 
         for (ModuleRepository repo : myRepositories)
@@ -163,9 +178,9 @@ final class ModuleNameResolver
     ModuleIdentity resolve(Evaluator eval, String path, SyntaxValue stx)
         throws FusionException
     {
-        if (! path.endsWith(".ion")) path += ".ion";
+        String pathFileName = path.endsWith(".ion") ? path : path + ".ion";
 
-        File pathFile = new File(path);
+        File pathFile = new File(pathFileName);
         if (! pathFile.isAbsolute())
         {
             // TODO FUSION-74 if we're loading from within a module, the
@@ -181,12 +196,24 @@ final class ModuleNameResolver
             // TODO FUSION-50 parameter guard should ensure this
             File baseFile = new File(base);
             assert baseFile.isAbsolute() : "Base is not absolute: " + baseFile;
-            pathFile = new File(base, path);
+            pathFile = new File(base, pathFileName);
         }
 
         if (pathFile.exists())
         {
-            ModuleIdentity id = ModuleIdentity.intern(pathFile);
+            // TODO FUSION-74 FUSION-79 Is this correct in all cases?
+            String modulePath;
+            try
+            {
+                modulePath = pathFile.getCanonicalPath();
+            }
+            catch (IOException e)
+            {
+                throw new FusionException("Unable to resolve file system path "
+                                          + pathFile);
+            }
+            ModuleIdentity id = ModuleIdentity.internFromFile(modulePath,
+                                                              pathFile);
             return loadModule(eval, id);
         }
 

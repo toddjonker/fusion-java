@@ -6,7 +6,6 @@ import static com.amazon.fusion.BindingDoc.COLLECT_DOCS_MARK;
 import static com.amazon.fusion.FusionEval.evalSyntax;
 import static com.amazon.ion.util.IonTextUtils.printQuotedSymbol;
 import static java.lang.Boolean.TRUE;
-import com.amazon.fusion.Namespace.TopBinding;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
@@ -39,7 +38,7 @@ final class ModuleForm
                                 Map<Binding, Object> stops,
                                 String name)
     {
-        Binding b = kernel.resolveProvidedName(name);
+        Binding b = kernel.resolveProvidedName(name).originalBinding();
         assert b != null;
         stops.put(b, TRUE);
         return b;
@@ -69,9 +68,7 @@ final class ModuleForm
         Binding beginBinding        = stopBinding(kernel, stops, "begin");
 
         SyntaxSymbol moduleNameSymbol = check.requiredSymbol("module name", 1);
-        String declaredName = moduleNameSymbol.stringValue();
-        // TODO check null/empty
-
+        ModuleIdentity.validateLocalName(moduleNameSymbol);
 
         ModuleRegistry registry = envOutsideModule.namespace().getRegistry();
 
@@ -108,7 +105,7 @@ final class ModuleForm
         ModuleIdentity id;
         try
         {
-            id = determineIdentity(eval, declaredName);
+            id = determineIdentity(eval, moduleNameSymbol);
         }
         catch (FusionException e)
         {
@@ -181,8 +178,7 @@ final class ModuleForm
                                 DefineForm.boundIdentifier(expander.getEvaluator(),
                                                            moduleNamespace,
                                                            sexp);
-                            identifier = identifier.stripImmediateEnvWrap(moduleNamespace);
-                            moduleNamespace.predefine(identifier);
+                            moduleNamespace.predefine(identifier, form);
                         }
                         else if (binding == defineSyntaxBinding)
                         {
@@ -301,11 +297,15 @@ final class ModuleForm
             subforms[i++] = stx;
         }
 
-        SyntaxSexp result = SyntaxSexp.make(source.getLocation(), subforms);
+        SyntaxSexp result = SyntaxSexp.make(expander, source.getLocation(),
+                                            subforms);
         return result;
     }
 
-
+    /**
+     * Finds the binding for the leading symbol in the form, or null if the
+     * form doesn't start with a symbol.
+     */
     Binding firstBinding(SyntaxSexp form)
     {
         if (form.size() != 0)
@@ -314,7 +314,7 @@ final class ModuleForm
             if (first instanceof SyntaxSymbol)
             {
                 Binding binding = ((SyntaxSymbol)first).getBinding();
-                return binding;
+                return binding.originalBinding();
             }
         }
         return null;
@@ -346,14 +346,14 @@ final class ModuleForm
         {
             SyntaxText form = (SyntaxText) meta.get(eval, "identity");
             String identity = form.stringValue();
-            id = ModuleIdentity.intern(identity);
+            id = ModuleIdentity.reIntern(identity);
         }
 
         Namespace moduleNamespace;
         {
             SyntaxText form = (SyntaxText) meta.get(eval, "language_identity");
             String identity = form.stringValue();
-            ModuleIdentity languageId = ModuleIdentity.intern(identity);
+            ModuleIdentity languageId = ModuleIdentity.reIntern(identity);
 
             ModuleRegistry registry =
                 envOutsideModule.namespace().getRegistry();
@@ -412,18 +412,19 @@ final class ModuleForm
     }
 
     private ModuleIdentity determineIdentity(Evaluator eval,
-                                             String declaredName)
+                                             SyntaxSymbol moduleNameSymbol)
         throws FusionException
     {
         ModuleIdentity id;
         String current = myCurrentModuleDeclareName.asString(eval);
         if (current != null)
         {
-            id = ModuleIdentity.intern(current);
+            id = ModuleIdentity.reIntern(current);
         }
         else
         {
-            id = ModuleIdentity.intern(declaredName);
+            String declaredName = moduleNameSymbol.stringValue();
+            id = ModuleIdentity.internLocalName(declaredName);
         }
         return id;
     }
@@ -476,8 +477,6 @@ final class ModuleForm
                     " since it has no definition.";
                 throw check.failure(message);
             }
-
-            assert b instanceof TopBinding;
 
             String freeName = b.getName();
             if (! publicName.equals(freeName))

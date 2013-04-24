@@ -1,4 +1,4 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -31,9 +31,23 @@ final class LocalEnvironment
         }
 
         @Override
+        public boolean isFree(String name)
+        {
+            return false;
+        }
+
+        @Override
         public Binding originalBinding()
         {
             return this;
+        }
+
+        @Override
+        public boolean sameTarget(Binding other)
+        {
+            // Don't need to call other.originalBinding() since locals are
+            // never renamed or wrapped.
+            return this == other;
         }
 
 
@@ -73,13 +87,13 @@ final class LocalEnvironment
         @Override
         public boolean equals(Object other)
         {
-            return this == other;
+            throw new UnsupportedOperationException();
         }
 
         @Override
         public String toString()
         {
-            return "{{LocalBinding " + myIdentifier + "}}";
+            return "{{{LocalBinding " + myIdentifier + "}}}";
         }
 
 
@@ -152,17 +166,25 @@ final class LocalEnvironment
     {
         for (LocalBinding b : myBindings)
         {
-            Binding resolvedBoundId = b.myIdentifier.resolve();
-            if (resolvedBoundId.equals(binding))
+            if (b.myIdentifier.resolvesBound(binding, marks))
             {
-                Set<Integer> boundMarks = b.myIdentifier.computeMarks();
-                if (marks.equals(boundMarks))
-                {
-                    return b;
-                }
+                return b;
             }
         }
         return binding;
+    }
+
+    @Override
+    public Binding substituteFree(String name, Set<Integer> marks)
+    {
+        for (LocalBinding b : myBindings)
+        {
+            if (b.myIdentifier.resolvesFree(name, marks))
+            {
+                return b;
+            }
+        }
+        return null;
     }
 
 

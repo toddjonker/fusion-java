@@ -4,7 +4,7 @@ package com.amazon.fusion;
 
 import static com.amazon.fusion.BindingDoc.COLLECT_DOCS_MARK;
 import com.amazon.fusion.BindingDoc.Kind;
-import com.amazon.fusion.Namespace.TopBinding;
+import com.amazon.fusion.Namespace.NsBinding;
 
 final class DefineSyntaxForm
     extends SyntacticForm
@@ -37,12 +37,9 @@ final class DefineSyntaxForm
         // WARNING!  This isn't conditional as with 'define' since
         // 'define_syntax' doesn't get predefined by the 'module' expander.
         {
-            // We need to strip off the module-level wrap that's already been
-            // applied to the identifier. Otherwise we'll loop forever trying
-            // to resolve it! This is a bit of a hack, really.
-            SyntaxSymbol stripped = identifier.stripImmediateEnvWrap(env);
             Namespace ns = env.namespace();
-            ns.predefine(stripped);
+            assert ns == env;
+            ns.predefine(identifier, stx);
         }
 
         // Update the identifier with its binding.
@@ -69,7 +66,7 @@ final class DefineSyntaxForm
         SyntaxValue valueStx = stx.get(bodyPos);
         children[bodyPos] = expander.expandExpression(env, valueStx);
 
-        stx = SyntaxSexp.make(stx.getLocation(), children);
+        stx = SyntaxSexp.make(expander, stx.getLocation(), children);
         return stx;
     }
 
@@ -86,7 +83,7 @@ final class DefineSyntaxForm
         CompiledForm valueForm = eval.compile(env, valueSource);
 
         SyntaxSymbol identifier = (SyntaxSymbol) stx.get(1);
-        TopBinding binding = (TopBinding) identifier.getBinding();
+        NsBinding binding = (NsBinding) identifier.getBinding();
         CompiledForm compiled =
             binding.compileDefineSyntax(eval, env, valueForm);
 

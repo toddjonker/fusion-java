@@ -1,4 +1,4 @@
-// Copyright (c) 2012 Amazon.com, Inc. All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc. All rights reserved.
 
 package com.amazon.fusion;
 
@@ -76,8 +76,23 @@ abstract class SyntaxSequence
     }
 
 
+    /**
+     * Does not push wraps!
+     */
+    SyntaxValue[] children()
+    {
+        return myChildren;
+    }
+
+    Object[] unwrapChildren()
+    {
+        pushAnyWraps();
+        return myChildren;
+    }
+
+
     @Override
-    SyntaxSequence stripWraps()
+    SyntaxSequence stripWraps(Evaluator eval)
     {
         if (hasNoChildren()) return this;  // No children, no marks, all okay!
 
@@ -89,14 +104,14 @@ abstract class SyntaxSequence
         for (int i = 0; i < len; i++)
         {
             SyntaxValue child = myChildren[i];
-            SyntaxValue stripped = child.stripWraps();
+            SyntaxValue stripped = child.stripWraps(eval);
             newChildren[i] = stripped;
             mustCopy |= stripped != child;
         }
 
         if (! mustCopy) return this;
 
-        return makeSimilar(newChildren, getAnnotations(), getLocation());
+        return makeSimilar(eval, newChildren, getAnnotations(), getLocation());
     }
 
 
@@ -164,13 +179,14 @@ abstract class SyntaxSequence
      *
      * @param anns must not be null.
      */
-    abstract SyntaxSequence makeSimilar(SyntaxValue[] children,
+    abstract SyntaxSequence makeSimilar(Evaluator eval,
+                                        SyntaxValue[] children,
                                         String[] anns,
                                         SourceLocation loc);
 
 
     /** Creates a new sequence with this + that. */
-    SyntaxSequence makeAppended(SyntaxSequence that)
+    SyntaxSequence makeAppended(Evaluator eval, SyntaxSequence that)
     {
         int thisLength = this.size();
         int thatLength = that.size();
@@ -196,16 +212,16 @@ abstract class SyntaxSequence
             }
         }
 
-        return makeSimilar(children, EMPTY_STRING_ARRAY, null);
+        return makeSimilar(eval, children, EMPTY_STRING_ARRAY, null);
     }
 
 
-    SyntaxSequence makeSubseq(int from, int to)
+    SyntaxSequence makeSubseq(Evaluator eval, int from, int to)
     {
         pushAnyWraps();
         SyntaxValue[] children =
             (myChildren == null ? null : copyOfRange(myChildren, from, to));
-        return makeSimilar(children, EMPTY_STRING_ARRAY, null);
+        return makeSimilar(eval, children, EMPTY_STRING_ARRAY, null);
     }
 
 

@@ -14,18 +14,21 @@ import java.util.Set;
 /**
  * Expand- and compile-time environment for all top-level sequences, and
  * eval-time store for non-module top levels.
+ * <p>
+ * Since top-levels and modules have different behavior around imports and
+ * defines, that responsibility is delegated to subclasses.
  */
-class Namespace
+abstract class Namespace
     implements Environment, NamespaceStore
 {
-    static class TopBinding implements Binding
+    abstract static class NsBinding
+        implements Binding
     {
         private final SyntaxSymbol myIdentifier;
         final int myAddress;
 
-        TopBinding(SyntaxSymbol identifier, int address)
+        NsBinding(SyntaxSymbol identifier, int address)
         {
-            assert identifier.resolve() instanceof FreeBinding;
             myIdentifier = identifier;
             myAddress = address;
         }
@@ -36,10 +39,27 @@ class Namespace
             return myIdentifier.stringValue();
         }
 
+        final SyntaxSymbol getIdentifier()
+        {
+            return myIdentifier;
+        }
+
+        @Override
+        public boolean isFree(String name)
+        {
+            return false;
+        }
+
         @Override
         public Binding originalBinding()
         {
             return this;
+        }
+
+        @Override
+        public boolean sameTarget(Binding other)
+        {
+            return this == other.originalBinding();
         }
 
         @Override
@@ -85,14 +105,11 @@ class Namespace
         @Override
         public boolean equals(Object other)
         {
-            return this == other;
+            throw new UnsupportedOperationException();
         }
 
         @Override
-        public String toString()
-        {
-            return "{{TopBinding " + myIdentifier + "}}";
-        }
+        public abstract String toString(); // Force subclasses to implement
     }
 
     private final ModuleRegistry myRegistry;
@@ -102,15 +119,13 @@ class Namespace
      * forms.
      */
     private final HashMap<ModuleIdentity,Integer> myRequiredModules =
-        new HashMap<ModuleIdentity,Integer>();
+        new HashMap<>();
     private final ArrayList<ModuleStore> myRequiredModuleStores =
-        new ArrayList<ModuleStore>();
+        new ArrayList<>();
 
     private SyntaxWraps myWraps;
-    private final ArrayList<TopBinding> myBindings =
-        new ArrayList<TopBinding>();
-    private final ArrayList<Object> myValues =
-        new ArrayList<Object>();
+    private final ArrayList<NsBinding> myBindings = new ArrayList<>();
+    private final ArrayList<Object>    myValues   = new ArrayList<>();
     private ArrayList<BindingDoc> myBindingDocs;
 
     Namespace(ModuleRegistry registry)
@@ -118,21 +133,13 @@ class Namespace
         myRegistry = registry;
 
         SyntaxWrap wrap = new EnvironmentRenameWrap(this);
-        SyntaxWraps wraps = SyntaxWraps.make(wrap);
-
-        myWraps = wraps;
+        myWraps = SyntaxWraps.make(wrap);
     }
 
-    Namespace(ModuleRegistry registry, ModuleInstance language)
+    Namespace(ModuleRegistry registry, SyntaxWrap... wraps)
     {
         myRegistry = registry;
-
-        SyntaxWrap wrap = new ModuleRenameWrap(language);
-        SyntaxWraps wraps = SyntaxWraps.make(wrap);
-        wrap = new EnvironmentRenameWrap(this);
-        wraps = wraps.addWrap(wrap);
-
-        myWraps = wraps;
+        myWraps = SyntaxWraps.make(wraps);
     }
 
 
@@ -166,12 +173,15 @@ class Namespace
         throw new IllegalStateException("Rib not found");
     }
 
-    ModuleIdentity getModuleId()
-    {
-        return null;
-    }
+    /**
+     * Gets the identity of the module associated with this namespace.
+     *
+     * @return null if this namespace isn't that of a module.
+     */
+    abstract ModuleIdentity getModuleId();
 
-    Collection<TopBinding> getBindings()
+
+    Collection<NsBinding> getBindings()
     {
         return Collections.unmodifiableCollection(myBindings);
     }
@@ -194,21 +204,15 @@ class Namespace
      *
      * @return null if identifier isn't bound here.
      */
-    TopBinding localSubstitute(Binding binding, Set<Integer> marks)
+    NsBinding localSubstitute(Binding binding, Set<Integer> marks)
     {
-        for (TopBinding b : myBindings)
+        for (NsBinding b : myBindings)
         {
-            Binding resolvedBoundId = b.myIdentifier.resolve();
-            if (resolvedBoundId.equals(binding))
+            if (b.myIdentifier.resolvesBound(binding, marks))
             {
-                Set<Integer> boundMarks = b.myIdentifier.computeMarks();
-                if (marks.equals(boundMarks))
-                {
-                    return b;
-                }
+                return b;
             }
         }
-
         return null;
     }
 
@@ -220,11 +224,24 @@ class Namespace
         return subst;
     }
 
+    @Override
+    public Binding substituteFree(String name, Set<Integer> marks)
+    {
+        for (NsBinding b : myBindings)
+        {
+            if (b.myIdentifier.resolvesFree(name, marks))
+            {
+                return b;
+            }
+        }
+        return null;
+    }
+
 
     /**
      * @return null if identifier isn't bound here.
      */
-    TopBinding localResolve(SyntaxSymbol identifier)
+    NsBinding localResolve(SyntaxSymbol identifier)
     {
         Binding resolvedRequestedId = identifier.resolve();
         Set<Integer> marks = identifier.computeMarks();
@@ -232,35 +249,36 @@ class Namespace
     }
 
 
+    /**
+     * @return null is equivalent to a {@link FreeBinding}.
+     */
     Binding resolve(String name)
     {
-        SyntaxSymbol identifier = SyntaxSymbol.make(name);
-        identifier = (SyntaxSymbol) syntaxIntroduce(identifier);
-        return identifier.resolve();
+        // TODO FUSION-114 check that the name has at least one character!
+        return myWraps.resolve(name);
     }
 
 
-    TopBinding newBinding(SyntaxSymbol identifier, int address)
+    abstract NsBinding newBinding(SyntaxSymbol identifier, int address);
+
+
+    NsBinding addBinding(SyntaxSymbol identifier)
+        throws FusionException
     {
-        return new TopBinding(identifier, address);
+        int address = myBindings.size();
+        NsBinding binding = newBinding(identifier, address);
+        myBindings.add(binding);
+        return binding;
     }
 
 
     /**
      * Creates a binding, but no value, for a name.
-     * Used during preparation phase, before evaluating the right-hand side.
+     * Used during expansion phase, before evaluating the right-hand side.
      */
-    public TopBinding predefine(SyntaxSymbol identifier)
-    {
-        TopBinding binding = localResolve(identifier);
-        if (binding == null)
-        {
-            int address = myBindings.size();
-            binding = newBinding(identifier, address);
-            myBindings.add(binding);
-        }
-        return binding;
-    }
+    abstract NsBinding predefine(SyntaxSymbol identifier,
+                                  SyntaxValue formForErrors)
+        throws FusionException;
 
 
     /**
@@ -269,7 +287,7 @@ class Namespace
      *
      * @param value must not be null
      */
-    void bind(TopBinding binding, Object value)
+    void bind(NsBinding binding, Object value)
     {
         set(binding.myAddress, value);
 
@@ -323,9 +341,10 @@ class Namespace
      * @param value must not be null
      */
     public void bind(String name, Object value)
+        throws FusionException
     {
         SyntaxSymbol identifier = SyntaxSymbol.make(name);
-        TopBinding binding = predefine(identifier);
+        NsBinding binding = predefine(identifier, null);
         bind(binding, value);
     }
 
@@ -339,14 +358,17 @@ class Namespace
     }
 
     void use(ModuleIdentity id)
+        throws FusionException
     {
         ModuleInstance module = myRegistry.lookup(id);
         use(module);
     }
 
-    void use(final ModuleInstance module)
+    abstract void use(ModuleInstance module)
+        throws FusionException;
+
+    void addWrap(SyntaxWrap wrap)
     {
-        SyntaxWrap wrap = new ModuleRenameWrap(module);
         myWraps = myWraps.addWrap(wrap);
     }
 
@@ -354,20 +376,20 @@ class Namespace
     @Override
     public Object lookup(Binding binding)
     {
-        if (binding instanceof TopBinding)    // else it can't possibly be ours
+        if (binding instanceof NsBinding)    // else it can't possibly be ours
         {
-            return lookup((TopBinding) binding);
+            return lookup((NsBinding) binding);
         }
         return null;
     }
 
-    public Object lookup(TopBinding binding)
+    public Object lookup(NsBinding binding)
     {
         int address = binding.myAddress;
         if (address < myValues.size())              // for prepare-time lookup
         {
-            TopBinding localBinding = myBindings.get(address);
-            if (binding.equals(localBinding))
+            NsBinding localBinding = myBindings.get(address);
+            if (binding == localBinding)
             {
                 return myValues.get(address);
             }
@@ -455,11 +477,16 @@ class Namespace
 
     void setDoc(String name, BindingDoc.Kind kind, String doc)
     {
-        TopBinding binding = (TopBinding) resolve(name);
         BindingDoc bDoc = new BindingDoc(name, kind,
                                          null, // usage
                                          doc);
-        setDoc(binding.myAddress, bDoc);
+        setDoc(name, bDoc);
+    }
+
+    void setDoc(String name, BindingDoc doc)
+    {
+        NsBinding binding = (NsBinding) resolve(name);
+        setDoc(binding.myAddress, doc);
     }
 
     public void setDoc(int address, BindingDoc doc)
@@ -491,18 +518,6 @@ class Namespace
         myBindingDocs.toArray(docs);
         myBindingDocs = null;
         return docs;
-    }
-
-
-    //========================================================================
-
-
-    /**
-     * Creates a new namespace sharing the same {@link ModuleRegistry}.
-     */
-    Namespace emptyNamespace()
-    {
-        return new Namespace(myRegistry);
     }
 
 

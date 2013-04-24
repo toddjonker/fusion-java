@@ -1,15 +1,20 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.DocIndex.buildDocIndex;
 import static com.amazon.fusion.ModuleDoc.buildDocTree;
+import com.amazon.fusion.ModuleDoc.Filter;
+import com.amazon.ion.Timestamp;
 import com.petebevin.markdown.MarkdownProcessor;
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * NOT FOR APPLICATION USE
@@ -31,262 +36,595 @@ public final class _Private_ModuleDocumenter
         throws IOException, FusionException
     {
         FusionRuntime runtime = standardDocumentingRuntime();
-        ModuleDoc doc = buildDocTree(runtime, repoDir);
-        writeHtmlTree(outputDir, doc);
+        Filter filter = new Filter();
+
+        ModuleDoc doc = buildDocTree(runtime, filter, repoDir);
+        writeModuleTree(filter, outputDir, ".", doc);
+
+        DocIndex index = buildDocIndex(doc);
+        writeIndexFile(filter, outputDir, index);
+        writePermutedIndexFile(filter, outputDir, index);
+
+        System.out.println("DONE rendering docs to " + outputDir + " at "
+            + Timestamp.now());
     }
 
 
-    private static void writeHtmlTree(File outputDir, ModuleDoc doc)
+    private static void writeModuleTree(Filter filter,
+                                        File outputDir,
+                                        String baseUrl,
+                                        ModuleDoc doc)
         throws IOException
     {
-        if (doc.myName != null)
+        String name = doc.baseName();
+        if (name != null)
         {
-            File outputFile = new File(outputDir, doc.myName + ".html");
-            writeHtmlFile(outputFile, doc);
-            outputDir = new File(outputDir, doc.myName);
+            writeModuleFile(filter, outputDir, baseUrl, doc);
+            outputDir = new File(outputDir, name);
+            baseUrl = baseUrl + "/..";
         }
 
         Collection<ModuleDoc> submodules = doc.submodules();
         for (ModuleDoc submodule : submodules)
         {
-            writeHtmlTree(outputDir, submodule);
+            writeModuleTree(filter, outputDir, baseUrl, submodule);
         }
     }
 
 
-    private static void writeHtmlFile(File out, ModuleDoc doc)
+    private static void writeModuleFile(Filter filter,
+                                        File outputDir,
+                                        String baseUrl,
+                                        ModuleDoc doc)
         throws IOException
     {
-        out.getParentFile().mkdirs();
+        File outputFile = new File(outputDir, doc.baseName() + ".html");
 
-        FileWriter fw = new FileWriter(out);
-        try
+        try (ModuleWriter writer =
+                 new ModuleWriter(filter, outputFile, baseUrl))
         {
-            renderModule(fw, doc);
+            writer.renderModule(doc);
         }
-        finally
+    }
+
+
+    private static void writeIndexFile(Filter filter,
+                                       File outputDir,
+                                       DocIndex index)
+        throws IOException
+    {
+        File outputFile = new File(outputDir, "binding-index.html");
+
+        try (IndexWriter writer = new IndexWriter(filter, outputFile))
         {
-            fw.close();
+            writer.renderIndex(index);
         }
     }
 
 
-    private static void renderModule(Appendable out, ModuleDoc doc)
+    private static void writePermutedIndexFile(Filter filter,
+                                               File outputDir,
+                                               DocIndex index)
         throws IOException
     {
-        renderHead(out, doc);
+        File outputFile = new File(outputDir, "permuted-index.html");
 
-        renderHeader1(out, "Module " + doc.myPath);
-
-        renderModuleIntro(out, doc);
-
-        renderSubmoduleLinks(out, doc);
-
-        String[] names = doc.sortedExportedNames();
-
-        renderBindings(out, doc, names);
-    }
-
-
-    private static final String STYLE =
-        "<style type='text/css'>" +
-        " .binding {" +
-        "   display: block; width: 100%;" +
-        " }" +
-        " .bound {" +
-        "   font-size: 1.17em;" +
-        "   font-weight: bold;" +
-        " }" +
-        " .kind {" +
-        "   float: right; font-style: italic" +
-        " }" +
-        " .oneliner p {" +       // Markdown uses <p> but we don't want a break
-        "    display: inline;" +
-        " }" +
-        "</style>\n";
-
-    private static void renderHead(Appendable out, ModuleDoc doc)
-        throws IOException
-    {
-        out.append("<head>");
-        out.append("<title>");
-        out.append(escape(doc.myPath));
-        out.append("</title>\n");
-        out.append(STYLE);
-        out.append("</head>\n");
-    }
-
-
-    private static void renderModuleIntro(Appendable out, ModuleDoc doc)
-        throws IOException
-    {
-        if (doc.myIntroDocs == null) return;
-
-        String html = markdown(doc.myIntroDocs);
-        out.append(html);
-    }
-
-    private static void renderSubmoduleLinks(Appendable out, ModuleDoc doc)
-        throws IOException
-    {
-        Map<String, ModuleDoc> submodules = doc.submoduleMap();
-        if (submodules == null) return;
-
-        renderHeader2(out, "Submodules");
-
-        String superModuleName = escape(doc.myName);
-
-        String[] names = submodules.keySet().toArray(new String[0]);
-        Arrays.sort(names);
-
-        out.append("<ul>");
-        for (String name : names)
+        try (PermutedIndexWriter writer =
+                 new PermutedIndexWriter(filter, index, outputFile))
         {
-            name = escape(name);
-            out.append("<li><a href='");
-            out.append(superModuleName);
-            out.append('/');
-            out.append(name);
-            out.append(".html'>");
-            out.append(name);
-            out.append("</a>");
+            writer.renderIndex();
+        }
+    }
 
-            ModuleDoc sub = submodules.get(name);
-            String oneLiner = sub.oneLiner();
-            if (oneLiner != null)
+
+    //========================================================================
+
+
+    private static final class ModuleWriter
+        extends HtmlWriter
+    {
+        private final Filter myFilter;
+        private final String myBaseUrl;
+        private final MarkdownProcessor myMarkdown = new MarkdownProcessor();
+
+        public ModuleWriter(Filter filter, File outputFile, String baseUrl)
+            throws IOException
+        {
+            super(outputFile);
+            myFilter  = filter;
+            myBaseUrl = baseUrl;
+        }
+
+        private static final String STYLE =
+            "<style type='text/css'>" +
+            " .indexlink {" +
+            "   float: right;" +
+            " }" +
+            " .submodules .oneliner p {" +
+            "   display: inline;" +
+            " }" +
+            " .exports {" +
+            "   display: block; width: 100%;" +
+            "   margin-left: 1em; margin-bottom: 1em" +
+            " }" +
+            " .binding {" +
+            "   display: block;" +
+            "   margin-left: 1em;" +
+            " }" +
+            " .binding .name {" +
+            "   font-size: 1.17em;" +
+            "   font-weight: bold;" +
+            "   margin-left: -1em;" +
+            " }" +
+            " .binding .kind {" +
+            "   float: right; font-style: italic;" +
+            " }" +
+            " .binding .oneliner {" +
+//            "   margin-left: 1em;" +
+            " }" +
+            " .binding .nodoc {" +
+            "   font-style: italic;" +
+            " }" +
+            " .binding .body {" +
+//            "   margin-left: 1em;" +
+            " }" +
+            " .binding .also {" +
+//            "   margin-left: 1em;" +
+            " }" +
+            "</style>\n";
+
+        void renderModule(ModuleDoc doc)
+            throws IOException
+        {
+            String modulePath = doc.myModuleId.internString();
+            renderHead(modulePath, myBaseUrl, STYLE);
+
+            append("<div class='indexlink'>" +
+                   "<a href='binding-index.html'>Binding Index</a> " +
+                   "(<a href='permuted-index.html'>Permuted</a>)" +
+                   "</div>\n");
+
+            renderHeader1("Module " + modulePath);
+
+            renderModuleIntro(doc);
+
+            renderSubmoduleLinks(doc);
+
+            String[] names = doc.sortedExportedNames();
+
+            renderBindings(doc, names);
+        }
+
+
+        private void renderModuleIntro(ModuleDoc doc)
+            throws IOException
+        {
+            if (doc.myIntroDocs != null)
             {
-                oneLiner = markdown(oneLiner);
-                out.append(" &ndash; <span class='oneliner'>");
-                out.append(oneLiner);
-                out.append("</span>");
+                markdown(doc.myIntroDocs);
             }
-            out.append("</li>\n");
         }
-        out.append("</ul>\n");
-    }
 
-
-    private static void renderBindingIndex(Appendable out,
-                                           ModuleDoc doc,
-                                           String[] names)
-        throws IOException
-    {
-        if (names.length == 0) return;
-
-        out.append("<blockquote>");
-        for (String name : names)
+        private void renderSubmoduleLinks(ModuleDoc doc)
+            throws IOException
         {
-            name = escape(name);
-            out.append("<a href='#");
-            out.append(name);
-            out.append("'><code>");
-            out.append(name);
-            out.append("</code></a>&nbsp;&nbsp;\n");
-        }
-        out.append("</blockquote>\n");
-    }
+            Map<String, ModuleDoc> submodules = doc.submoduleMap();
+            if (submodules == null) return;
 
+            renderHeader2("Submodules");
 
-    private static void renderBindings(Appendable out,
-                                       ModuleDoc doc,
-                                       String[] names)
-        throws IOException
-    {
-        Map<String, BindingDoc> bindings = doc.bindingMap();
-        if (bindings == null) return;
+            String[] names = submodules.keySet().toArray(new String[0]);
+            Arrays.sort(names);
 
-        renderHeader2(out, "Exported Bindings");
-
-        renderBindingIndex(out, doc, names);
-
-        for (String name : names)
-        {
-            // May be null:
-            BindingDoc binding = bindings.get(name);
-            renderBinding(out, name, binding);
-        }
-    }
-
-
-    private static void renderBinding(Appendable out, String name,
-                                      BindingDoc doc)
-        throws IOException
-    {
-        name = escape(name);
-
-        out.append("<span class='binding'><span class='bound'><a name='");
-        out.append(name);
-        out.append("'>");
-        out.append(name);
-        out.append("</a></span>");   // binding span is still open
-
-        if (doc == null)
-        {
-            out.append("</span>\n"); // binding
-            out.append("<p>No documentation available.<p>\n\n");
-        }
-        else
-        {
-            if (doc.myKind != null)
+            append("<ul class='submodules'>");
+            for (String name : names)
             {
-                out.append("<span class='kind'>");
-                // Using enum toString() allows display name to be changed
-                out.append(doc.myKind.toString().toLowerCase());
-                out.append("</span>\n");
+                ModuleDoc sub = submodules.get(name);
+
+                String escapedName = escapeString(name);
+                append("<li>");
+                linkToModule(sub.myModuleId, escapedName);
+
+                String oneLiner = sub.oneLiner();
+                if (oneLiner != null)
+                {
+                    append(" &ndash; <span class='oneliner'>");
+                    markdown(oneLiner);
+                    append("</span>");
+                }
+                append("</li>\n");
             }
-            out.append("</span>\n"); // binding
+            append("</ul>\n");
+        }
 
-            StringBuilder buf = new StringBuilder();
 
-            if (doc.myUsage != null)
+        private void renderBindingIndex(ModuleDoc doc, String[] names)
+            throws IOException
+        {
+            if (names.length == 0) return;
+
+            append("<div class='exports'>\n");
+            for (String name : names)
             {
-                buf.append("    ");
-                buf.append(doc.myUsage);
-                buf.append('\n');
+                String escapedName = escapeString(name);
+                linkToBindingAsName(doc.myModuleId, escapedName);
+                append("&nbsp;&nbsp;\n");
             }
+            append("</div>\n");
+        }
 
-            if (doc.myBody != null)
+
+        private void renderBindings(ModuleDoc doc, String[] names)
+            throws IOException
+        {
+            Map<String, BindingDoc> bindings = doc.bindingMap();
+            if (bindings == null) return;
+
+            renderHeader2("Exported Bindings");
+
+            renderBindingIndex(doc, names);
+
+            for (String name : names)
             {
-                buf.append('\n');
-                buf.append(doc.myBody);
-                buf.append('\n');
+                // May be null:
+                BindingDoc binding = bindings.get(name);
+                renderBinding(doc, name, binding);
+            }
+        }
+
+
+        /* CSS hierarchy:
+         *
+         *  binding
+         *    name
+         *    kind
+         *    oneliner
+         *    body
+         *    also
+         */
+        private void renderBinding(ModuleDoc moduleDoc,
+                                   String name, BindingDoc doc)
+            throws IOException
+        {
+            String escapedName = escapeString(name);
+
+            append("\n<div class='binding'><span class='name'><a name='");
+            append(escapedName);
+            append("'>");
+            append(escapedName);
+            append("</a></span>");   // binding div is still open
+
+            if (doc == null)
+            {
+                append("<p class='nodoc'>No documentation available.<p>\n\n");
+            }
+            else
+            {
+                if (doc.getKind() != null)
+                {
+                    append("<span class='kind'>");
+                    // Using enum toString() allows display name to be changed
+                    append(doc.getKind().toString().toLowerCase());
+                    append("</span>\n");
+                }
+
+                StringBuilder buf = new StringBuilder();
+
+                if (doc.getUsage() != null)
+                {
+                    buf.append("    ");
+                    buf.append(doc.getUsage());
+                    buf.append('\n');
+
+                    append("<div class='oneliner'>");
+                    markdown(buf.toString());
+                    append("</div>\n");
+
+                    buf.setLength(0);
+                }
+
+                if (doc.getBody() != null)
+                {
+                    buf.append('\n');
+                    buf.append(doc.getBody());
+                    buf.append('\n');
+
+                    append("<div class='body'>");
+                    markdown(buf.toString());
+                    append("</div>\n");
+
+                    buf.setLength(0);
+                }
+
+                append('\n');
+
+
+                ModuleIdentity[] ids =
+                    doc.getProvidingModules().toArray(new ModuleIdentity[0]);
+                Arrays.sort(ids);
+
+                boolean printedOne = false;
+                for (ModuleIdentity id : ids)
+                {
+                    if (id != moduleDoc.myModuleId && myFilter.accept(id))
+                    {
+                        if (printedOne)
+                        {
+                            append(", ");
+                        }
+                        else
+                        {
+                            append("<p class='also'><em>Also provided by ");
+                        }
+
+                        linkToBindingAsModulePath(id, escapedName);
+                        printedOne = true;
+                    }
+                }
+                if (printedOne)
+                {
+                    append("</em></p>\n");
+                }
             }
 
-            out.append(markdown(buf.toString()));
+            append("</div>\n"); // binding
+        }
+
+
+        private void markdown(String text)
+            throws IOException
+        {
+            String md = myMarkdown.markdown(text);
+            append(md);
         }
     }
 
 
-    private static void renderHeader1(Appendable out, String text)
-        throws IOException
+    //========================================================================
+
+
+    private static final class IndexWriter
+        extends HtmlWriter
     {
-        out.append("<h1>");
-        out.append(escape(text));
-        out.append("</h1>\n");
+        private final Filter myFilter;
+
+
+        public IndexWriter(Filter filter, File outputFile)
+            throws IOException
+        {
+            super(outputFile);
+            myFilter = filter;
+        }
+
+
+        private static final String STYLE =
+            "<style type='text/css'>" +
+            " .indexlink {" +
+            "   float: right;" +
+            " }" +
+            " td.bound {" +
+            "   font-family: monospace;" +
+            " }" +
+            "</style>\n";
+
+        void renderIndex(DocIndex index)
+            throws IOException
+        {
+            renderHead("Fusion Binding Index", null, STYLE);
+
+            append("<div class='indexlink'>" +
+                   "<a href='permuted-index.html'>Permuted Index</a>" +
+                   "</div>\n");
+
+            renderHeader1("Binding Index");
+
+            append("<table>");
+            for (Entry<String, Set<ModuleIdentity>> entry
+                    : index.getNameMap().entrySet())
+            {
+                String escapedName = escapeString(entry.getKey());
+                append("<tr><td class='bound'>");
+                append(escapedName);
+                append("</td><td>");
+
+                boolean printedOne = false;
+                for (ModuleIdentity id : entry.getValue())
+                {
+                    if (myFilter.accept(id))
+                    {
+                        if (printedOne)
+                        {
+                            append(", ");
+                        }
+                        linkToBindingAsModulePath(id, escapedName);
+                        printedOne = true;
+                    }
+                }
+
+                append("</td>\n");
+            }
+            append("</table>\n");
+        }
     }
 
-    private static void renderHeader2(Appendable out, String text)
-        throws IOException
+
+    //========================================================================
+
+
+    private static final class PermutedIndexWriter
+        extends HtmlWriter
     {
-        out.append("<h2>");
-        out.append(escape(text));
-        out.append("</h2>\n");
-    }
+        private final Filter   myFilter;
+        private final DocIndex myIndex;
+
+        /** Maps keywords to the lines in which they exist. */
+        private final TreeSet<Line> myLines;
 
 
-    private static String escape(String text)
-    {
-        text = text.replace("&", "&amp;");
-        text = text.replace("<", "&lt;");
-        text = text.replace(">", "&gt;");
-        text = text.replace("\"", "&quot;");
-        text = text.replace("\'", "&apos;");
-        return text;
-    }
+        /** An index line. */
+        private static final class Line
+            implements Comparable<Line>
+        {
+            private final String myPrefix;
+            private final String myKeyword;
+            private final Entry<String, Set<ModuleIdentity>> myEntry;
 
 
-    private static String markdown(String text)
-    {
-        return new MarkdownProcessor().markdown(text);
+            Line(Entry<String, Set<ModuleIdentity>> entry,
+                 int keywordStartPos,
+                 int keywordLimitPos)
+            {
+                String name = entry.getKey();
+                myPrefix  = name.substring(0, keywordStartPos);
+                myKeyword = name.substring(keywordStartPos, keywordLimitPos);
+                myEntry   = entry;
+            }
+
+            String bindingName()
+            {
+                return myEntry.getKey();
+            }
+
+            String prefix()
+            {
+                return myPrefix;
+            }
+
+            String keyword()
+            {
+                return myKeyword;
+            }
+
+            String suffix()
+            {
+                int pos = myPrefix.length() + myKeyword.length();
+                return bindingName().substring(pos);
+            }
+
+            Set<ModuleIdentity> modules()
+            {
+                return myEntry.getValue();
+            }
+
+            @Override
+            public int compareTo(Line that)
+            {
+                int result = myKeyword.compareTo(that.myKeyword);
+                if (result == 0)
+                {
+                    result = myPrefix.compareTo(that.myPrefix);
+                    if (result == 0)
+                    {
+                        // We shouldn't get this far often, so we spend time to
+                        // get the suffix rather that memory to cache it.
+                        result = suffix().compareTo(that.suffix());
+                    }
+                }
+                return result;
+            }
+        }
+
+
+        public PermutedIndexWriter(Filter filter, DocIndex index,
+                                   File outputFile)
+            throws IOException
+        {
+            super(outputFile);
+
+            myFilter = filter;
+            myIndex  = index;
+            myLines  = new TreeSet<>();
+        }
+
+
+        private void permute()
+        {
+            for (Entry<String, Set<ModuleIdentity>> entry
+                     : myIndex.getNameMap().entrySet())
+            {
+                String name = entry.getKey();
+
+                int pos = 0;
+                while (true)
+                {
+                    int underscorePos = name.indexOf('_', pos);
+                    if (underscorePos == -1)
+                    {
+                        myLines.add(new Line(entry, pos, name.length()));
+                        break;
+                    }
+                    else if (pos < underscorePos)
+                    {
+                        myLines.add(new Line(entry, pos, underscorePos));
+                    }
+                    pos = underscorePos + 1;
+                }
+            }
+        }
+
+
+        private static final String STYLE =
+            "<style type='text/css'>" +
+            " .indexlink {" +
+            "   float: right;" +
+            " }" +
+            " td.prefix {" +
+            "   font-family: monospace;" +
+            "   text-align: right;" +
+            "   padding-right: 0;" +
+            " }" +
+            " td.tail {" +
+            "   font-family: monospace;" +
+            "   padding-left: 0;" +
+            " }" +
+            " td .keyword {" +
+            "   font-weight: bold;" +
+            " }" +
+            "</style>\n";
+
+        void renderIndex()
+            throws IOException
+        {
+            permute();
+
+            renderHead("Fusion Binding Index (Permuted)", null, STYLE);
+
+            append("<div class='indexlink'>" +
+                   "<a href='binding-index.html'>Alphabetical Index</a>" +
+                   "</div>\n");
+
+            renderHeader1("Permuted Binding Index");
+
+            append("<table>");
+            for (Line line : myLines)
+            {
+                String escapedName = escapeString(line.bindingName());
+
+                append("<tr><td class='prefix'>");
+                escape(line.prefix());
+                append("</td><td class='tail'><span class='keyword'>");
+                escape(line.keyword());
+                append("</span>");
+                escape(line.suffix());
+                append("</td><td>");
+
+                boolean printedOne = false;
+                for (ModuleIdentity id : line.modules())
+                {
+                    if (myFilter.accept(id))
+                    {
+                        if (printedOne)
+                        {
+                            append(", ");
+                        }
+                        linkToBindingAsModulePath(id, escapedName);
+                        printedOne = true;
+                    }
+                }
+
+                append("</td>\n");
+            }
+            append("</table>\n");
+        }
     }
 }

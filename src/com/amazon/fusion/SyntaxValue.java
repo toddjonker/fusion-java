@@ -89,7 +89,7 @@ abstract class SyntaxValue
      * @return an equivalent syntax value with no wraps.
      * May return this instance when that's already the case.
      */
-    SyntaxValue stripWraps()
+    SyntaxValue stripWraps(Evaluator eval)
     {
         return this;
     }
@@ -120,11 +120,15 @@ abstract class SyntaxValue
         throw new IllegalStateException();
     }
 
+
     /**
-     * Transform this syntax into plain values.
+     * Unwraps syntax, returning plain values.
+     * @param recurse if true, unwrapping is recursive (as per `quote` or
+     *  `synatax_to_datum`); otherwise only one layer is unwrapped.
      */
-    abstract Object quote(Evaluator eval)
+    abstract Object unwrap(Evaluator eval, boolean recurse)
         throws FusionException;
+
 
     @Override
     void write(Evaluator eval, Appendable out)

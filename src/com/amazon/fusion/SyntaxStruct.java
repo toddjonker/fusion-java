@@ -21,7 +21,7 @@ import java.util.Map;
 final class SyntaxStruct
     extends SyntaxContainer
 {
-    private final ImmutableStruct myStruct;
+    private ImmutableStruct myStruct;
 
 
     /**
@@ -84,7 +84,7 @@ final class SyntaxStruct
 
 
     @Override
-    SyntaxStruct stripWraps()
+    SyntaxStruct stripWraps(Evaluator eval)
     {
         if (hasNoChildren()) return this;  // No children, no marks, all okay!
 
@@ -102,7 +102,7 @@ final class SyntaxStruct
             if (! (value instanceof Object[]))
             {
                 SyntaxValue child = (SyntaxValue) value;
-                SyntaxValue stripped = child.stripWraps();
+                SyntaxValue stripped = child.stripWraps(eval);
                 if (stripped != child)
                 {
                     entry.setValue(stripped);
@@ -119,7 +119,7 @@ final class SyntaxStruct
                 for (int i = 0; i < childCount; i++)
                 {
                     SyntaxValue child = (SyntaxValue) children[i];
-                    SyntaxValue stripped = child.stripWraps();
+                    SyntaxValue stripped = child.stripWraps(eval);
                     if (stripped != child)
                     {
                         mustReplaceArray = true;
@@ -141,14 +141,15 @@ final class SyntaxStruct
     }
 
 
-    static SyntaxStruct read(IonReader source, SourceName name, String[] anns)
+    static SyntaxStruct read(Evaluator eval, IonReader source, SourceName name,
+                             String[] anns)
     {
         SourceLocation loc = currentLocation(source, name);
 
         ImmutableStruct struct;
         if (source.isNullValue())
         {
-            struct = nullStruct(null /* FIXME eval*/, anns);
+            struct = nullStruct(eval, anns);
         }
         else
         {
@@ -157,7 +158,7 @@ final class SyntaxStruct
             while (source.next() != null)
             {
                 String field = source.getFieldName();
-                SyntaxValue child = Syntax.read(source, name);
+                SyntaxValue child = Syntax.read(eval, source, name);
                 structImplAdd(map, field, child);
             }
             source.stepOut();
@@ -187,22 +188,22 @@ final class SyntaxStruct
 
 
     @Override
-    Object quote(Evaluator eval)  // TODO optimize
+    Object unwrap(Evaluator eval, boolean recurse)
         throws FusionException
     {
-        // This should only be called at runtime, after wraps are pushed.
-        assert myWraps == null;
-
-        if (myStruct.size() == 0)
+        if (recurse ? myStruct.size() == 0 : myWraps == null)
         {
             return myStruct;
         }
 
+        // We have children, and wraps to propagate (when not recursing)
 
         // Make a copy of the map, then mutate it to replace children
         // as necessary.
         Map<String, Object> newMap =
             ((NonNullImmutableStruct) myStruct).copyMap();
+
+        // TODO optimize this to not allocate new objects when nothing changes.
 
         for (Map.Entry<String, Object> entry : newMap.entrySet())
         {
@@ -210,7 +211,9 @@ final class SyntaxStruct
             if (! (value instanceof Object[]))
             {
                 SyntaxValue child = (SyntaxValue) value;
-                Object childValue = child.quote(eval);
+                Object childValue =
+                    (recurse ? child.unwrap(eval, true)
+                             : child.addWraps(myWraps));
                 entry.setValue(childValue);
             }
             else
@@ -219,15 +222,27 @@ final class SyntaxStruct
                 Object[] childValues = new Object[children.length];
 
                 int cPos = 0;
-                for (Object child : children)
+                for (Object c : children)
                 {
-                    childValues[cPos++] = ((SyntaxValue)child).quote(eval);
+                    SyntaxValue child = (SyntaxValue) c;
+                    Object childValue =
+                        (recurse ? child.unwrap(eval, true)
+                                 : child.addWraps(myWraps));
+                    childValues[cPos++] = childValue;
                 }
                 entry.setValue(childValues);
             }
         }
 
-        return immutableStruct(newMap, getAnnotations());
+        NonNullImmutableStruct result =
+            immutableStruct(newMap, getAnnotations());
+        if (!recurse) // We've push wraps to children, retain them!
+        {
+            myStruct = result;
+            myWraps = null;
+        }
+
+        return result;
     }
 
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -49,7 +49,8 @@ final class StandardTopLevel
                      String initialModulePath)
         throws FusionException
     {
-        this(globalState, new Namespace(registry), initialModulePath, false);
+        this(globalState, new TopLevelNamespace(registry), initialModulePath,
+             false);
     }
 
 
@@ -90,7 +91,7 @@ final class StandardTopLevel
 
         while (source.next() != null)
         {
-            SyntaxValue sourceExpr = Syntax.read(source, name);
+            SyntaxValue sourceExpr = Syntax.read(myEvaluator, source, name);
             result = FusionEval.eval(myEvaluator, sourceExpr, myNamespace);
         }
 
@@ -130,6 +131,7 @@ final class StandardTopLevel
 
     @Override
     public void define(String name, Object value)
+        throws FusionException
     {
         myNamespace.bind(name, value);
     }

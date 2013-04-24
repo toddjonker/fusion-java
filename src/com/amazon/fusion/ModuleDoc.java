@@ -1,4 +1,4 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -16,9 +16,8 @@ import java.util.Set;
 
 final class ModuleDoc
 {
-    private final FusionRuntime myRuntime;
-    final String myName;
-    final String myPath;
+    private final StandardRuntime myRuntime;
+    final ModuleIdentity myModuleId;
     final String myIntroDocs;
 
     private Map<String,ModuleDoc>  mySubmodules;
@@ -40,81 +39,64 @@ final class ModuleDoc
     }
 
 
-    public static ModuleDoc buildDocTree(FusionRuntime runtime, File repoDir)
+    public static ModuleDoc buildDocTree(FusionRuntime runtime, Filter filter,
+                                         File repoDir)
         throws IOException, FusionException
     {
-        ModuleDoc doc = new ModuleDoc(runtime, null, "");
-        buildTree(repoDir, doc);
+        ModuleDoc doc = new ModuleDoc((StandardRuntime) runtime);
+        doc.addModules(filter, repoDir);
         return doc;
     }
 
 
-    private static void buildTree(File dir, ModuleDoc doc)
-        throws IOException, FusionException
+    //========================================================================
+
+
+    /**
+     * Constructs the documentation root as a pseudo-module.
+     */
+    private ModuleDoc(StandardRuntime runtime)
+        throws FusionException
     {
-        String[] fileNames = dir.list();
-
-        // First pass: build all "real" modules
-        for (String fileName : fileNames)
-        {
-            if (fileName.endsWith(".ion"))
-            {
-                // We assume that all .ion files are modules.
-                String moduleName =
-                    fileName.substring(0, fileName.length() - 4);
-                doc.addSubmodule(moduleName);
-            }
-        }
-
-        // Second pass: look for directories, which are implicitly submodules.
-        for (String fileName : fileNames)
-        {
-            if (fileName.equals("private")) continue;
-
-            File testFile = new File(dir, fileName);
-            if (testFile.isDirectory())
-            {
-                ModuleDoc d = doc.implicitSubmodule(fileName);
-                buildTree(testFile, d);
-            }
-        }
+        myRuntime = runtime;
+        myModuleId = null;
+        myIntroDocs = null;
     }
 
 
     /**
-     * @param name can be null to represent the repository root (not really a
-     *  module).
+     * Constructs docs for a real or implicit top-level module or submodule.
      */
-    private ModuleDoc(FusionRuntime runtime, String name, String path)
+    private ModuleDoc(StandardRuntime runtime,
+                      ModuleIdentity id,
+                      String introDocs)
         throws FusionException
     {
+        assert id != null;
+
         myRuntime = runtime;
-        myName = name;
-        myPath = path;
-
-        String docs = null;
-        if (name != null)
-        {
-            StandardRuntime rt = (StandardRuntime) runtime;
-            ModuleRegistry registry = rt.getDefaultRegistry();
-            try
-            {
-                ModuleIdentity id = resolveModulePath(runtime, path);
-                ModuleInstance moduleInstance = registry.lookup(id);
-
-                docs = moduleInstance.getDocs();
-
-                build(moduleInstance);
-            }
-            catch (ModuleNotFoundFailure e) { }
-        }
-        myIntroDocs = docs;
+        myModuleId = id;
+        myIntroDocs = introDocs;
     }
 
-    private ModuleDoc(ModuleDoc parent, String name)
-        throws FusionException
+
+    String baseName()
     {
-        this(parent.myRuntime, name, parent.myPath + "/" + name);
+        return (myModuleId == null ? null : myModuleId.baseName());
+    }
+
+
+    String submodulePath(String name)
+    {
+        if (myModuleId == null)
+        {
+            return "/" + name;
+        }
+
+        String parentPath = myModuleId.internString();
+        assert parentPath.startsWith("/");
+
+        return parentPath + "/" + name;
     }
 
 
@@ -164,7 +146,7 @@ final class ModuleDoc
     }
 
 
-    private void build(ModuleInstance module)
+    private void addBindings(ModuleInstance module)
     {
         Set<String> names = module.providedNames();
         if (names.size() == 0) return;
@@ -179,10 +161,33 @@ final class ModuleDoc
     }
 
 
-    private ModuleDoc addSubmodule(String name)
+    /**
+     * @return null if the submodule is to be excluded from documentation.
+     */
+    private ModuleDoc addSubmodule(Filter filter, String name)
         throws FusionException
     {
-        ModuleDoc doc = new ModuleDoc(this, name);
+        ModuleIdentity id;
+        try
+        {
+            id = resolveModulePath(myRuntime, submodulePath(name));
+            assert id.baseName().equals(name);
+        }
+        catch (ModuleNotFoundFailure e)
+        {
+            // This can happen for implicit modules with no stub .ion file.
+            // For now we just stop here and don't handle further submodules.
+            // TODO Recurse into implicit modules that don't have stub source.
+            return null;
+        }
+
+        if (! filter.accept(id)) return null;
+
+        ModuleInstance moduleInstance =
+            myRuntime.getDefaultRegistry().lookup(id);
+
+        ModuleDoc doc = new ModuleDoc(myRuntime, id, moduleInstance.getDocs());
+        doc.addBindings(moduleInstance);
 
         if (mySubmodules == null)
         {
@@ -196,7 +201,11 @@ final class ModuleDoc
     }
 
 
-    private ModuleDoc implicitSubmodule(String name)
+    /**
+     * Adds a submodule doc if and only if it doesn't already exist.
+     * @return null if the submodule is to be excluded from documentation.
+     */
+    private ModuleDoc addImplicitSubmodule(Filter filter, String name)
         throws FusionException
     {
         if (mySubmodules != null)
@@ -206,6 +215,58 @@ final class ModuleDoc
             if (doc != null) return doc;
         }
 
-        return addSubmodule(name);
+        return addSubmodule(filter, name);
+    }
+
+
+    /**
+     * Adds all modules that we can discover within a directory.
+     */
+    private void addModules(Filter filter, File dir)
+        throws IOException, FusionException
+    {
+        String[] fileNames = dir.list();
+
+        // First pass: build all "real" modules
+        for (String fileName : fileNames)
+        {
+            if (fileName.endsWith(".ion"))
+            {
+                // We assume that all .ion files are modules.
+                String moduleName =
+                    fileName.substring(0, fileName.length() - 4);
+                addSubmodule(filter, moduleName);
+            }
+        }
+
+        // Second pass: look for directories, which are implicitly submodules.
+        for (String fileName : fileNames)
+        {
+            File testFile = new File(dir, fileName);
+            if (testFile.isDirectory())
+            {
+                ModuleDoc d = addImplicitSubmodule(filter, fileName);
+                if (d != null)
+                {
+                    d.addModules(filter, testFile);
+                }
+            }
+        }
+    }
+
+
+    //========================================================================
+
+
+    static final class Filter
+    {
+        boolean accept(ModuleIdentity id)
+        {
+            String name = id.internString();
+            if (name.startsWith("#%")) return false;
+            if (name.endsWith("/private")) return false;
+            if (name.contains("/private/")) return false;
+            return true;
+        }
     }
 }

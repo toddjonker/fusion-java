@@ -1,4 +1,4 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -25,19 +25,15 @@ class MarkWrap
 
 
     @Override
-    Binding resolve(SyntaxSymbol identifier,
+    Binding resolve(String name,
                     Iterator<SyntaxWrap> moreWraps,
                     Set<Integer> returnMarks)
     {
-        Binding b;
+        Binding b = null;
         if (moreWraps.hasNext())
         {
             SyntaxWrap nextWrap = moreWraps.next();
-            b = nextWrap.resolve(identifier, moreWraps, returnMarks);
-        }
-        else
-        {
-            b = new FreeBinding(identifier.stringValue());
+            b = nextWrap.resolve(name, moreWraps, returnMarks);
         }
 
         if (! returnMarks.add(myMark))
@@ -50,8 +46,15 @@ class MarkWrap
 
 
     @Override
+    Iterator<SyntaxWrap> iterator()
+    {
+        return null;
+    }
+
+
+    @Override
     public String toString()
     {
-        return "{{mark " + myMark + "}}";
+        return "{{{Mark " + myMark + "}}}";
     }
 }

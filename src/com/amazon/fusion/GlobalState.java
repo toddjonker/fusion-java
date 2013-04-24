@@ -3,7 +3,6 @@
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionValue.UNDEF;
-import static com.amazon.fusion.ModuleIdentity.intern;
 import com.amazon.ion.IonSystem;
 import com.amazon.ion.IonType;
 
@@ -15,7 +14,7 @@ final class GlobalState
 {
     static final String KERNEL_MODULE_NAME = "#%kernel";
     static final ModuleIdentity KERNEL_MODULE_IDENTITY =
-        intern(KERNEL_MODULE_NAME);
+        ModuleIdentity.internBuiltinName(KERNEL_MODULE_NAME);
 
     final IonSystem          myIonSystem;
     final ModuleInstance     myKernelModule;
@@ -23,6 +22,11 @@ final class GlobalState
     final LoadHandler        myLoadHandler;
     final UseForm            myUseForm;
     final DynamicParameter   myCurrentNamespaceParam;
+
+    final SyntaxSymbol       myKernelBeginIdentifier;
+    final SyntaxSymbol       myKernelLambdaIdentifier;
+    final SyntaxSymbol       myKernelLetrecIdentifier;
+    final SyntaxSymbol       myKernelModuleIdentifier;
 
 
     private GlobalState(IonSystem          ionSystem,
@@ -38,6 +42,12 @@ final class GlobalState
         myLoadHandler           = loadHandler;
         myUseForm               = useForm;
         myCurrentNamespaceParam = currentNamespaceParam;
+
+        SyntaxWrap wrap = new ModuleRenameWrap(kernel);
+        myKernelBeginIdentifier  = SyntaxSymbol.make("begin", wrap);
+        myKernelLambdaIdentifier = SyntaxSymbol.make("lambda", wrap);
+        myKernelLetrecIdentifier = SyntaxSymbol.make("letrec", wrap);
+        myKernelModuleIdentifier = SyntaxSymbol.make("module", wrap);
     }
 
 
@@ -113,6 +123,8 @@ final class GlobalState
         ns.define("is_list",   new FusionList.IsListProc());
         ns.define("is_sexp",   new FusionSexp.IsSexpProc());
         ns.define("is_struct", new FusionStruct.IsStructProc());
+
+        ns.define("=", new EqualProc());
 
         ModuleInstance kernel = ns.build();
         registry.register(kernel);

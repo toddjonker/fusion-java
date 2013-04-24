@@ -1,7 +1,9 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import static com.amazon.ion.util.IonTextUtils.symbolVariant;
+import static com.amazon.ion.util.IonTextUtils.SymbolVariant.IDENTIFIER;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -14,11 +16,42 @@ import java.util.Map;
  * This plays the same role as Racket's "resolved module path".
  */
 class ModuleIdentity
+    implements Comparable<ModuleIdentity>
 {
+    static final String LOCAL_NAME_EXPECTATION =
+        "Expected an Ion identifier";
+
+    static final String BUILTIN_NAME_EXPECTATION =
+        "Expected `#%` followed by an Ion identifier";
+
     private static final Map<String,ModuleIdentity> ourInternedIdentities =
         new HashMap<String,ModuleIdentity>();
 
-    static ModuleIdentity intern(String name)
+    static boolean isValidLocalName(String name)
+    {
+        return name != null
+            && symbolVariant(name) == IDENTIFIER;
+    }
+
+    static void validateLocalName(SyntaxSymbol name)
+        throws FusionException
+    {
+        String text = name.stringValue();
+        if (! isValidLocalName(text))
+        {
+            throw new SyntaxFailure("local module name",
+                                    LOCAL_NAME_EXPECTATION, name);
+        }
+    }
+
+    static boolean isValidBuiltinName(String name)
+    {
+        return name != null
+            && name.startsWith("#%")
+            && symbolVariant(name.substring(2)) == IDENTIFIER;
+    }
+
+    private static ModuleIdentity doIntern(String name)
     {
         ModuleIdentity interned = ourInternedIdentities.get(name);
         if (interned != null) return interned;
@@ -28,61 +61,105 @@ class ModuleIdentity
         return id;
     }
 
-    static ModuleIdentity internFromJar(final String name)
-    {
-        assert ! name.startsWith("/");  // Because it's a file name
 
-        ModuleIdentity interned = ourInternedIdentities.get("jar:" + name);
+    /**
+     * @param name must be a valid local module name.
+     * @return not null.
+     *
+     * @see #isValidLocalName(String)
+     */
+    static ModuleIdentity internLocalName(String name)
+    {
+        assert isValidLocalName(name);
+        return doIntern(name);
+    }
+
+    /**
+     * @param name must be a valid builtin module name.
+     * @return not null.
+     *
+     * @see #isValidBuiltinName(String)
+     */
+    static ModuleIdentity internBuiltinName(String name)
+    {
+        assert isValidBuiltinName(name);
+        return doIntern(name);
+    }
+
+    /**
+     *
+     * @param name must be the result of {@link #internString()}.
+     * @return not null.
+     */
+    static ModuleIdentity reIntern(String name)
+    {
+        ModuleIdentity interned = ourInternedIdentities.get(name);
+        assert interned != null;
+        return interned;
+    }
+
+
+    static ModuleIdentity internFromClasspath(String modulePath,
+                                              final String resource)
+    {
+        assert modulePath.startsWith("/");
+        assert resource.startsWith("/");
+
+        ModuleIdentity interned = ourInternedIdentities.get(modulePath);
         if (interned != null) return interned;
 
-        ModuleIdentity id = new ModuleIdentity(name)
+        ModuleIdentity id = new ModuleIdentity(modulePath)
         {
             @Override
-            public String internString()
+            public String identify()
             {
-                return "jar:" + super.internString();
+                return internString() + " (at classpath:" + resource + ")";
             }
 
             @Override
             InputStream open()
                 throws IOException
             {
-                return getClass().getResourceAsStream("/FUSION-REPO/" + name);
+                return getClass().getResourceAsStream(resource);
             }
         };
 
-        ourInternedIdentities.put("jar:" + name, id);
+        ourInternedIdentities.put(modulePath, id);
         return id;
     }
 
-    static ModuleIdentity intern(File path)
-    {
-        // TODO should be canonical path
-        assert path.isAbsolute();
-        String name = path.getAbsolutePath();
 
-        ModuleIdentity interned = ourInternedIdentities.get(name);
+    static ModuleIdentity internFromFile(String modulePath, final File file)
+    {
+        assert modulePath.startsWith("/");
+        assert file.isAbsolute();
+
+        ModuleIdentity interned = ourInternedIdentities.get(modulePath);
         if (interned != null) return interned;
 
-        ModuleIdentity id = new ModuleIdentity(name)
+        ModuleIdentity id = new ModuleIdentity(modulePath)
         {
+            @Override
+            public String identify()
+            {
+                return internString() + " (at file:" + file + ")";
+            }
+
             @Override
             InputStream open()
                 throws IOException
             {
-                File file = new File(internString());
                 return new FileInputStream(file);
             }
 
             @Override
             String parentDirectory()
             {
-                File file = new File(internString());
                 return file.getParentFile().getAbsolutePath();
             }
         };
 
-        ourInternedIdentities.put(name, id);
+        ourInternedIdentities.put(modulePath, id);
         return id;
     }
 
@@ -107,20 +184,28 @@ class ModuleIdentity
 
     String identify()
     {
-        return myName;  // TODO this is wrong for Jar resources
+        return myName;
     }
 
 
     @Override
     public String toString()
     {
-        return myName;
+        return identify();
     }
 
     public String internString()
     {
         return myName;
     }
+
+    public String baseName()
+    {
+        int slashIndex = myName.lastIndexOf('/');
+        if (slashIndex == -1) return myName;
+        return myName.substring(slashIndex + 1);
+    }
+
 
     @Override
     public int hashCode()
@@ -145,5 +230,12 @@ class ModuleIdentity
         }
         else if ( !myName.equals(other.myName)) return false;
         return true;
+    }
+
+
+    @Override
+    public int compareTo(ModuleIdentity that)
+    {
+        return this.myName.compareTo(that.myName);
     }
 }

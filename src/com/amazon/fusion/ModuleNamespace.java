@@ -1,6 +1,9 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
+
+import com.amazon.fusion.LanguageWrap.LanguageBinding;
+
 
 /**
  * Extended prepare-time {@link Namespace} that knows it's a module.
@@ -11,7 +14,7 @@ class ModuleNamespace
     extends Namespace
 {
     static final class ModuleBinding
-        extends TopBinding
+        extends NsBinding
     {
         final ModuleIdentity myModuleId;
 
@@ -80,24 +83,64 @@ class ModuleNamespace
         @Override
         public String toString()
         {
-            return "{{ModuleBinding " + myModuleId + ' ' + getName() + "}}";
+            return "{{{ModuleBinding " + myModuleId + ' ' + getName() + "}}}";
         }
     }
 
 
     private final ModuleIdentity myModuleId;
 
+    /**
+     * The wraps for our used modules, then our language.  This allows us to
+     * add imported bindings (via mutation of this sequence) after the wraps
+     * have been propagated to existing symbols.  Which in turn means that
+     * imports cover the entire module body, not just code after the import.
+     */
+    private final SequenceWrap myUsedModuleWraps;
+
+
+    /**
+     * Obnoxious helper constructor lets us allocate the sequence and retain a
+     * reference to it.
+     */
+    private ModuleNamespace(ModuleRegistry registry, ModuleIdentity moduleId,
+                            SequenceWrap wrap)
+    {
+        super(registry, wrap);
+        myModuleId = moduleId;
+        myUsedModuleWraps = wrap;
+    }
+
+    /**
+     * Constructs a module with no language. Any bindings will need to be
+     * {@code require}d or {@code define}d.
+     *
+     * @param moduleId identifies this module.
+     */
     ModuleNamespace(ModuleRegistry registry, ModuleIdentity moduleId)
     {
         super(registry);
         myModuleId = moduleId;
+        myUsedModuleWraps = null;
     }
 
+    /**
+     * Constructs a module with a given language.  Bindings provided by the
+     * language can be shadowed by {@code require} or {@code define}.
+     *
+     * @param moduleId identifies this module.
+     */
     ModuleNamespace(ModuleRegistry registry, ModuleInstance language,
                     ModuleIdentity moduleId)
     {
-        super(registry, language);
-        myModuleId = moduleId;
+        this(registry, moduleId,
+             new SequenceWrap(new LanguageWrap(language)));
+
+        // Note that we don't add this module to the base sequence.
+        // That's because it breaks {@link SyntaxWraps#stripImmediateEnvWrap}.
+        // Also, this structure lets up lookup bindings in the module first
+        // before proceeding on to imports and the language.
+        addWrap(new EnvironmentRenameWrap(this));
     }
 
 
@@ -109,10 +152,59 @@ class ModuleNamespace
 
 
     @Override
-    TopBinding newBinding(SyntaxSymbol identifier, int address)
+    NsBinding newBinding(SyntaxSymbol identifier, int address)
     {
-        assert identifier.uncachedResolve() instanceof FreeBinding;
         return new ModuleBinding(identifier, address, myModuleId);
+    }
+
+    @Override
+    public void setDoc(int address, BindingDoc doc)
+    {
+        doc.addProvidingModule(myModuleId);
+
+        super.setDoc(address, doc);
+    }
+
+
+    @Override
+    NsBinding predefine(SyntaxSymbol identifier, SyntaxValue formForErrors)
+        throws FusionException
+    {
+        Binding oldBinding = identifier.uncachedResolveMaybe();
+        if (oldBinding == null ||
+            oldBinding instanceof FreeBinding ||
+            oldBinding instanceof LanguageBinding)
+        {
+            // We need to strip off the namespace-level wrap that's already been
+            // applied to the identifier. Otherwise we'll loop forever trying
+            // to resolve it! This is a bit of a hack, really.
+            identifier = identifier.stripImmediateEnvWrap(this);
+
+            return addBinding(identifier);
+        }
+
+        String name = identifier.stringValue();
+        throw new AmbiguousBindingFailure(null, name, formForErrors);
+    }
+
+
+    @Override
+    void use(ModuleInstance module)
+        throws FusionException
+    {
+        // Validate that we aren't importing a duplicate name.
+        for (String name : module.providedNames())
+        {
+            Binding oldBinding = resolve(name);
+            if (oldBinding != null
+                && ! (oldBinding instanceof FreeBinding)
+                && ! oldBinding.sameTarget(module.resolveProvidedName(name)))
+            {
+                throw new AmbiguousBindingFailure("use", name);
+            }
+        }
+
+        myUsedModuleWraps.addWrap(new ModuleRenameWrap(module));
     }
 
 

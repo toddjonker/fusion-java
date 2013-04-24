@@ -1,8 +1,9 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionEval.callCurrentEval;
+import com.amazon.ion.IonException;
 import com.amazon.ion.IonReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -89,7 +90,7 @@ final class LoadHandler
                 while (reader.next() != null)
                 {
                     result = null;  // Don't hold onto garbage
-                    SyntaxValue fileExpr = Syntax.read(reader, name);
+                    SyntaxValue fileExpr = Syntax.read(eval, reader, name);
                     result = FusionEval.eval(eval, fileExpr, namespace);
                     // TODO TAIL
                 }
@@ -101,9 +102,11 @@ final class LoadHandler
                 in.close();
             }
         }
-        catch (IOException e)
+        catch (IOException | IonException e)
         {
-            throw new FusionException(e);
+            String message =
+                "Error loading file " + file + ": " + e.getMessage();
+            throw new FusionException(message, e);
         }
     }
 
@@ -125,7 +128,7 @@ final class LoadHandler
                 }
 
                 SourceName name = SourceName.forModule(id);
-                SyntaxValue firstTopLevel = Syntax.read(reader, name);
+                SyntaxValue firstTopLevel = Syntax.read(eval, reader, name);
                 if (reader.next() != null)
                 {
                     String message =
@@ -170,17 +173,18 @@ final class LoadHandler
         throw new SyntaxFailure("load handler", message, topLevel);
     }
 
-    private SyntaxSexp wrapModuleFormWithKernalBindings(Evaluator eval,
-                                                        SyntaxSexp moduleStx)
+    private SyntaxSexp
+    wrapModuleIdentifierWithKernelBindings(Evaluator eval,
+                                           SyntaxSexp moduleStx)
     {
         SyntaxValue[] children = moduleStx.extract();
 
         // We already verified this type-safety
         assert ((SyntaxSymbol) children[0]).stringValue().equals("module");
 
-        children[0] = eval.makeKernelIdentifier("module");
+        children[0] = eval.getGlobalState().myKernelModuleIdentifier;
 
-        moduleStx = SyntaxSexp.make(moduleStx.getLocation(), children);
+        moduleStx = SyntaxSexp.make(eval, moduleStx.getLocation(), children);
         return moduleStx;
     }
 
@@ -195,7 +199,7 @@ final class LoadHandler
             SyntaxSexp moduleDeclaration = readModuleDeclaration(eval, id);
 
             moduleDeclaration =
-                wrapModuleFormWithKernalBindings(eval, moduleDeclaration);
+                wrapModuleIdentifierWithKernelBindings(eval, moduleDeclaration);
 
             Evaluator bodyEval = eval;
             String dirPath = id.parentDirectory();
@@ -217,7 +221,7 @@ final class LoadHandler
         catch (FusionException e)
         {
             String message =
-                "Failure loading module from " + id.identify() +
+                "Failure loading module " + id.identify() +
                 ": " + e.getMessage();
             throw new FusionException(message, e);
         }

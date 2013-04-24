@@ -2,7 +2,6 @@
 
 package com.amazon.fusion;
 
-import static com.amazon.fusion.FusionList.EMPTY_IMMUTABLE_LIST;
 import static com.amazon.fusion.FusionList.NULL_LIST;
 import static com.amazon.fusion.FusionList.immutableList;
 import static com.amazon.fusion.FusionList.nullList;
@@ -79,7 +78,9 @@ final class SyntaxList
 
 
     @Override
-    SyntaxList makeSimilar(SyntaxValue[] children, String[] anns,
+    SyntaxList makeSimilar(Evaluator eval,
+                           SyntaxValue[] children,
+                           String[] anns,
                            SourceLocation loc)
     {
         return new SyntaxList(children, anns, loc);
@@ -115,7 +116,7 @@ final class SyntaxList
 
 
     @Override
-    Object quote(Evaluator eval)
+    Object unwrap(Evaluator eval, boolean recurse)
         throws FusionException
     {
         String[] annotations = getAnnotations();
@@ -127,24 +128,28 @@ final class SyntaxList
 
         Object[] children;
 
-        int size = size();
-        if (size == 0)
+        if (recurse)
         {
-            if (annotations.length == 0)
-            {
-                return EMPTY_IMMUTABLE_LIST;
-            }
+            // Don't bother to push wraps; we'll just discard them anyway.
+            SyntaxValue[] stxChildren = children();
 
-            children = EMPTY_OBJECT_ARRAY;
+            int size = stxChildren.length;
+            if (size == 0)  // Avoid allocation of child array
+            {
+                children = EMPTY_OBJECT_ARRAY;
+            }
+            else
+            {
+                children = new Object[size];
+                for (int i = 0; i < size; i++)
+                {
+                    children[i] = stxChildren[i].unwrap(eval, true);
+                }
+            }
         }
         else
         {
-            children = new Object[size];
-            for (int i = 0; i < size; i++)
-            {
-                SyntaxValue s = get(i);
-                children[i] = s.quote(eval);
-            }
+            children = unwrapChildren();
         }
 
         return immutableList(eval, annotations, children);

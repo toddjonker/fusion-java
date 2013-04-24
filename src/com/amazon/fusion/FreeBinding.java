@@ -1,4 +1,4 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -20,9 +20,30 @@ final class FreeBinding implements Binding
 
 
     @Override
+    public boolean isFree(String name)
+    {
+        // TODO FUSION-47 intern symbol names and use ==
+        return myName.equals(name);
+    }
+
+
+    @Override
     public Binding originalBinding()
     {
         return this;
+    }
+
+
+    @Override
+    public boolean sameTarget(Binding other)
+    {
+        if (this == other) return true;
+        if (! (other instanceof FreeBinding)) return false;
+
+        FreeBinding that = (FreeBinding) other;
+
+        // TODO FUSION-47 intern symbol names and use ==
+        return this.myName.equals(that.myName);
     }
 
 
@@ -55,13 +76,7 @@ final class FreeBinding implements Binding
     @Override
     public boolean equals(Object other)
     {
-        if (this == other) return true;
-        if (! (other instanceof FreeBinding)) return false;
-
-        FreeBinding that = (FreeBinding) other;
-
-        // TODO FUSION-47 intern symbol names and use ==
-        return this.myName.equals(that.myName);
+        throw new UnsupportedOperationException();
     }
 
 

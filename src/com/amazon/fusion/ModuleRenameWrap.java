@@ -1,4 +1,4 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -19,40 +19,40 @@ class ModuleRenameWrap
         myModule = module;
     }
 
+    Binding localResolveMaybe(String name)
+    {
+        return myModule.resolveProvidedName(name);
+    }
 
     @Override
-    Binding resolve(SyntaxSymbol identifier,
+    Binding resolve(String name,
                     Iterator<SyntaxWrap> moreWraps,
                     Set<Integer> returnMarks)
     {
-        Binding b;
+        Binding local = myModule.resolveProvidedName(name);
+        if (local != null) return local;
+
         if (moreWraps.hasNext())
         {
             SyntaxWrap nextWrap = moreWraps.next();
-            b = nextWrap.resolve(identifier, moreWraps, returnMarks);
-        }
-        else
-        {
-            b = null;
+            return nextWrap.resolve(name, moreWraps, returnMarks);
         }
 
-        if (b == null || b instanceof FreeBinding)
-        {
-            String name = identifier.stringValue();
-            b = myModule.resolveProvidedName(name);
-            if (b == null)
-            {
-                b = new FreeBinding(name);
-            }
-        }
+        return null;
+    }
 
-        return b;
+
+    @Override
+    Iterator<SyntaxWrap> iterator()
+    {
+        return null;
     }
 
 
     @Override
     public String toString()
     {
-        return "/* Module renames for " + myModule.identify() + " */";
+        String id = myModule.getIdentity().internString();
+        return "{{{Module renames for " + id + "}}}";
     }
 }

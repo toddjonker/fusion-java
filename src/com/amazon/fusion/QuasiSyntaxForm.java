@@ -3,7 +3,6 @@
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionWrite.safeWriteToString;
-import com.amazon.fusion.Namespace.TopBinding;
 import com.amazon.fusion.QuoteSyntaxForm.CompiledQuoteSyntax;
 
 final class QuasiSyntaxForm
@@ -19,11 +18,9 @@ final class QuasiSyntaxForm
 
         SyntaxSymbol id = (SyntaxSymbol) qsIdentifier;
         myQsBinding = id.resolve();
-        assert myQsBinding instanceof TopBinding;
 
         id = (SyntaxSymbol) usIdentifier;
         myUsBinding = id.resolve();
-        assert myUsBinding instanceof TopBinding;
     }
 
 
@@ -41,7 +38,8 @@ final class QuasiSyntaxForm
         SyntaxValue subform = stx.get(1);
         subform = expand(expander, env, subform, 0);
 
-        stx = SyntaxSexp.make(stx.getLocation(), stx.get(0), subform);
+        stx = SyntaxSexp.make(expander, stx.getLocation(),
+                              stx.get(0), subform);
         return stx;
     }
 
@@ -72,28 +70,32 @@ final class QuasiSyntaxForm
         if (first instanceof SyntaxSymbol)
         {
             // Be careful that we don't force a binding too early.
-            Binding binding = ((SyntaxSymbol)first).uncachedResolve();
-            binding = binding.originalBinding();
-
-            if (myUsBinding == binding)
+            Binding binding = ((SyntaxSymbol)first).uncachedResolveMaybe();
+            if (binding != null)
             {
-                check(stx).arityExact(2);
+                binding = binding.originalBinding();
 
-                if (depth < 1)
+                if (myUsBinding == binding)
                 {
-                    SyntaxValue subform = children[1];
-                    children[1] = expander.expandExpression(env, subform);
-                    stx = SyntaxSexp.make(stx.getLocation(), children);
-                    return stx;
+                    check(stx).arityExact(2);
+
+                    if (depth < 1)
+                    {
+                        SyntaxValue subform = children[1];
+                        children[1] = expander.expandExpression(env, subform);
+                        stx = SyntaxSexp.make(expander, stx.getLocation(),
+                                              children);
+                        return stx;
+                    }
+
+                    depth--;
                 }
+                else if (myQsBinding == binding)
+                {
+                    check(stx).arityExact(2);
 
-                depth--;
-            }
-            else if (myQsBinding == binding)
-            {
-                check(stx).arityExact(2);
-
-                depth++;
+                    depth++;
+                }
             }
         }
 
@@ -103,7 +105,7 @@ final class QuasiSyntaxForm
             children[i] = expand(expander, env, subform, depth);
         }
 
-        stx = SyntaxSexp.make(stx.getLocation(), children);
+        stx = SyntaxSexp.make(expander, stx.getLocation(), children);
         return stx;
     }
 
@@ -147,24 +149,27 @@ final class QuasiSyntaxForm
             SyntaxValue first = stx.get(0);
             if (first instanceof SyntaxSymbol)
             {
-                Binding binding = ((SyntaxSymbol)first).uncachedResolve();
-                binding = binding.originalBinding();
+                Binding binding = ((SyntaxSymbol)first).uncachedResolveMaybe();
+                if (binding != null)
+                {
+                    binding = binding.originalBinding();
 
-                if (myUsBinding == binding)
-                {
-                    if (depth == 0)
+                    if (myUsBinding == binding)
                     {
-                        SyntaxValue unquotedSyntax = stx.get(1);
-                        CompiledForm unquotedForm =
-                            eval.compile(env, unquotedSyntax);
-                        return new CompiledUnsyntax(unquotedSyntax,
-                                                    unquotedForm);
+                        if (depth == 0)
+                        {
+                            SyntaxValue unquotedSyntax = stx.get(1);
+                            CompiledForm unquotedForm =
+                                eval.compile(env, unquotedSyntax);
+                            return new CompiledUnsyntax(unquotedSyntax,
+                                                        unquotedForm);
+                        }
+                        depth--;
                     }
-                    depth--;
-                }
-                else if (myQsBinding == binding)
-                {
-                    depth++;
+                    else if (myQsBinding == binding)
+                    {
+                        depth++;
+                    }
                 }
             }
         }
@@ -218,7 +223,7 @@ final class QuasiSyntaxForm
                 // or unquote, which always return syntax.
                 children[i] = (SyntaxValue) child;
             }
-            return SyntaxSexp.make(myLocation, children);
+            return SyntaxSexp.make(eval, myLocation, children);
         }
     }
 

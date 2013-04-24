@@ -1,8 +1,8 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
-import static com.amazon.fusion.ModuleIdentity.intern;
+import static com.amazon.fusion.ModuleIdentity.BUILTIN_NAME_EXPECTATION;
 import com.amazon.ion.IonSystem;
 import com.amazon.ion.IonValue;
 import com.amazon.ion.ValueFactory;
@@ -24,13 +24,17 @@ final class StandardRuntime
 
         try
         {
-            Namespace topNs = new Namespace(myRegistry);
+            // This is the bootstrap top-level namespace, which starts out
+            // empty.  It becomes the initial value of current_namespace
+            // during global initialization.
+            Namespace topNs = new TopLevelNamespace(myRegistry);
 
             myGlobalState =
                 GlobalState.initialize(ionSystem, builder, myRegistry, topNs);
 
             myTopLevel =
-                new StandardTopLevel(myGlobalState, topNs, "/fusion/base",
+                new StandardTopLevel(myGlobalState, topNs,
+                                     getDefaultLanguage(),
                                      builder.isDocumenting());
         }
         catch (FusionException e)
@@ -50,6 +54,11 @@ final class StandardRuntime
     ModuleRegistry getDefaultRegistry()
     {
         return myRegistry;
+    }
+
+    String getDefaultLanguage()
+    {
+        return "/fusion/base";
     }
 
 
@@ -77,22 +86,21 @@ final class StandardRuntime
     public TopLevel makeTopLevel()
         throws FusionException
     {
-        return makeTopLevel("/fusion/base");
+        return makeTopLevel(getDefaultLanguage());
     }
 
 
     @Override
     public ModuleBuilder makeModuleBuilder(String moduleName)
     {
-        if (! moduleName.startsWith("#%") || moduleName.contains("/"))
+        if (! ModuleIdentity.isValidBuiltinName(moduleName))
         {
             String message =
-                "Built-in module names must start with '#%' and must not " +
-                "contain '/'.";
+                "Invalid built-in module name. " + BUILTIN_NAME_EXPECTATION;
             throw new IllegalArgumentException(message);
         }
 
-        ModuleIdentity id = intern(moduleName);
+        ModuleIdentity id = ModuleIdentity.internBuiltinName(moduleName);
         return new ModuleBuilderImpl(myRegistry, id);
     }
 

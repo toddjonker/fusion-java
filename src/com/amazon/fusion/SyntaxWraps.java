@@ -1,4 +1,4 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -8,13 +8,19 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
 
-class SyntaxWraps
+final class SyntaxWraps
 {
     private final SyntaxWrap[] myWraps;
 
     static SyntaxWraps make(SyntaxWrap initialWrap)
     {
         return new SyntaxWraps(initialWrap);
+    }
+
+    static SyntaxWraps make(SyntaxWrap... initialWraps)
+    {
+        assert initialWraps.length != 0;
+        return new SyntaxWraps(initialWraps);
     }
 
     private SyntaxWraps(SyntaxWrap initialWrap)
@@ -127,15 +133,73 @@ class SyntaxWraps
 
 
     /**
-     * @return not null
+     * @return null is equivalent to a {@link FreeBinding}.
      */
-    Binding resolve(SyntaxSymbol ident)
+    Binding resolve(String name)
     {
-        Iterator<SyntaxWrap> i = Arrays.asList(myWraps).iterator();
+        Iterator<SyntaxWrap> i =
+            new SplicingIterator(Arrays.asList(myWraps).iterator());
         Set<Integer> marks = new HashSet<Integer>();
 
         // We always have at least one wrap
         SyntaxWrap wrap = i.next();
-        return wrap.resolve(ident, i, marks);
+        return wrap.resolve(name, i, marks);
+    }
+
+    private static final class SplicingIterator
+        implements Iterator<SyntaxWrap>
+    {
+        private final Iterator<SyntaxWrap> myOuterWraps;
+        private Iterator<SyntaxWrap> mySplicedWraps;
+
+        private SplicingIterator(Iterator<SyntaxWrap> outerWraps)
+        {
+            myOuterWraps = outerWraps;
+        }
+
+        @Override
+        public boolean hasNext()
+        {
+            if (mySplicedWraps != null)
+            {
+                boolean hasNext = mySplicedWraps.hasNext();
+                if (hasNext) return true;
+                mySplicedWraps = null;
+            }
+
+            // This assumes the final outer-wrap isn't an empty composite!
+            // See below for more.
+            return myOuterWraps.hasNext();
+        }
+
+        @Override
+        public SyntaxWrap next()
+        {
+            SyntaxWrap next;
+            if (mySplicedWraps == null)
+            {
+                next = myOuterWraps.next();
+                Iterator<SyntaxWrap> spliced = next.iterator();
+                if (spliced == null)
+                {
+                    return next;
+                }
+
+                // If this isn't true, then hasNext above is wrong!
+                assert spliced.hasNext();
+                mySplicedWraps = spliced;
+            }
+
+            next = mySplicedWraps.next();
+            assert next.iterator() == null;
+
+            return next;
+        }
+
+        @Override
+        public void remove()
+        {
+            throw new UnsupportedOperationException();
+        }
     }
 }

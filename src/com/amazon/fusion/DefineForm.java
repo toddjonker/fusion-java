@@ -3,7 +3,7 @@
 package com.amazon.fusion;
 
 import static com.amazon.fusion.BindingDoc.COLLECT_DOCS_MARK;
-import com.amazon.fusion.Namespace.TopBinding;
+import com.amazon.fusion.Namespace.NsBinding;
 
 final class DefineForm
     extends SyntacticForm
@@ -77,8 +77,8 @@ final class DefineForm
         assert bodyLen > 0;
 
         SyntaxValue[] lambda = new SyntaxValue[2 + bodyLen];
-        lambda[0] = expander.getEvaluator().makeKernelIdentifier("lambda");
-        lambda[1] = SyntaxSexp.make(procFormals);
+        lambda[0] = expander.getGlobalState().myKernelLambdaIdentifier;
+        lambda[1] = SyntaxSexp.make(expander, procFormals);
         for (int p = 2, i = bodyStart; i < defineArity; p++, i++)
         {
             lambda[p] = origDefineElts[i];
@@ -91,20 +91,21 @@ final class DefineForm
         {
             newDefineElts[2] = origDefineElts[2];
         }
-        newDefineElts[2 + docOffset] = SyntaxSexp.make(lambda);
+        newDefineElts[2 + docOffset] =
+            SyntaxSexp.make(expander, lambda);
 
-        return SyntaxSexp.make(stx.getLocation(), newDefineElts);
+        return SyntaxSexp.make(expander, stx.getLocation(), newDefineElts);
     }
 
 
     @Override
-    SyntaxValue expand(Expander expander, Environment env, SyntaxSexp stx)
+    SyntaxValue expand(Expander expander, Environment env, SyntaxSexp origStx)
         throws FusionException
     {
         // Two phase expansion.
         // TODO rewrite this as a macro, replace this entire built-in form
         // with define_values.
-        stx = expandImplicitLambda(expander, stx);
+        SyntaxSexp stx = expandImplicitLambda(expander, origStx);
 
         SyntaxChecker check = check(stx);
         if (! (expander.isTopLevelContext() || expander.isModuleContext()))
@@ -123,15 +124,13 @@ final class DefineForm
         SyntaxSymbol identifier = check.requiredIdentifier(1);
 
         // If at module context, this has already been done.
-        if (! expander.isModuleContext())
+        if (expander.isTopLevelContext())
         {
-            // We need to strip off the module-level wrap that's already been
-            // applied to the identifier. Otherwise we'll loop forever trying
-            // to resolve it! This is a bit of a hack, really.
-            SyntaxSymbol stripped = identifier.stripImmediateEnvWrap(env);
             Namespace ns = env.namespace();
-            ns.predefine(stripped);
+            assert ns == env;
+            ns.predefine(identifier, origStx);
         }
+
 
         // Update the identifier with its binding.
         // This is just a way to pass the binding instance through to the
@@ -158,7 +157,7 @@ final class DefineForm
         SyntaxValue valueStx = stx.get(bodyPos);
         children[bodyPos] = expander.expandExpression(env, valueStx);
 
-        stx = SyntaxSexp.make(stx.getLocation(), children);
+        stx = SyntaxSexp.make(expander, stx.getLocation(), children);
         return stx;
     }
 
@@ -175,7 +174,7 @@ final class DefineForm
         CompiledForm valueForm = eval.compile(env, valueSource);
 
         SyntaxSymbol identifier = (SyntaxSymbol) stx.get(1);
-        TopBinding binding = (TopBinding) identifier.getBinding();
+        NsBinding binding = (NsBinding) identifier.getBinding();
         CompiledForm compiled = binding.compileDefine(eval, env, valueForm);
 
         if (arity != 3

@@ -3,7 +3,7 @@
 package com.amazon.fusion;
 
 import com.amazon.fusion.BindingDoc.Kind;
-import com.amazon.fusion.Namespace.TopBinding;
+import com.amazon.fusion.Namespace.NsBinding;
 import java.util.Collection;
 
 
@@ -13,6 +13,9 @@ final class ModuleBuilderImpl
     private final ModuleRegistry  myRegistry;
     private final ModuleNamespace myNamespace;
 
+    /**
+     * Prepares to build a module with no language.
+     */
     ModuleBuilderImpl(ModuleRegistry registry, ModuleIdentity moduleId)
     {
         myRegistry = registry;
@@ -21,11 +24,22 @@ final class ModuleBuilderImpl
 
     @Override
     public void define(String name, Object value)
+        throws FusionException
     {
         myNamespace.bind(name, value);
+
+        if (value instanceof FusionValue)
+        {
+            BindingDoc doc = ((FusionValue) value).document();
+            if (doc != null)
+            {
+                myNamespace.setDoc(name, doc);
+            }
+        }
     }
 
     void define(String name, Object value, String documentation)
+        throws FusionException
     {
         myNamespace.bind(name, value);
 
@@ -40,7 +54,7 @@ final class ModuleBuilderImpl
         ModuleStore store = new ModuleStore(myRegistry,
                                             myNamespace.extractValues(),
                                             myNamespace.extractBindingDocs());
-        Collection<TopBinding> bindings = myNamespace.getBindings();
+        Collection<NsBinding> bindings = myNamespace.getBindings();
 
         // TODO should we register the module?
         return new ModuleInstance(myNamespace.getModuleId(), store, bindings);

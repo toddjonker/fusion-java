@@ -1,6 +1,9 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
+
+import java.util.HashSet;
+import java.util.Set;
 
 
 final class BindingDoc
@@ -12,13 +15,15 @@ final class BindingDoc
 
     enum Kind { PROCEDURE, SYNTAX, CONSTANT }
 
-    final String myName;
-    final Kind   myKind;
+    private String myName;
+    private Kind   myKind;
     // TODO one-liner
     // TODO intro
     // TODO pairs of usage/body
-    final String myUsage;
-    final String myBody;
+    private String myUsage;
+    private final String myBody;
+    private final HashSet<ModuleIdentity> myProvidingModules = new HashSet<>();
+
 
     BindingDoc(String name, Kind kind, String usage, String body)
     {
@@ -26,5 +31,70 @@ final class BindingDoc
         myKind = kind;
         myUsage = usage;
         myBody = body;
+    }
+
+
+    String getName()
+    {
+        return myName;
+    }
+
+    void setName(String name)
+    {
+        assert myName == null;
+        myName = name;
+    }
+
+
+    Kind getKind()
+    {
+        return myKind;
+    }
+
+    void setKind(Kind kind)
+    {
+        assert myKind == null;
+        myKind = kind;
+    }
+
+
+    String getUsage()
+    {
+        if (myUsage != null && ! myUsage.startsWith("("))
+        {
+            StringBuilder buf = new StringBuilder();
+            buf.append('(');
+            buf.append(myName == null ? "_" : myName);
+            if (! myUsage.startsWith(" ")) buf.append(' ');
+            buf.append(myUsage);
+            buf.append(')');
+
+            myUsage = buf.toString();
+        }
+
+        return myUsage;
+    }
+
+    void setUsage(String usage)
+    {
+        assert myUsage == null;
+        myUsage = usage;
+    }
+
+
+    String getBody()
+    {
+        return myBody;
+    }
+
+
+    Set<ModuleIdentity> getProvidingModules()
+    {
+        return myProvidingModules;
+    }
+
+    void addProvidingModule(ModuleIdentity id)
+    {
+        myProvidingModules.add(id);
     }
 }

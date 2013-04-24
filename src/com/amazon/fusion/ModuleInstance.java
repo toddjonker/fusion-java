@@ -1,9 +1,9 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import com.amazon.fusion.ModuleNamespace.ModuleBinding;
-import com.amazon.fusion.Namespace.TopBinding;
+import com.amazon.fusion.Namespace.NsBinding;
 import com.amazon.ion.util.IonTextUtils;
 import java.io.IOException;
 import java.util.Collection;
@@ -49,12 +49,12 @@ final class ModuleInstance
      * Creates a module that {@code provide}s the given bindings.
      */
     ModuleInstance(ModuleIdentity identity, ModuleStore namespace,
-                   Collection<TopBinding> bindings)
+                   Collection<NsBinding> bindings)
         throws FusionException, ContractFailure
     {
         this(identity, /* docs */ null, namespace, bindings.size());
 
-        for (TopBinding binding : bindings)
+        for (NsBinding binding : bindings)
         {
             String name = binding.getName();
 
@@ -76,7 +76,7 @@ final class ModuleInstance
         for (SyntaxSymbol identifier : providedIdentifiers)
         {
             String  name    = identifier.stringValue();
-            Binding binding = identifier.resolve();
+            Binding binding = identifier.getBinding().originalBinding();
 
             myProvidedBindings.put(name, (ModuleBinding) binding);
         }
@@ -130,13 +130,26 @@ final class ModuleInstance
             {
                 FusionValue fv = (FusionValue) value;
                 doc = fv.document();
-                if (doc != null && ! name.equals(doc.myName))
+                if (doc != null)
                 {
-                    String msg =
-                        "WARNING: potential documented-name mismatch in " +
-                        myIdentity + ": " +
-                        name + " vs " + doc.myName;
-                    System.err.println(msg);
+                    {
+                        String msg =
+                            "WARNING: using doc-on-value for " +
+                                myIdentity.internString() + ' ' + name;
+                        System.err.println(msg);
+                    }
+
+                    if (! name.equals(doc.getName()))
+                    {
+                        String msg =
+                            "WARNING: potential documented-name mismatch in " +
+                            myIdentity.internString() + ": " +
+                            name + " vs " + doc.getName();
+                        System.err.println(msg);
+                    }
+
+                    doc.addProvidingModule(binding.myModuleId);
+                    doc.addProvidingModule(myIdentity);
                 }
             }
         }
@@ -145,7 +158,7 @@ final class ModuleInstance
 
     BindingDoc documentProvidedName(ModuleBinding binding)
     {
-        BindingDoc doc = null;
+        BindingDoc doc;
 
         if (binding.myModuleId == myIdentity)
         {
@@ -158,6 +171,11 @@ final class ModuleInstance
             assert module != null
                 : "Module not found: " + binding.myModuleId;
             doc = module.myNamespace.document(binding.myAddress);
+        }
+
+        if (doc != null)
+        {
+            doc.addProvidingModule(myIdentity);
         }
 
         return doc;

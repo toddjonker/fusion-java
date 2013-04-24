@@ -30,7 +30,7 @@ final class SetForm
         SyntaxValue valueExpr = stx.get(2);
         children[2] = expander.expandExpression(env, valueExpr);
 
-        stx = SyntaxSexp.make(stx.getLocation(), children);
+        stx = SyntaxSexp.make(expander, stx.getLocation(), children);
         return stx;
     }
 
@@ -42,7 +42,7 @@ final class SetForm
         CompiledForm valueForm = eval.compile(env, stx.get(2));
 
         SyntaxSymbol id = (SyntaxSymbol) stx.get(1);
-        Binding binding = id.resolve();
+        Binding binding = id.getBinding();
 
         return binding.compileSet(eval, env, valueForm);
     }
