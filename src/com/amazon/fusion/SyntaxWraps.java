@@ -19,7 +19,6 @@ final class SyntaxWraps
 
     static SyntaxWraps make(SyntaxWrap... initialWraps)
     {
-        assert initialWraps.length != 0;
         return new SyntaxWraps(initialWraps);
     }
 
@@ -67,41 +66,6 @@ final class SyntaxWraps
     }
 
 
-    SyntaxWraps stripImmediateEnvWrap(Environment env)
-    {
-        int length = myWraps.length;
-
-        int skipCount = 0;
-        for (int i = 0; i < length; i++)
-        {
-            SyntaxWrap wrap = myWraps[i];
-            if (wrap instanceof EnvironmentRenameWrap)
-            {
-                EnvironmentRenameWrap erw = (EnvironmentRenameWrap) wrap;
-                if (erw.getEnvironment() == env)
-                {
-                    assert skipCount == 0;
-                    skipCount = i + 1;
-                    // We continue to check all the wraps, just for sanity
-                    // since I don't really understand exactly what should
-                    // happen here.
-                }
-            }
-        }
-
-        if (skipCount == 0) return this;
-
-        int newLength = length - skipCount;
-        if (newLength == 0) return null;
-
-        if (newLength == 1) return SyntaxWraps.make(myWraps[skipCount]);
-
-        SyntaxWrap[] stripped = Arrays.copyOfRange(myWraps, skipCount, length);
-        assert stripped.length == newLength;
-        return new SyntaxWraps(stripped);
-    }
-
-
     /**
      * @return not null.
      */
@@ -141,9 +105,31 @@ final class SyntaxWraps
             new SplicingIterator(Arrays.asList(myWraps).iterator());
         Set<Integer> marks = new HashSet<Integer>();
 
-        // We always have at least one wrap
-        SyntaxWrap wrap = i.next();
-        return wrap.resolve(name, i, marks);
+        if (i.hasNext())
+        {
+            SyntaxWrap wrap = i.next();
+            return wrap.resolve(name, i, marks);
+        }
+
+        return null;
+    }
+
+    /**
+     * @return null is equivalent to a {@link FreeBinding}.
+     */
+    Binding resolveTop(String name)
+    {
+        Iterator<SyntaxWrap> i =
+            new SplicingIterator(Arrays.asList(myWraps).iterator());
+        Set<Integer> marks = new HashSet<Integer>();
+
+        if (i.hasNext())
+        {
+            SyntaxWrap wrap = i.next();
+            return wrap.resolveTop(name, i, marks);
+        }
+
+        return null;
     }
 
     private static final class SplicingIterator

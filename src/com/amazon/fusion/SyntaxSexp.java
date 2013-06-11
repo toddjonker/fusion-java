@@ -142,6 +142,24 @@ final class SyntaxSexp
 
     //========================================================================
 
+    /**
+     * Finds the binding for the leading symbol in the sexp, or null if the
+     * sexp doesn't start with a symbol.
+     */
+    Binding firstBinding()
+    {
+        if (size() != 0)
+        {
+            SyntaxValue first = get(0);
+            if (first instanceof SyntaxSymbol)
+            {
+                Binding binding = ((SyntaxSymbol)first).uncachedResolve();
+                return binding.originalBinding();
+            }
+        }
+        return null;
+    }
+
 
     @Override
     SyntaxValue doExpand(Expander expander, Environment env)
@@ -196,6 +214,16 @@ final class SyntaxSexp
     }
 
 
+    /**
+     * This is actually an incomplete implementation of something like Racket's
+     * {@code local-expand}. Partial expansion is defined based on core syntax
+     * forms, not on a given stop-list.
+     *
+     * @see Expander#partialExpand(Environment, SyntaxValue)
+     *
+     * @deprecated No longer in use but I'm not ready to delete it.
+     */
+    @Deprecated
     final SyntaxValue partialExpand(Expander expander, Environment env,
                                     IdentityHashMap<Binding, Object> stops)
         throws FusionException
@@ -211,8 +239,9 @@ final class SyntaxSexp
         {
             SyntaxSymbol maybeMacro = (SyntaxSymbol) first;
             SyntaxValue prepared = expander.expand(env, maybeMacro);
-            // Make sure we don't have to structurally change this sexp
-            assert prepared == maybeMacro;
+
+            // Identifier has been expanded to #%top, we can stop.
+            if (prepared != maybeMacro) return this;
 
             Binding binding = maybeMacro.getBinding();
             if (stops.get(binding) != null)

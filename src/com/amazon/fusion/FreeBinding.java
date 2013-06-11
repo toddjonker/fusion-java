@@ -63,6 +63,14 @@ final class FreeBinding implements Binding
     }
 
     @Override
+    public CompiledForm compileTopReference(Evaluator eval, Environment env,
+                                            SyntaxSymbol id)
+        throws FusionException
+    {
+        throw new UnboundIdentifierFailure(null, id);
+    }
+
+    @Override
     public CompiledForm compileSet(Evaluator eval, Environment env,
                                    CompiledForm valueForm)
         throws FusionException

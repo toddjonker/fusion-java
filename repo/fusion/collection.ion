@@ -5,13 +5,16 @@
   '''
 Generic operations over collection types.
 
-The built-in collection types are [list](list.html), [sexp](sexp.html), and
-[struct](struct.html).
+The built-in collection types are [list](fusion/list.html),
+[sexp](fusion/sexp.html), and [struct](fusion/struct.html).
+
+See also [sequence](fusion/sequence.html).
   '''
 
-  (use '/fusion/experimental/defines')
-  (use '/fusion/unsafe/struct')
-  (use '/fusion/void')
+  (require
+    "/fusion/experimental/defines"
+    "/fusion/unsafe/struct"
+    "/fusion/void")
 
 
   (defpub_j size "com.amazon.fusion.SizeProc")
@@ -38,7 +41,7 @@ When `collection` is a sequence, the elements are visited in order.
                                     elt_result))
              collection)
            result))
-        (true    // TODO FUSION-86 optimize for list vs sexp
+        (true    // TODO FUSION-141 optimize for list vs sexp
          (let [(len (size collection))]
            (let loop [(i 0)]
              (if (= i len)
@@ -78,7 +81,7 @@ When `collection` is a sequence, the elements are visited in order.
                                     elt_result))
              collection)
            result))
-        (true    // TODO FUSION-86 optimize for list vs sexp
+        (true    // TODO FUSION-141 optimize for list vs sexp
          (let [(len (size collection))]
            (let loop [(i 0)]
              (if (= i len)
@@ -109,7 +112,7 @@ When `collection` is a sequence, the elements are visited in order.
            (lambda (key elt) (proc elt) false)
            collection)
          (void))
-        (true    // TODO FUSION-86 optimize for list vs sexp
+        (true    // TODO FUSION-141 optimize for list vs sexp
          (let [(len (size collection))]
            (let loop [(i 0)]
              (if (= i len)

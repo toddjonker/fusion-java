@@ -26,13 +26,13 @@ final class LetForm
      * {@code ((letrec ((f (lambda (v ...) b ...))) f) e ...)}
      */
     @Override
-    SyntaxValue expandOnce(Expander expander, SyntaxSexp stx)
+    SyntaxValue doExpandOnce(Expander expander, SyntaxSexp stx)
         throws SyntaxFailure
     {
         SyntaxChecker check = check(stx);
         final int letExprSize = check.arityAtLeast(3);
 
-        SyntaxSymbol loopName = checkForName(stx);
+        SyntaxSymbol loopName = determineLoopName(check);
         int bindingPos = (loopName == null ? 1 : 2);
         if (letExprSize < bindingPos + 2)
         {
@@ -101,11 +101,11 @@ final class LetForm
         return SyntaxSexp.make(expander, stx.getLocation(), subforms);
     }
 
-    SyntaxSymbol checkForName(SyntaxSexp letExpr)
+    SyntaxSymbol determineLoopName(SyntaxChecker check)
         throws SyntaxFailure
     {
         SyntaxValue maybeName =
-            requiredForm("name or binding pairs", 1, letExpr);
+            check.requiredForm("loop name or binding pairs", 1);
         if (maybeName.getType() == SyntaxValue.Type.SYMBOL)
         {
             return (SyntaxSymbol) maybeName;

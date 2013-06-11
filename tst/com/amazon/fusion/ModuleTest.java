@@ -1,8 +1,7 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
-import static org.junit.Assert.assertSame;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -22,10 +21,10 @@ public class ModuleTest
     public void testBadLanguageSymbolInTopLevelModule()
         throws Exception
     {
-        eval("(module m 'no_such_module' (define x 1))");
+        eval("(module m '/no_such_module' (define x 1))");
     }
 
-    @Test(expected = ModuleNotFoundFailure.class)
+    @Test(expected = SyntaxFailure.class)
     public void testBadQuotedLanguageSymbolInTopLevelModule()
         throws Exception
     {
@@ -39,27 +38,54 @@ public class ModuleTest
         eval("(module m \"no_such_module\" (define x 1))");
     }
 
+    @Test(expected = ModuleNotFoundFailure.class)
+    public void testRelativeLanguageStringInTopLevelModule()
+        throws Exception
+    {
+        // TODO FUSION-151 this isn't well-defined yet and should be rejected.
+        eval("(module m \"fusion\" (define x 1))");
+    }
+
+    @Test(expected = ModuleNotFoundFailure.class)
+    public void testTopLevelLanguageInTopLevelModule()
+        throws Exception
+    {
+        eval("(module lang '/fusion/base')");
+
+        // TODO FUSION-151 this isn't well-defined yet and should be rejected.
+        eval("(module m \"lang\" (define x 1))");
+    }
+
+    // TODO similar tests for 'use' to the language tests above
+
+
     @Test(expected = FusionException.class) // ModuleNotFoundFailure gets wrapped
     public void testBadLanguageSymbolInRepoModule()
         throws Exception
     {
-        eval("(use 'module/bad_lang_symbol')");
+        eval("(require '/module/bad_lang_symbol')");
+    }
+
+    @Test(expected = FusionException.class) // ModuleNotFoundFailure gets wrapped
+    public void testBadLanguageSymbolInRepoModule2()
+        throws Exception
+    {
+        eval("(require \"/module/bad_lang_symbol\")");
     }
 
     @Test(expected = FusionException.class) // ModuleNotFoundFailure gets wrapped
     public void testBadQuotedLanguageSymbolInRepoModule()
         throws Exception
     {
-        eval("(use 'module/bad_quoted_lang_symbol')");
+        eval("(require '/module/bad_quoted_lang_symbol')");
     }
 
-    // TODO similar tests for 'use'
 
     @Test(expected = UnboundIdentifierFailure.class)
     public void testUseModuleWithNoProvides()
         throws Exception
     {
-        eval("(use 'NoProvides')");
+        eval("(require '/NoProvides')");
         eval("X");
     }
 
@@ -68,28 +94,28 @@ public class ModuleTest
     public void testDuplicateDefinedName()
         throws Exception
     {
-        eval("(use '/module/duplicate_defined_name')");
+        eval("(require '/module/duplicate_defined_name')");
     }
 
     @Test(expected = FusionException.class)
     public void testDuplicateImportedName()
         throws Exception
     {
-        eval("(use '/module/duplicate_imported_name')");
+        eval("(require \"/module/duplicate_imported_name\")");
     }
 
     @Test(expected = FusionException.class)
     public void testDefineImportedName()
         throws Exception
     {
-        eval("(use '/module/define_imported_name')");
+        eval("(require '/module/define_imported_name')");
     }
 
     @Test(expected = FusionException.class)
     public void testImportDefinedName()
         throws Exception
     {
-        eval("(use '/module/import_defined_name')");
+        eval("(require '/module/import_defined_name')");
     }
 
 
@@ -97,7 +123,7 @@ public class ModuleTest
     public void testIntialModuleImportsWithNoProvides()
         throws Exception
     {
-        eval("(module M 'NoProvides' X)");
+        eval("(module M '/NoProvides' X)");
     }
 
 
@@ -115,34 +141,21 @@ public class ModuleTest
         eval("(use \"tst-data/trivialDefine.ion\")");
     }
 
-    @Test
-    public void testTransitiveLoad()
-        throws Exception
-    {
-        eval("(use root_module)");
-        assertEval(437, "leaf_var");
-        Object rootFn = eval("root_fn");
-        Object midFn  = eval("mid_fn");
-        Object leafFn = eval("leaf_fn");
-        assertSame(leafFn, rootFn);
-        assertSame(leafFn, midFn);
-    }
-
-    @Test
+    @Test @Deprecated  // TODO FUSION-133 remove 'use'
     public void testLoadFusionBase()
         throws Exception
     {
         eval("(use '/fusion/base')");
     }
 
-    @Test
+    @Test @Deprecated  // TODO FUSION-133 remove 'use'
     public void testLoadFusionBaseAsLib()
         throws Exception
     {
         eval("(use (lib \"/fusion/base\"))");
     }
 
-    @Test
+    @Test @Deprecated  // TODO FUSION-133 remove 'use'
     public void testRepositoryLoad()
         throws Exception
     {
@@ -150,7 +163,7 @@ public class ModuleTest
         assertEval("[]", "(map + [])");
     }
 
-    @Test
+    @Test @Deprecated  // TODO FUSION-133 remove 'use'
     public void testUseSyntax()
         throws Exception
     {
@@ -163,6 +176,35 @@ public class ModuleTest
     }
 
     @Test
+    public void testBadRequireSyntax()
+        throws Exception
+    {
+        expectSyntaxFailure("(require)");
+        expectSyntaxFailure("(require {})");
+        expectSyntaxFailure("(require ())");
+        expectSyntaxFailure("(require (lib))");
+        expectSyntaxFailure("(require (lib \"/fusion/list\"))");
+    }
+
+    @Test
+    public void testRequireUnderTop()
+        throws Exception
+    {
+        String code =
+            "(module m '/fusion/base'" +
+            "  (if true (require '/fusion/list') false))";
+        expectSyntaxFailure(code);
+    }
+
+    /** Traps an infinite-loop bug in partial expansion. */
+    @Test(expected = FusionException.class)
+    public void testBadSexpAtModuleLevel()
+        throws Exception
+    {
+        eval("(module m '/fusion/base' (1))");
+    }
+
+    @Test
     public void testModuleAtTopLevel()
         throws Exception
     {
@@ -172,9 +214,23 @@ public class ModuleTest
              "  (provide M N))");
         expectSyntaxFailure("M");
 
-        expectFusionException("(use mod)");
+        expectFusionException("(use mod)"); // TODO FUSION-133 remove 'use'
 
-        eval("(use (quote mod))");
+        eval("(require mod)");
         assertEval(1054, "M");
+    }
+
+    /**
+     * We shouldn't fail `provide` at expand-time, since that may hide the
+     * compile-time errors that caused provide to fail.
+     */
+    @Test(expected=UnboundIdentifierFailure.class)
+    public void testProvideFailsLate()
+        throws Exception
+    {
+        eval("(module x '/fusion/base'" +
+             "  (require '/fusion/syntax')" +
+             "  (define_syntax broken (lambda (s) x))" +
+             "  (provide broken))");
     }
 }

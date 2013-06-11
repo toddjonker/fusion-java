@@ -2,12 +2,15 @@
 
 (module base '/fusion/private/builtins'
 
-  (use '/fusion/syntax')
-  (use '/fusion/experimental/defines')
+  (require
+    "/fusion/experimental/defines"
+    "/fusion/syntax")
 
 
-  // Pass-through bindings from #%kernel
-  (provide begin define if lambda letrec module use)
+  // Pass-through bindings from kernel
+  // TODO FUSION-133 remove `use`
+  (provide all_defined_out begin define if lambda letrec module provide
+    require use)
   (provide is_bool is_int is_float is_decimal is_timestamp is_symbol
       is_string is_clob is_blob is_list is_sexp is_struct)
   // Note that there's no is_null type checker, since that's used to
@@ -15,7 +18,7 @@
 
 
   // Pass-through bindings from builtins
-  (provide assert for_list let let_values quote set)
+  (provide assert for_list let let_values quote set '#%top')
   (provide . apply concatenate exit is_null is_procedure not
     raise_argument_error raise_result_error
     to_int to_string)
@@ -25,13 +28,13 @@
   // TODO FUSION-95 these bindings seem out of place:
   //  assert for_list concatenate to_int to_string raise_*
 
-  (use '/fusion/private/compare')
+  (require "/fusion/private/compare")
   (provide < <= = >= >)
 
-  (use '/fusion/number')
+  (require "/fusion/number")
   (provide + - * /)
 
-  (use '/fusion/void')
+  (require "/fusion/void")
   (provide is_void void)
 
 

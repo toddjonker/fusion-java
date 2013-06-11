@@ -3,6 +3,8 @@
 package com.amazon.fusion;
 
 import com.amazon.fusion.LanguageWrap.LanguageBinding;
+import java.util.Iterator;
+import java.util.Set;
 
 
 /**
@@ -60,6 +62,18 @@ class ModuleNamespace
         }
 
         @Override
+        public CompiledForm compileTopReference(Evaluator eval,
+                                                Environment env,
+                                                SyntaxSymbol id)
+            throws FusionException
+        {
+            // We should never get here.
+            String message =
+                "#%top not implemented for module binding: " + this;
+            throw new SyntaxFailure("#%top", message, id);
+        }
+
+        @Override
         public CompiledForm compileReference(Evaluator eval, Environment env)
             throws FusionException
         {
@@ -83,10 +97,41 @@ class ModuleNamespace
         @Override
         public String toString()
         {
-            return "{{{ModuleBinding " + myModuleId + ' ' + getName() + "}}}";
+            return "{{{ModuleBinding " + myModuleId.internString()
+                + ' ' + getIdentifier().debugString() + "}}}";
         }
     }
 
+
+    private static final class ModuleWrap
+        extends EnvironmentRenameWrap
+    {
+        ModuleWrap(ModuleNamespace ns)
+        {
+            super(ns);
+        }
+
+        @Override
+        Binding resolveTop(String name,
+                           Iterator<SyntaxWrap> moreWraps,
+                           Set<Integer> returnMarks)
+        {
+            if (moreWraps.hasNext())
+            {
+                SyntaxWrap nextWrap = moreWraps.next();
+                return nextWrap.resolve(name, moreWraps, returnMarks);
+            }
+            return null;
+        }
+
+        @Override
+        public String toString()
+        {
+            String name =
+                ((ModuleNamespace)getEnvironment()).myModuleId.internString();
+            return "{{{ModuleWrap " + name + "}}}";
+        }
+    }
 
     private final ModuleIdentity myModuleId;
 
@@ -140,7 +185,7 @@ class ModuleNamespace
         // That's because it breaks {@link SyntaxWraps#stripImmediateEnvWrap}.
         // Also, this structure lets up lookup bindings in the module first
         // before proceeding on to imports and the language.
-        addWrap(new EnvironmentRenameWrap(this));
+        addWrap(new ModuleWrap(this));
     }
 
 
@@ -167,29 +212,37 @@ class ModuleNamespace
 
 
     @Override
-    NsBinding predefine(SyntaxSymbol identifier, SyntaxValue formForErrors)
+    SyntaxSymbol predefine(SyntaxSymbol identifier, SyntaxValue formForErrors)
         throws FusionException
     {
+        // Don't cache the binding! The symbol instance may also be in use as
+        // a reference to this binding (due to a macro expansion), in which
+        // case this result is not correct for that reference.
         Binding oldBinding = identifier.uncachedResolveMaybe();
         if (oldBinding == null ||
-            oldBinding instanceof FreeBinding ||
-            oldBinding instanceof LanguageBinding)
+            oldBinding instanceof FreeBinding)
         {
-            // We need to strip off the namespace-level wrap that's already been
-            // applied to the identifier. Otherwise we'll loop forever trying
-            // to resolve it! This is a bit of a hack, really.
-            identifier = identifier.stripImmediateEnvWrap(this);
-
-            return addBinding(identifier);
+            identifier = identifier.copyAndResolveTop();
+        }
+        else if (oldBinding instanceof LanguageBinding)
+        {
+            // Visible binding is from our language, we can shadow it.
+            // Again, be careful not to cache a binding in the original id.
+            identifier = identifier.copyReplacingBinding(oldBinding);
+        }
+        else // there's an imported binding
+        {
+            String name = identifier.stringValue();
+            throw new AmbiguousBindingFailure(null, name, formForErrors);
         }
 
-        String name = identifier.stringValue();
-        throw new AmbiguousBindingFailure(null, name, formForErrors);
+        NsBinding b = addBinding(identifier);
+        return identifier.copyReplacingBinding(b);
     }
 
 
     @Override
-    void use(ModuleInstance module)
+    void require(ModuleInstance module)
         throws FusionException
     {
         // Validate that we aren't importing a duplicate name.
@@ -200,7 +253,7 @@ class ModuleNamespace
                 && ! (oldBinding instanceof FreeBinding)
                 && ! oldBinding.sameTarget(module.resolveProvidedName(name)))
             {
-                throw new AmbiguousBindingFailure("use", name);
+                throw new AmbiguousBindingFailure(GlobalState.USE, name);
             }
         }
 

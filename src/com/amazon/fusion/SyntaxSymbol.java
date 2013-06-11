@@ -38,6 +38,10 @@ final class SyntaxSymbol
 
     final SyntaxWraps myWraps;
 
+    /**
+     * @param anns the new instance assumes ownership of the array and
+     * it must not be modified later. Must not be null.
+     */
     private SyntaxSymbol(String name, String[] anns, SourceLocation loc,
                          SyntaxWraps wraps)
     {
@@ -74,13 +78,14 @@ final class SyntaxSymbol
         return copy;
     }
 
-    SyntaxSymbol stripImmediateEnvWrap(Environment env)
+    SyntaxSymbol copyReplacingBinding(Binding binding)
     {
-        if (myWraps == null) return this;
-        SyntaxWraps wraps = myWraps.stripImmediateEnvWrap(env);
-        if (wraps == myWraps) return this;
-        return copyReplacingWraps(wraps);
+        SyntaxSymbol copy =
+            new SyntaxSymbol(myText, getAnnotations(), getLocation(), myWraps);
+        copy.myBinding = binding;
+        return copy;
     }
+
 
     @Override
     Type getType()
@@ -215,6 +220,27 @@ final class SyntaxSymbol
 
 
     /**
+     * Copies this identifier, caching a top-resolved binding.
+     * @return not null.
+     */
+    SyntaxSymbol copyAndResolveTop()
+    {
+        Binding b = null;
+        if (myWraps != null)
+        {
+            String name = stringValue();
+            b = myWraps.resolveTop(name);
+        }
+        if (b == null)
+        {
+            b = new FreeBinding(stringValue());
+        }
+
+        return copyReplacingBinding(b);
+    }
+
+
+    /**
      * Determines whether this identifier resolves to a {@link FreeBinding}
      * with the given name and marks.
      */
@@ -289,11 +315,10 @@ final class SyntaxSymbol
 
     @Override
     SyntaxValue doExpand(Expander expander, Environment env)
-        throws SyntaxFailure
+        throws FusionException
     {
         if (myBinding == null)        // Otherwise we've already been expanded
         {
-            // TODO FUSION-114 this should happen in resolve()
             if (myText == null)
             {
                 throw new SyntaxFailure(null,
@@ -302,6 +327,23 @@ final class SyntaxSymbol
             }
 
             resolve();
+
+            if (myBinding instanceof FreeBinding)
+            {
+                SyntaxSymbol top =
+                    new SyntaxSymbol("#%top", EMPTY_STRING_ARRAY,
+                                     null, myWraps);
+                if (top.resolve() instanceof FreeBinding)
+                {
+                    throw new UnboundIdentifierFailure(myText, this);
+                }
+
+                assert getAnnotations().length == 0;
+                SyntaxSexp topExpr = SyntaxSexp.make(expander, top, this);
+
+                // TODO TAIL
+                return expander.expandExpression(env, topExpr);
+            }
         }
 
         return this;
@@ -336,6 +378,17 @@ final class SyntaxSymbol
         writer.writeSymbol(myText);
     }
 
+    String debugString()
+    {
+        String base = toString();
+        Set<Integer> marks = this.computeMarks();
+        if (marks.isEmpty()) return base;
+        for (Integer mark : marks)
+        {
+            base += "#" + mark;
+        }
+        return base;
+    }
 
     //========================================================================
 

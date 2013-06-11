@@ -4,13 +4,13 @@ package com.amazon.fusion;
 
 import static com.amazon.fusion.BindingDoc.COLLECT_DOCS_MARK;
 import static com.amazon.fusion.FusionEval.evalSyntax;
-import static com.amazon.ion.util.IonTextUtils.printQuotedSymbol;
-import static java.lang.Boolean.TRUE;
+import static com.amazon.fusion.GlobalState.DEFINE_SYNTAX;
+import static com.amazon.fusion.ModuleIdentity.isValidAbsoluteModulePath;
 import java.util.ArrayList;
-import java.util.IdentityHashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
-import java.util.Map;
+import java.util.Set;
 
 /**
  * @see <a href="http://docs.racket-lang.org/reference/module.html">Racket
@@ -26,22 +26,28 @@ final class ModuleForm
                DynamicParameter currentModuleDeclareName)
     {
         //    "                                                                               |
-        super("name body ...+",
-              "Declares a module containing the given body. The NAME must be a symbol.");
+        super("name language body ...+",
+              "Declares a module containing the given body. The `name` must be a symbol; it is\n" +
+              "ignored when loading a top-level module.\n" +
+              "\n" +
+              "The `language` must be an absolute [module path][]. The denoted module is\n" +
+              "instantiated and all of its `provide`d bindings are immediately imported.  This\n" +
+              "\"bootstraps\" the module with a set of bindings that form the base semantics\n" +
+              "for the body.  Unlike bindings that are `require`d, these bindings can be\n" +
+              "shadowed by module-level definitions and by `require` statements.\n" +
+              "\n" +
+              "When compiling a module, the `body` forms are partially macro-expanded in\n" +
+              "order to discover certain core forms like `require` and `provide`.  The former\n" +
+              "are handled immediately, before other forms.  The latter are handled _after_\n" +
+              "all other forms.\n" +
+              "At module level, the elements within `begin` forms are spliced into the\n" +
+              "enclosing module body, replacing the single `begin` form with its elements.\n" +
+              "This effectively enables module-level macro uses to expand into multiple forms.\n" +
+              "\n" +
+              "[module path]: module.html#ref");
 
         myCurrentModuleDeclareName = currentModuleDeclareName;
         myModuleNameResolver = moduleNameResolver;
-    }
-
-
-    private Binding stopBinding(ModuleInstance kernel,
-                                Map<Binding, Object> stops,
-                                String name)
-    {
-        Binding b = kernel.resolveProvidedName(name).originalBinding();
-        assert b != null;
-        stops.put(b, TRUE);
-        return b;
     }
 
 
@@ -56,31 +62,46 @@ final class ModuleForm
             throw check.failure("`module` declaration not at top-level");
         }
 
-        Evaluator eval = expander.getEvaluator();
-        ModuleInstance kernel = expander.getKernel();
 
-        // TODO precompute this?
-        IdentityHashMap<Binding, Object> stops =
-            new IdentityHashMap<Binding, Object>();
-        Binding defineBinding       = stopBinding(kernel, stops, "define");
-        Binding defineSyntaxBinding = stopBinding(kernel, stops, "define_syntax");
-        Binding useSyntaxBinding    = stopBinding(kernel, stops, "use");
-        Binding beginBinding        = stopBinding(kernel, stops, "begin");
+        final GlobalState globals = expander.getGlobalState();
+        final Evaluator   eval    = expander.getEvaluator();
 
         SyntaxSymbol moduleNameSymbol = check.requiredSymbol("module name", 1);
         ModuleIdentity.validateLocalName(moduleNameSymbol);
 
         ModuleRegistry registry = envOutsideModule.namespace().getRegistry();
 
+        ModuleIdentity id;
+        try
+        {
+            id = determineIdentity(eval, moduleNameSymbol);
+        }
+        catch (FusionException e)
+        {
+            String message =
+                "Error determining module identity: " + e.getMessage();
+            SyntaxFailure ex = check.failure(message);
+            ex.initCause(e);
+            throw ex;
+        }
+
         ModuleIdentity initialBindingsId;
         ModuleInstance language;
         {
-            SyntaxValue initialBindingsStx =
-                check.requiredForm("initial module path", 2);
+            String path = check.requiredText("initial module path", 2);
+            SyntaxValue initialBindingsStx = source.get(2);
+
+            if (! isValidAbsoluteModulePath(path))
+            {
+                String message = "Module path for language must be absolute";
+                throw new ModuleNotFoundFailure(message, initialBindingsStx);
+            }
+
             try
             {
                 initialBindingsId =
-                    myModuleNameResolver.resolve(eval, initialBindingsStx);
+                    myModuleNameResolver.resolve(eval, id, initialBindingsStx,
+                                                 true /*load it*/);
                 language = registry.lookup(initialBindingsId);
                 assert language != null;  // Otherwise resolve should fail
             }
@@ -102,21 +123,7 @@ final class ModuleForm
         }
 
         // The new namespace shares the registry of current-namespace
-        ModuleIdentity id;
-        try
-        {
-            id = determineIdentity(eval, moduleNameSymbol);
-        }
-        catch (FusionException e)
-        {
-            String message =
-                "Error determining module identity: " + e.getMessage();
-            SyntaxFailure ex = check.failure(message);
-            ex.initCause(e);
-            throw ex;
-        }
-
-        Namespace moduleNamespace =
+        ModuleNamespace moduleNamespace =
             new ModuleNamespace(registry, language, id);
 
         // TODO handle #%module-begin and #%plain-module-begin
@@ -130,11 +137,11 @@ final class ModuleForm
         // imports, so we don't have to backtrack and add more wraps to
         // earlier forms.  Or maybe scan for the imports first?
 
-        ArrayList<SyntaxSexp> provideForms = new ArrayList<SyntaxSexp>();
-        ArrayList<SyntaxValue> otherForms = new ArrayList<SyntaxValue>();
-        ArrayList<Boolean> preparedFormFlags = new ArrayList<Boolean>();
+        ArrayList<SyntaxSexp>  provideForms      = new ArrayList<>();
+        ArrayList<SyntaxValue> otherForms        = new ArrayList<>();
+        ArrayList<Boolean>     preparedFormFlags = new ArrayList<>();
 
-        LinkedList<SyntaxValue> forms = new LinkedList<SyntaxValue>();
+        LinkedList<SyntaxValue> forms = new LinkedList<>();
         source.extract(forms, 3);
 
         int formsAlreadyWrapped = 0;
@@ -152,90 +159,83 @@ final class ModuleForm
                 formsAlreadyWrapped--;
             }
 
-            SyntaxSexp provide = formIsProvide(form);
-            if (provide != null)
+            boolean formIsPrepared = false;
+
+            SyntaxValue expanded =
+                expander.partialExpand(moduleNamespace, form);
+
+            if (expanded instanceof SyntaxSexp)
             {
-                provideForms.add(provide);
-            }
-            else
-            {
-                boolean formIsPrepared = false;
-                SyntaxValue expanded;
-                if (form instanceof SyntaxSexp)
+                SyntaxSexp sexp = (SyntaxSexp)expanded;
+                Binding binding = sexp.firstBinding();
+
+                if (binding == globals.myKernelDefineBinding)
                 {
-                    expanded =
-                        ((SyntaxSexp)form).partialExpand(expander,
-                                                         moduleNamespace,
-                                                         stops);
-                    if (expanded instanceof SyntaxSexp)
+                    expanded = DefineForm.predefine(eval, moduleNamespace,
+                                                    sexp, form);
+                }
+                else if (binding == globals.myKernelDefineSyntaxBinding)
+                {
+                    try
                     {
-                        SyntaxSexp sexp = (SyntaxSexp)expanded;
-                        Binding binding = firstBinding(sexp);
-
-                        if (binding == defineBinding)
-                        {
-                            SyntaxSymbol identifier =
-                                DefineForm.boundIdentifier(expander.getEvaluator(),
-                                                           moduleNamespace,
-                                                           sexp);
-                            moduleNamespace.predefine(identifier, form);
-                        }
-                        else if (binding == defineSyntaxBinding)
-                        {
-                            try
-                            {
-                                expanded =
-                                    expander.expand(moduleNamespace, expanded);
-                                // TODO this is getting compiled twice
-                                CompiledForm compiled =
-                                    eval.compile(moduleNamespace, expanded);
-                                eval.eval(moduleNamespace, compiled);
-                            }
-                            catch (FusionException e)
-                            {
-                                String message = e.getMessage();
-                                throw new SyntaxFailure("define_syntax",
-                                                        message, form);
-                            }
-                            formIsPrepared = true;
-                        }
-                        else if (binding == useSyntaxBinding)
-                        {
-                            try
-                            {
-                                evalSyntax(eval, expanded, moduleNamespace);
-                            }
-                            catch (FusionException e)
-                            {
-                                String message = e.getMessage();
-                                throw new SyntaxFailure("use",
-                                                        message, form);
-                            }
-                            expanded = null;
-                        }
-                        else if (binding == beginBinding)
-                        {
-                            // Top-level 'begin' is spliced into the module
-                            int last = sexp.size() - 1;
-                            for (int i = last; i != 0;  i--)
-                            {
-                                forms.push(sexp.get(i));
-                            }
-                            formsAlreadyWrapped += last;
-                            expanded = null;
-                        }
+                        expanded = expander.expand(moduleNamespace, expanded);
+                        // TODO this is getting compiled twice
+                        CompiledForm compiled =
+                            eval.compile(moduleNamespace, expanded);
+                        eval.eval(moduleNamespace, compiled);
                     }
+                    catch (SyntaxFailure e)
+                    {
+                        e.addContext(form);
+                        throw e;
+                    }
+                    catch (FusionException e)
+                    {
+                        String message = e.getMessage();
+                        throw new SyntaxFailure(DEFINE_SYNTAX, message, form);
+                    }
+                    formIsPrepared = true;
                 }
-                else
+                else if (binding == globals.myKernelUseBinding ||
+                         binding == globals.myKernelRequireBinding)
                 {
-                    expanded = form;
+                    try
+                    {
+                        evalSyntax(eval, expanded, moduleNamespace);
+                    }
+                    catch (FusionException e)
+                    {
+                        String message = e.getMessage();
+                        SyntaxFailure ex =
+                            new SyntaxFailure(binding.getName(),
+                                              message, form);
+                        ex.initCause(e);
+                        throw ex;
+                    }
+                    expanded = null;
                 }
+                else if (binding == globals.myKernelProvideBinding)
+                {
+                    provideForms.add(sexp);
+                    expanded = null;
+                }
+                else if (binding == globals.myKernelBeginBinding)
+                {
+                    // Splice 'begin' into the module-begin sequence
+                    int last = sexp.size() - 1;
+                    for (int i = last; i != 0;  i--)
+                    {
+                        forms.push(sexp.get(i));
+                    }
+                    formsAlreadyWrapped += last;
+                    expanded = null;
+                }
+            }
 
-                if (expanded != null)
-                {
-                    otherForms.add(expanded);
-                    preparedFormFlags.add(formIsPrepared);
-                }
+            if (expanded != null)
+            {
+                otherForms.add(expanded);
+                preparedFormFlags.add(formIsPrepared);
             }
         }
 
@@ -278,7 +278,7 @@ final class ModuleForm
         {
             if (! prepared.next())
             {
-                if (firstBinding(stx) == defineBinding)
+                if (firstBinding(stx) == globals.myKernelDefineBinding)
                 {
                     assert expander.isModuleContext();
                     stx = expander.expand(moduleNamespace, stx);
@@ -291,9 +291,9 @@ final class ModuleForm
             subforms[i++] = stx;
         }
 
-        for (SyntaxSexp stx : provideForms)
+        for (SyntaxValue stx : provideForms)
         {
-            stx = prepareProvide(stx, moduleNamespace);
+            stx = expander.expand(moduleNamespace, stx);
             subforms[i++] = stx;
         }
 
@@ -302,29 +302,11 @@ final class ModuleForm
         return result;
     }
 
-    /**
-     * Finds the binding for the leading symbol in the form, or null if the
-     * form doesn't start with a symbol.
-     */
-    Binding firstBinding(SyntaxSexp form)
-    {
-        if (form.size() != 0)
-        {
-            SyntaxValue first = form.get(0);
-            if (first instanceof SyntaxSymbol)
-            {
-                Binding binding = ((SyntaxSymbol)first).getBinding();
-                return binding.originalBinding();
-            }
-        }
-        return null;
-    }
-
     Binding firstBinding(SyntaxValue stx)
     {
         if (stx instanceof SyntaxSexp)
         {
-            return firstBinding((SyntaxSexp) stx);
+            return ((SyntaxSexp) stx).firstBinding();
         }
         return null;
     }
@@ -368,8 +350,7 @@ final class ModuleForm
             variableCount = form.bigIntegerValue().intValue();
         }
 
-        ArrayList<SyntaxSexp> provideForms = new ArrayList<SyntaxSexp>();
-        ArrayList<CompiledForm> otherForms = new ArrayList<CompiledForm>();
+        ArrayList<CompiledForm> otherForms = new ArrayList<>();
 
         int bodyPos = 4;
         String docs = null;
@@ -383,22 +364,25 @@ final class ModuleForm
             }
         }
 
-        for (int i = bodyPos; i < stx.size(); i++)
+
+        final Binding kernelProvideBinding =
+            eval.getGlobalState().myKernelProvideBinding;
+
+        int i;
+        for (i = bodyPos; i < stx.size(); i++)
         {
             SyntaxValue form = stx.get(i);
-            SyntaxSexp provide = formIsProvide(form);
-            if (provide != null)
+            if (firstBinding(form) == kernelProvideBinding)
             {
-                provideForms.add(provide);
+                break;
             }
-            else
-            {
-                CompiledForm compiled = eval.compile(moduleNamespace, form);
-                otherForms.add(compiled);
-            }
+
+            CompiledForm compiled = eval.compile(moduleNamespace, form);
+            otherForms.add(compiled);
         }
 
-        SyntaxSymbol[] providedIdentifiers = providedSymbols(provideForms);
+        SyntaxSymbol[] providedIdentifiers =
+            providedSymbols(eval, moduleNamespace, stx, i);
 
         CompiledForm[] otherFormsArray =
             otherForms.toArray(new CompiledForm[otherForms.size()]);
@@ -423,8 +407,9 @@ final class ModuleForm
         }
         else
         {
+            ModuleRegistry reg = eval.findCurrentNamespace().getRegistry();
             String declaredName = moduleNameSymbol.stringValue();
-            id = ModuleIdentity.internLocalName(declaredName);
+            id = ModuleIdentity.internLocalName(reg, declaredName);
         }
         return id;
     }
@@ -433,82 +418,47 @@ final class ModuleForm
     //========================================================================
 
 
-    private SyntaxSexp formIsProvide(SyntaxValue form)
-    {
-        if (form.getType() == SyntaxValue.Type.SEXP)
-        {
-            SyntaxSexp sexp = (SyntaxSexp) form;
-            if (sexp.size() != 0)
-            {
-                SyntaxValue first = sexp.get(0);
-                if (first.getType() == SyntaxValue.Type.SYMBOL
-                    && "provide".equals(((SyntaxSymbol) first).stringValue()))
-                {
-                    return sexp;
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * @param provideForms
-     * @param myNamespace
-     * @return
-     */
-    private SyntaxSexp prepareProvide(SyntaxSexp form,
-                                      Namespace moduleNamespace)
-        throws SyntaxFailure
-    {
-        int size = form.size();
-        SyntaxChecker check = new SyntaxChecker("provide", form);
-        for (int i = 1; i < size; i++)
-        {
-            check.requiredIdentifier("bound identifier", i);
-
-            SyntaxSymbol identifier = (SyntaxSymbol) form.get(i);
-            String publicName = identifier.stringValue();
-
-            Binding b = identifier.resolve();
-            if (b instanceof FreeBinding)
-            {
-                String message =
-                    "cannot export " + printQuotedSymbol(publicName) +
-                    " since it has no definition.";
-                throw check.failure(message);
-            }
-
-            String freeName = b.getName();
-            if (! publicName.equals(freeName))
-            {
-                String message =
-                    "cannot export binding since symbolic name " +
-                    printQuotedSymbol(publicName) +
-                    " differs from resolved name " +
-                    printQuotedSymbol(freeName);
-                throw check.failure(message);
-            }
-        }
-
-        return form;
-    }
-
-
     /**
      * @return not null.
      */
-    private SyntaxSymbol[] providedSymbols(ArrayList<SyntaxSexp> provideForms)
-        throws SyntaxFailure
+    private SyntaxSymbol[] providedSymbols(Evaluator eval,
+                                           Namespace ns,
+                                           SyntaxSexp moduleStx,
+                                           int firstProvidePos)
+        throws FusionException
     {
-        ArrayList<SyntaxSymbol> identifiers = new ArrayList<SyntaxSymbol>();
+        Set<String> names = new HashSet<>();
+        ArrayList<SyntaxSymbol> identifiers = new ArrayList<>();
 
-        for (SyntaxSexp form : provideForms)
+        for (int p = firstProvidePos; p < moduleStx.size(); p++)
         {
+            SyntaxSexp form = (SyntaxSexp) moduleStx.get(p);
+            SyntaxChecker check = new SyntaxChecker("provide", form);
+
             int size = form.size();
             for (int i = 1; i < size; i++)
             {
-                SyntaxSymbol identifier = (SyntaxSymbol) form.get(i);
-                identifiers.add(identifier);
+                SyntaxValue spec = form.get(i);
+                switch (spec.getType())
+                {
+                    case SYMBOL:
+                    {
+                        SyntaxSymbol id = (SyntaxSymbol) spec;
+                        if (! names.add(id.stringValue()))
+                        {
+                            String message =
+                                "identifier already provided with a different" +
+                                " binding";
+                            throw check.failure(message, id);
+                        }
+                        identifiers.add(id);
+                        break;
+                    }
+                    default:
+                    {
+                        throw check.failure("invalid provide-spec");
+                    }
+                }
             }
         }
 

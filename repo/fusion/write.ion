@@ -1,4 +1,4 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 (module write '/fusion/base'
 
@@ -16,9 +16,10 @@ There are three "styles" of output:
   character data types (strings and symbols), which are output as-is without
   escapes.
 
-See `/fusion/read` for related input procedures.
+See [`/fusion/read`](fusion/read.html) for related input procedures.
   '''
-  (use '/fusion/experimental/defines')
+
+  (require "/fusion/experimental/defines")
 
 
   (defpub_j display "com.amazon.fusion.FusionWrite$DisplayProc")
@@ -39,6 +40,8 @@ Displays the values, then a newline.
   (provide writeln)  // defpub doesn't work for this form
   (define (writeln value)
     '''
+    (writeln value)
+
 Writes the value, then a newline.
     '''
     (write value)

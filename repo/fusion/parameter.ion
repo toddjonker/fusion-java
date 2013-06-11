@@ -1,6 +1,6 @@
 // Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
-(module parameter (quote '#%kernel')
+(module parameter '/fusion/private/kernel'
 
   '''
 Dynamically-scoped values.
@@ -50,7 +50,7 @@ Java developers will recognize that this is very similar to how a Java `catch`
 clause sets an exception handler with dynamic extent.
   '''
 
-  (use '/fusion/experimental/defines')
+  (require "/fusion/experimental/defines")
 
 
   (defpub_j_syntax parameterize "com.amazon.fusion.ParameterizeForm")

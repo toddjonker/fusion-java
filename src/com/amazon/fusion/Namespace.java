@@ -181,6 +181,12 @@ abstract class Namespace
     abstract ModuleIdentity getModuleId();
 
 
+    /**
+     * Collects the bindings defined in this module; does not include imported
+     * bindings.
+     *
+     * @return not null.
+     */
     Collection<NsBinding> getBindings()
     {
         return Collections.unmodifiableCollection(myBindings);
@@ -194,6 +200,9 @@ abstract class Namespace
      */
     SyntaxValue syntaxIntroduce(SyntaxValue source)
     {
+        // TODO there's a case where we are applying the same wraps that are
+        // already on the source.  This happens when expand-ing (and maybe when
+        // eval-ing at top-level source that's from that same context.
         source = source.addWraps(myWraps);
         return source;
     }
@@ -225,7 +234,7 @@ abstract class Namespace
     }
 
     @Override
-    public Binding substituteFree(String name, Set<Integer> marks)
+    public NsBinding substituteFree(String name, Set<Integer> marks)
     {
         for (NsBinding b : myBindings)
         {
@@ -241,10 +250,14 @@ abstract class Namespace
     /**
      * @return null if identifier isn't bound here.
      */
-    NsBinding localResolve(SyntaxSymbol identifier)
+    final NsBinding localResolve(SyntaxSymbol identifier)
     {
         Binding resolvedRequestedId = identifier.resolve();
         Set<Integer> marks = identifier.computeMarks();
+        if (resolvedRequestedId instanceof FreeBinding)
+        {
+            return substituteFree(identifier.stringValue(), marks);
+        }
         return localSubstitute(resolvedRequestedId, marks);
     }
 
@@ -275,9 +288,11 @@ abstract class Namespace
     /**
      * Creates a binding, but no value, for a name.
      * Used during expansion phase, before evaluating the right-hand side.
+     *
+     * @return a copy of the identifier that has the new binding attached.
      */
-    abstract NsBinding predefine(SyntaxSymbol identifier,
-                                  SyntaxValue formForErrors)
+    abstract SyntaxSymbol predefine(SyntaxSymbol identifier,
+                                    SyntaxValue formForErrors)
         throws FusionException;
 
 
@@ -344,32 +359,49 @@ abstract class Namespace
         throws FusionException
     {
         SyntaxSymbol identifier = SyntaxSymbol.make(name);
-        NsBinding binding = predefine(identifier, null);
+        identifier = predefine(identifier, null);
+        NsBinding binding = (NsBinding) identifier.getBinding();
         bind(binding, value);
     }
 
 
-    void use(Evaluator eval, String modulePath)
+    void require(Evaluator eval, String modulePath)
         throws FusionException
     {
-        UseForm useForm = eval.getGlobalState().myUseForm;
-        SyntaxValue baseRef = SyntaxSymbol.make(modulePath);
-        useForm.use(eval, this, baseRef);
+        RequireForm requireForm = eval.getGlobalState().myRequireForm;
+        requireForm.require(eval, this, modulePath);
     }
 
-    void use(ModuleIdentity id)
+    void require(ModuleIdentity id)
         throws FusionException
     {
         ModuleInstance module = myRegistry.lookup(id);
-        use(module);
+        require(module);
     }
 
-    abstract void use(ModuleInstance module)
+    abstract void require(ModuleInstance module)
         throws FusionException;
 
     void addWrap(SyntaxWrap wrap)
     {
         myWraps = myWraps.addWrap(wrap);
+    }
+
+
+    boolean ownsBinding(NsBinding binding)
+    {
+        int address = binding.myAddress;
+        return (address < myBindings.size()
+                && binding == myBindings.get(address));
+    }
+
+    boolean ownsBinding(Binding binding)
+    {
+        if (binding instanceof NsBinding)
+        {
+            return ownsBinding((NsBinding) binding);
+        }
+        return false;
     }
 
 

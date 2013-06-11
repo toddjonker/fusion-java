@@ -5,26 +5,27 @@
   '''
 Ordered collections of values.
 
-A _sequence_ is an ordered [collection](collection.html) of values, keyed by
-non-negative integers.
+A _sequence_ is an ordered [collection](fusion/collection.html) of values,
+keyed by non-negative integers.
 
-The built-in sequence types are [list](list.html) and [sexp](sexp.html).
+The built-in sequence types are [list](fusion/list.html) and
+[sexp](fusion/sexp.html).
 
 Currently, some of these features may be restricted to a subset of sequence
 types.
   '''
 
-  (use '/fusion/collection')
-  (use '/fusion/experimental/defines')
-  (use '/fusion/private/builtins')   // Some basic list ops
-  (use '/fusion/unsafe/list')
+  (require
+    "/fusion/collection"
+    "/fusion/experimental/defines"
+    "/fusion/private/builtins"   // Some basic list ops
+    "/fusion/unsafe/list")
 
   // Pass-through bindings from /fusion/collection
   (provide any do find is_empty size)
 
 
   (defpub_j add    "com.amazon.fusion.AddProc")
-  // TODO FUSION-86 append, append_m
 
   (defpub first
     (lambda (sequence)

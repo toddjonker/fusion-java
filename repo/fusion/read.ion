@@ -1,13 +1,15 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
-(module read (quote '#%kernel')
+(module read '/fusion/private/kernel'
 
   '''
 Reading data from an input stream.
 
-See `/fusion/write` for related output procedures.
+See [`/fusion/write`](fusion/write.html) for related output procedures.
   '''
-  (use '/fusion/experimental/defines')
+
+
+  (require "/fusion/experimental/defines")
 
 
   (defpub_j read    "com.amazon.fusion.ReadProc")
