@@ -128,7 +128,17 @@ final class StandardTopLevel
     public void define(String name, Object value)
         throws FusionException
     {
-        myNamespace.bind(name, value);
+        Object fv = myEvaluator.injectMaybe(value);
+        if (fv == null)
+        {
+            String expected =
+                "injectable Java type but received " +
+                value.getClass().getName();
+            throw new ArgTypeFailure("TopLevel.define", expected,
+                                     -1, value);
+        }
+
+        myNamespace.bind(name, fv);
     }
 
 
@@ -163,14 +173,17 @@ final class StandardTopLevel
         for (int i = 0; i < arguments.length; i++)
         {
             Object arg = arguments[i];
-            arg = myEvaluator.injectMaybe(arg);
-            if (arg == null)
+            Object fv = myEvaluator.injectMaybe(arg);
+            if (fv == null)
             {
+                String expected =
+                    "injectable Java type but received " +
+                    arg.getClass().getName();
                 throw new ArgTypeFailure("TopLevel.call",
-                                         "injectable Java type",
-                                         i, arguments[i]);
+                                         expected,
+                                         i, arguments);
             }
-            arguments[i] = arg;
+            arguments[i] = fv;
         }
 
         return myEvaluator.callNonTail(proc, arguments);

@@ -2,13 +2,15 @@
 
 (module check '/fusion/base'
 
-  (use '/fusion/experimental/defines')
-  (use '/fusion/ffi/java')
-  (use '/fusion/ion')
-  (use '/fusion/list')
-  (use '/fusion/sexp')
-  (use '/fusion/string')
-  (use '/fusion/syntax')
+  (require
+    "/fusion/experimental/defines"
+    "/fusion/eval"
+    "/fusion/ffi/java"
+    "/fusion/ion"
+    "/fusion/list"
+    "/fusion/sexp"
+    "/fusion/string"
+    "/fusion/syntax")
 
 
   (defpub F (lambda rest false))
@@ -19,7 +21,7 @@
 
   // NOT PUBLIC YET
   (define raise_check_failure (java_new "com.amazon.fusion.CheckFailureProc"))
-  (define thunk_throws_syntax_failure (java_new "com.amazon.fusion.ThunkThrowsProc"))
+  (define thunk_throws        (java_new "com.amazon.fusion.ThunkThrowsProc"))
 
 
   (defpub check_equal_annotations
@@ -172,13 +174,62 @@ Ensures that (OP VAL1 VAL2) is truthy.
 
 
   // TODO this should accept a predicate to check exn type
+  // TODO why doesn't this auto-thunk its body?
   (defpub_syntax check_exn
     (lambda (stx)
       // TODO check arity
       (let [(thunk_stx (syntax_get stx 1))]
         (quasisyntax
           // TODO type-check thunk
-          (unless (thunk_throws_syntax_failure (unsyntax thunk_stx))
-            (raise_check_failure (quote_syntax (unsyntax stx))
-              "expected exception"))))))
+          (let ((e (thunk_throws (unsyntax thunk_stx))))
+            (cond
+              ((and (is_string e) (= e "syntax"))
+               (void))
+              (e  (raise_check_failure (quote_syntax (unsyntax stx))
+                    "expected syntax failure, got " e " exception"))
+              (true (raise_check_failure (quote_syntax (unsyntax stx))
+                      "expected syntax failure"))))))))
+
+  (defpub_syntax check_arg_exn
+    (lambda (stx)
+      // TODO check arity
+      (let [(thunk_stx (syntax_get stx 1))]
+        (quasisyntax
+          // TODO type-check thunk
+          (let ((e (thunk_throws (lambda () (unsyntax thunk_stx)))))
+            (cond
+              ((and (is_string e) (= e "arg"))
+               (void))
+              (e  (raise_check_failure (quote_syntax (unsyntax stx))
+                    "expected arg type failure, got " e " exception"))
+              (true (raise_check_failure (quote_syntax (unsyntax stx))
+                      "expected arg type failure"))))))))
+
+  (defpub_syntax check_arity_exn
+    (lambda (stx)
+      // TODO check arity
+      (let [(thunk_stx (syntax_get stx 1))]
+        (quasisyntax
+          // TODO type-check thunk
+          (let ((e (thunk_throws (lambda () (unsyntax thunk_stx)))))
+            (cond
+              ((and (is_string e) (= e "arity"))
+               (void))
+              (e  (raise_check_failure (quote_syntax (unsyntax stx))
+                    "expected arity failure, got " e " exception"))
+              (true (raise_check_failure (quote_syntax (unsyntax stx))
+                      "expected arity failure"))))))))
+
+  (defpub_syntax check_compile_exn
+    '''
+    (check_compile_exn top_form)
+     ->
+    (check_exn (lambda () (eval (quote top_form))))
+    '''
+    (lambda (stx)
+      // TODO check arity
+      (let [(top_form (syntax_get stx 1))]
+        (quasisyntax
+          (check_exn
+            (lambda () (eval (quote_syntax (unsyntax top_form)))))))))
 )

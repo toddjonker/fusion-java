@@ -75,6 +75,7 @@ while the field values are iterated.
     "/fusion/collection"
     "/fusion/experimental/defines"
     "/fusion/ffi/java"
+    "/fusion/private/builtins"   // unsafe_struct_visit
     "/fusion/unsafe/struct")
 
 
@@ -85,12 +86,9 @@ while the field values are iterated.
   (provide any do find is_empty size)
 
 
-  // TODO FUSION-140 remove struct_make
-
   (defpub_j remove_keys       "com.amazon.fusion.FusionStruct$RemoveKeysProc")
   (defpub_j retain_keys       "com.amazon.fusion.FusionStruct$RetainKeysProc")
   (defpub_j struct            "com.amazon.fusion.FusionStruct$StructProc")
-  (defpub   struct_make       struct)
   (defpub_j struct_merge      "com.amazon.fusion.FusionStruct$StructMergeProc")
   (defpub_j struct_zip        "com.amazon.fusion.FusionStruct$StructZipProc")
 

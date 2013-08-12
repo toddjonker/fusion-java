@@ -19,7 +19,6 @@ public class IoTest
         topLevel().requireModule("/fusion/eval");
         topLevel().requireModule("/fusion/io");
         topLevel().requireModule("/fusion/parameter");
-        topLevel().requireModule("/fusion/read");
     }
 
 
@@ -49,7 +48,7 @@ public class IoTest
     public void testLoadCurrentNamespace()
         throws Exception
     {
-        eval("(load \"tst-data/trivialDefine.ion\")");
+        eval("(load \"tst-data/trivialDefine.fusion\")");
         assertEval(3328, "x");
     }
 

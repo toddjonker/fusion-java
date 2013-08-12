@@ -1,6 +1,6 @@
 // Copyright (c) 2013 Amazon.com, Inc.  All rights reserved.
 
-(module unsafe_struct '/fusion/base'
+(module unsafe_struct '/fusion/private/builtins'
 
   '''
 Unsafe (but fast) operations on structs.
@@ -20,7 +20,4 @@ related operations on structs.
   (defpub_j unsafe_struct_ref
     "com.amazon.fusion.FusionStruct$UnsafeStructRefProc")
 
-  // TODO FUSION-94 replace this with struct_iterator
-  (defpub_j unsafe_struct_visit
-    "com.amazon.fusion.FusionStruct$UnsafeStructVisitProc")
 )

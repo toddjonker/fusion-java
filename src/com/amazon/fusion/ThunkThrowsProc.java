@@ -9,7 +9,7 @@ final class ThunkThrowsProc
     ThunkThrowsProc()
     {
         //    "                                                                               |
-        super("XXX",
+        super("NOT FOR APPLICATION USE",
               "thunk");
     }
 
@@ -18,19 +18,29 @@ final class ThunkThrowsProc
         throws FusionException
     {
         // TODO type-check the thunk
-        boolean threw;
         try
         {
             Procedure proc = (Procedure) thunk;
             eval.callNonTail(proc);
-            threw = false;
         }
         catch (SyntaxFailure e)
         {
             // Good!  We are expecting this.
-            threw = true;
+            return eval.newString("syntax");
+        }
+        catch (ArgTypeFailure e)
+        {
+            return eval.newString("arg");
+        }
+        catch (ArityFailure e)
+        {
+            return eval.newString("arity");
+        }
+        catch (FusionException e)
+        {
+            return e;
         }
 
-        return eval.newBool(threw);
+        return eval.newBool(false);
     }
 }

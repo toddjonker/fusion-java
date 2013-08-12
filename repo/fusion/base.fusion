@@ -1,0 +1,41 @@
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+
+(module base '/fusion/private/builtins'
+
+  // Pass-through bindings from kernel
+  // TODO FUSION-133 remove `use`
+  (provide all_defined_out begin define if lambda letrec module provide
+    require use)
+  (provide is_bool is_int is_float is_decimal is_timestamp is_symbol
+      is_string is_clob is_blob is_list is_sexp is_struct)
+  // Note that there's no is_null type checker, since that's used to
+  // check for *any* null value.
+
+
+  // Pass-through bindings from builtins
+  (provide assert for_list let let_values quote set '#%top')
+  (provide apply exit is_null is_procedure not
+    raise_argument_error raise_arity_error raise_result_error
+    to_int to_string)
+
+  // TODO FUSION-95 these bindings seem out of place:
+  //  assert for_list to_int to_string raise_*
+
+  (require "/fusion/collection")
+  (provide . any do element elt find is_empty size)
+
+  (require "/fusion/private/bind")
+  (provide lets)
+
+  (require "/fusion/private/compare")
+  (provide < <= = >= >)
+
+  (require "/fusion/private/control")
+  (provide and or when unless cond)
+
+  (require "/fusion/number")
+  (provide + - * /)
+
+  (require "/fusion/void")
+  (provide is_void void)
+)
