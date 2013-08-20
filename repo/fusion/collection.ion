@@ -12,6 +12,7 @@ See also [sequence](fusion/sequence.html).
   '''
 
   (require
+    "/fusion/exception"
     "/fusion/experimental/defines"
     "/fusion/number"
     "/fusion/private/bind"
@@ -197,7 +198,7 @@ be evaluated as a variable reference:
   (defpub any
     (lambda (pred collection)
       '''
-Applies the one-parameter predicate `pred` to the elements of `collection`;
+Applies the one-argument predicate `pred` to the elements of `collection`;
 the first time `pred` returns a truthy value that truthy value is returned and
 no more elements are visited.  If no call returns a truthy value, then the
 result is `false`.
@@ -214,15 +215,24 @@ When `collection` is a sequence, the elements are visited in order.
                                     elt_result))
              collection)
            result))
-        (true    // TODO FUSION-141 optimize for list vs sexp
+        ((is_list collection)
          (let [(len (size collection))]
            (let loop [(i 0)]
              (if (= i len)
                false
-               (lets [(elt (element collection i)),
+               (lets [(elt (unsafe_list_ref collection i)),
                       (result (pred elt))]
                  (if result result
-                   (loop (+ i 1)))))))))))
+                   (loop (+ i 1))))))))
+        ((is_sexp collection)
+         (let loop [(s collection)]
+           (if (is_empty s)
+             false
+             (let [(result (pred (head s)))]
+               (if result result
+                 (loop (tail s)))))))
+        (true
+         (raise_argument_error "any" "collection" 0 collection)))))
 
 
   (defpub is_empty
@@ -238,7 +248,7 @@ Returns `true` if the size of the `collection` is zero, otherwise returns
   (defpub find
     (lambda (pred collection)
       '''
-Applies the one-parameter predicate `pred` to each element of `collection`;
+Applies the one-argument predicate `pred` to each element of `collection`;
 the first time `pred` returns a truthy value that element is returned.
 If no such element is found, the result is void.
 
@@ -254,15 +264,25 @@ When `collection` is a sequence, the elements are visited in order.
                                     elt_result))
              collection)
            result))
-        (true    // TODO FUSION-141 optimize for list vs sexp
+        ((is_list collection)
          (let [(len (size collection))]
            (let loop [(i 0)]
              (if (= i len)
                (void)
-               (let [(elt (element collection i))]
+               (let [(elt (unsafe_list_ref collection i))]
                  (if (pred elt)
                    elt
-                   (loop (+ i 1)))))))))))
+                   (loop (+ i 1))))))))
+        ((is_sexp collection)
+         (let loop [(s collection)]
+           (if (is_empty s)
+             (void)
+             (let [(elt (head s))]
+               (if (pred elt)
+                 elt
+                 (loop (tail s)))))))
+        (true
+         (raise_argument_error "any" "collection" 0 collection)))))
 
 
   // Name per Dylan.  Equivalent to SRFI-1 `for_each` but I don't want this to
@@ -270,7 +290,7 @@ When `collection` is a sequence, the elements are visited in order.
   (defpub do
     (lambda (proc collection)
       '''
-Applies the one-parameter procedure `proc` to the elements of `collection`,
+Applies the one-argument procedure `proc` to the elements of `collection`,
 ignoring any results.  Returns void.
 
 When `collection` is a sequence, the elements are visited in order.
@@ -285,13 +305,22 @@ When `collection` is a sequence, the elements are visited in order.
            (lambda (key elt) (proc elt) false)
            collection)
          (void))
-        (true    // TODO FUSION-141 optimize for list vs sexp
+        ((is_list collection)
          (let [(len (size collection))]
            (let loop [(i 0)]
              (if (= i len)
                (void)
                (begin
-                 (proc (element collection i))
-                 (loop (+ 1 i))))))))))
+                 (proc (unsafe_list_ref collection i))
+                 (loop (+ 1 i)))))))
+        ((is_sexp collection)
+         (let loop [(s collection)]
+           (if (is_empty s)
+             (void)
+             (begin
+               (proc (head s))
+               (loop (tail s))))))
+        (true
+         (raise_argument_error "any" "collection" 0 collection)))))
 
 )

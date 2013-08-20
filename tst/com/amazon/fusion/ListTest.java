@@ -7,6 +7,7 @@ import static com.amazon.fusion.FusionList.unsafeListSize;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertSame;
 import com.amazon.ion.IonList;
+import com.amazon.ion.IonValue;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -258,23 +259,6 @@ public class ListTest
         assertEval(false, "(is_list \"[1,2,3]\")");
     }
 
-    @Test
-    public void testForListSyntax()
-        throws Exception
-    {
-        expectSyntaxFailure("(for_list)");
-        expectSyntaxFailure("(for_list 1 2)");
-        expectSyntaxFailure("(for_list null.sexp 13)");
-        expectSyntaxFailure("(for_list (12) 13)");
-        expectSyntaxFailure("(for_list (1 2) 13)");
-        expectSyntaxFailure("(for_list (()) 13)");
-        expectSyntaxFailure("(for_list ((12)) 13)");
-        expectSyntaxFailure("(for_list ((name)) 13)");
-        expectSyntaxFailure("(for_list ((name 1 2)) 13)");
-        expectSyntaxFailure("(for_list ((name 1) ()) 13)");
-        expectSyntaxFailure("(for_list ((name 1) (name2)) 13)");
-    }
-
 
     //========================================================================
     // Append
@@ -303,6 +287,21 @@ public class ListTest
         assertSame(iList.get(2), unsafeListRef(null, result, 2));
         assertSame(unsafeListRef(null, fList, 0),
                    unsafeListRef(null, result, 3));
+    }
+
+
+    /** Traps a crash caused by append_m not injecting its varargs lists. */
+    @Test
+    public void testLazyInjectionFailure()
+        throws Exception
+    {
+        IonValue boom =
+            system().singleValue("[ [ { value:1 } ], [ { value:2 } ] ]");
+
+        topLevel().requireModule("/fusion/function");
+        topLevel().define("$t", boom);
+
+        assertEval(2, "(. (apply append_m $t) 1 \"value\")");
     }
 
 

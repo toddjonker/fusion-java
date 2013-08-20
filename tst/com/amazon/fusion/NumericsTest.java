@@ -1,4 +1,4 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -14,7 +14,6 @@ public class NumericsTest
     public void requires()
         throws FusionException
     {
-        topLevel().requireModule("/fusion/math");
         topLevel().requireModule("/fusion/timestamp");
     }
 
@@ -213,32 +212,5 @@ public class NumericsTest
 
         expectArityFailure("(to_string)");
         expectArityFailure("(to_string 2 2)");
-    }
-
-    @Test
-    public void testRounding()
-        throws Exception
-    {
-        assertEval(5,"(floor 5.01)");
-        assertEval(5, "(floor 5)");
-        assertEval(6, "(ceil 5.01)");
-        assertEval(5, "(ceil 5)");
-        assertEval(5, "(ceil 5.)");
-        assertEval(5, "(floor 5.)");
-        assertEval(5, "(ceil 5.00)");
-        assertEval(5, "(floor 5.00)");
-    }
-
-    @Test
-    public void testRoundingFail()
-        throws Exception
-    {
-        expectArityFailure("(floor)");
-        expectArityFailure("(ceil)");
-
-        expectContractFailure("(floor \"hello\")");
-        expectContractFailure("(ceil \"hello\")");
-        expectContractFailure("(floor true)");
-        expectContractFailure("(ceil true)");
     }
 }

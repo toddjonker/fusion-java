@@ -13,16 +13,23 @@
 
 
   // Pass-through bindings from builtins
-  (provide assert for_list let let_values quote set '#%top')
-  (provide apply exit is_null is_procedure not
-    raise_argument_error raise_arity_error raise_result_error
+  (provide let let_values quote set '#%top')
+  (provide apply exit is_null is_null_null is_procedure not
     to_int to_string)
 
-  // TODO FUSION-95 these bindings seem out of place:
-  //  assert for_list to_int to_string raise_*
+  // TODO FUSION-95 FUSION-173 FUSION-177 remove these from this module:
+  //  to_int to_string
 
   (require "/fusion/collection")
   (provide . any do element elt find is_empty size)
+
+  // TODO FUSION-181 Remove from this module
+  (require "/fusion/exception")
+  (provide assert raise_argument_error raise_arity_error raise_result_error)
+
+  // TODO FUSION-180 Remove from this module
+  (require "/fusion/for")
+  (provide for_list)
 
   (require "/fusion/private/bind")
   (provide lets)
@@ -38,4 +45,9 @@
 
   (require "/fusion/void")
   (provide is_void void)
+
+
+  (require "/fusion/experimental/defines")
+
+  (defpub_j type_annotations  "com.amazon.fusion.TypeAnnotationsProc")
 )

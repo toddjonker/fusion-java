@@ -1,14 +1,14 @@
-// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
-final class IsNullProc
+final class IsNullNullProc
     extends Procedure1
 {
-    IsNullProc()
+    IsNullNullProc()
     {
         //    "                                                                               |
-        super("Returns `true` when `value` is _any_ Ion null, `false` otherwise.",
+        super("Returns `true` when `value` is `null.null`, `false` otherwise.",
               "value");
     }
 
@@ -16,7 +16,7 @@ final class IsNullProc
     Object doApply(Evaluator eval, Object arg)
         throws FusionException
     {
-        boolean isNull = FusionValue.isAnyNull(eval, arg);
+        boolean isNull = FusionValue.isNullNull(eval, arg);
         return eval.newBool(isNull);
     }
 }

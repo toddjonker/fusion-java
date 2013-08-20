@@ -330,6 +330,14 @@ final class FusionList
     private abstract static class BaseList
         extends BaseSequence
     {
+        /**
+         * The elements within this list.
+         *
+         * <b>WARNING!</b> The {@link LazyInjectingList} subclass may mutate
+         * elements of this list while still appearing immutable. Every method
+         * that reads from this array MUST be overridden there and properly
+         * synchronized.
+         */
         Object[] myValues;
 
         BaseList(Object[] values)
@@ -420,21 +428,24 @@ final class FusionList
 
         BaseList appendM(Evaluator eval, Object[] args)
         {
-            int newLen = myValues.length;
+            int myLen = myValues.length;
+            int newLen = myLen;
             for (int i = 0; i < args.length; i++)
             {
                 newLen += ((BaseList) args[i]).size();
             }
 
+            if (newLen == myLen) return this; // Nothing to append
+
             Object[] copy = Arrays.copyOf(myValues, newLen);
 
-            int pos = myValues.length;
+            int pos = myLen;
             for (Object arg : args)
             {
                 BaseList v = (BaseList) arg;
                 int argLen = v.size();
 
-                System.arraycopy(v.myValues, 0, copy, pos, argLen);
+                v.unsafeCopy(eval, 0, copy, pos, argLen);
                 pos += argLen;
             }
             assert pos == newLen;
@@ -695,7 +706,10 @@ final class FusionList
             assert values.length != 0;
         }
 
-        private void injectElements(Evaluator eval)
+        /**
+         * Synchronized so this immutable class is thread-safe for reads.
+         */
+        private synchronized void injectElements(Evaluator eval)
         {
             if (myValues[0] instanceof IonValue)
             {
@@ -729,6 +743,15 @@ final class FusionList
             System.arraycopy(myValues, srcPos, dest, destPos, length);
         }
 
+        @Override
+        synchronized // So another thread doesn't inject while we copy.
+        IonList copyToIonValue(ValueFactory factory,
+                               boolean throwOnConversionFailure)
+            throws FusionException
+        {
+            // No need to inject our elements, they will still be copied.
+            return super.copyToIonValue(factory, throwOnConversionFailure);
+        }
 
         @Override
         BaseList add(Evaluator eval, Object value)
@@ -750,6 +773,24 @@ final class FusionList
             injectElements(eval);
             return super.javaIterate(eval);
         }
+
+        @Override
+        synchronized // So another thread doesn't inject while we write.
+        void write(Evaluator eval, Appendable out)
+            throws IOException, FusionException
+        {
+            // No need to inject our elements, they'll be output identically.
+            super.write(eval, out);
+        }
+
+        @Override
+        synchronized // So another thread doesn't inject while we ionize.
+        void ionize(Evaluator eval, IonWriter out)
+            throws IOException, FusionException
+        {
+            // No need to inject our elements, they'll be output identically.
+            super.ionize(eval, out);
+        }
     }
 
     //========================================================================
@@ -761,7 +802,7 @@ final class FusionList
         IsListProc()
         {
             //    "                                                                               |
-            super("Determines whether `value` is a list, returning true or false.",
+            super("Determines whether `value` is a list, returning `true` or `false`.",
                   "value");
         }
 
@@ -781,7 +822,7 @@ final class FusionList
         IsImmutableListProc()
         {
             //    "                                                                               |
-            super("Determines whether `value` is an immutable list, returning true or false.",
+            super("Determines whether `value` is an immutable list, returning `true` or `false`.",
                   "value");
         }
 
@@ -801,7 +842,7 @@ final class FusionList
         IsMutableListProc()
         {
             //    "                                                                               |
-            super("Determines whether `value` is a mutable list, returning true or false.",
+            super("Determines whether `value` is a mutable list, returning `true` or `false`.",
                   "value");
         }
 
@@ -821,7 +862,7 @@ final class FusionList
         IsStretchyListProc()
         {
             //    "                                                                               |
-            super("Determines whether `value` is a stretchy list, returning true or false.",
+            super("Determines whether `value` is a stretchy list, returning `true` or `false`.",
                   "value");
         }
 

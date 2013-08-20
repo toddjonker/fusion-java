@@ -13,10 +13,16 @@ final class ForListForm
     ForListForm()
     {
         //    "                                                                               |
-        super("((ident seq_expr) ...) body ...+",
-              "Iterates the `seq_expr`s in parallel, binding the corresponding `ident`s to\n" +
-              "each element in turn and evaluating `body`.  Returns a stretchy list of the\n" +
-              "results.");
+        super("((ident series) ...) body ...+",
+              "Iterates the `series` in parallel, binding the corresponding `ident`s to\n" +
+              "each element in turn and evaluating `body`.  Each `series` expression must\n" +
+              "evaluate to a list, sexp, or iterator.  Returns a stretchy list of the\n" +
+              "results.\n" +
+              "\n" +
+              "    (for_list\n" +
+              "      [ (even [0, 2, 4]),\n" +
+              "        (odd  [1, 3, 5]) ]\n" +
+              "      [even, odd])             =>  [1, 5, 9]");
     }
 
 
