@@ -71,7 +71,7 @@ final class Expander
             String message =
                 "Annotations not supported in raw syntax. You probably " +
                 "want to quote this.";
-            throw new SyntaxFailure(null, message, stx);
+            throw new SyntaxException(null, message, stx);
         }
 
         return stx.doExpand(this, env);
@@ -99,7 +99,7 @@ final class Expander
             SyntaxSexp sexp = (SyntaxSexp) stx;
             if (sexp.size() == 0) break;
 
-            SyntaxValue first = sexp.get(0);
+            SyntaxValue first = sexp.get(myEval, 0);
             if (! (first instanceof SyntaxSymbol)) break;
 
             SyntaxSymbol maybeMacro = (SyntaxSymbol) first;

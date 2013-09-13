@@ -135,7 +135,7 @@ final class LoadHandler
             if (moduleDeclaration.size() > 1)
             {
                 SyntaxSymbol moduleSym = (SyntaxSymbol)
-                    moduleDeclaration.get(0);
+                    moduleDeclaration.get(eval, 0);
                 if (MODULE.equals(moduleSym.stringValue()))
                 {
                     return moduleDeclaration;
@@ -145,14 +145,15 @@ final class LoadHandler
         catch (ClassCastException e) { /* fall through */ }
 
         String message = "Top-level form isn't (module ...)";
-        throw new SyntaxFailure("load handler", message, topLevel);
+        throw new SyntaxException("load handler", message, topLevel);
     }
 
     private SyntaxSexp
     wrapModuleIdentifierWithKernelBindings(Evaluator eval,
                                            SyntaxSexp moduleStx)
+        throws FusionException
     {
-        SyntaxValue[] children = moduleStx.extract();
+        SyntaxValue[] children = moduleStx.extract(eval);
 
         // We already verified this type-safety
         assert ((SyntaxSymbol) children[0]).stringValue().equals(MODULE);

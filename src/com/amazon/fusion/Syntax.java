@@ -5,13 +5,16 @@ package com.amazon.fusion;
 import static com.amazon.fusion.FusionList.isList;
 import static com.amazon.fusion.FusionList.unsafeListRef;
 import static com.amazon.fusion.FusionList.unsafeListSize;
+import static com.amazon.fusion.FusionSexp.isEmptySexp;
+import static com.amazon.fusion.FusionSexp.isPair;
 import static com.amazon.fusion.FusionSexp.isSexp;
+import static com.amazon.fusion.FusionSexp.pair;
 import static com.amazon.fusion.FusionSexp.unsafePairHead;
 import static com.amazon.fusion.FusionSexp.unsafePairTail;
-import static com.amazon.fusion.FusionSexp.unsafeSexpSize;
 import static com.amazon.fusion.FusionStruct.isStruct;
 import static com.amazon.fusion.FusionValue.castToIonValueMaybe;
 import static com.amazon.fusion.SourceLocation.currentLocation;
+import com.amazon.fusion.FusionSexp.BaseSexp;
 import com.amazon.fusion.FusionStruct.BaseStruct;
 import com.amazon.fusion.FusionStruct.ImmutableStruct;
 import com.amazon.fusion.FusionStruct.StructFieldVisitor;
@@ -117,12 +120,12 @@ final class Syntax
             case LIST:
             {
                 SyntaxValue[] value = readSequence(eval, source, name);
-                return SyntaxList.make(value, anns, loc);
+                return SyntaxList.make(loc, anns, value);
             }
             case SEXP:
             {
                 SyntaxValue[] value = readSequence(eval, source, name);
-                return SyntaxSexp.make(eval, value, anns, loc);
+                return SyntaxSexp.make(eval, loc, anns, value);
             }
             case STRUCT:
             {
@@ -159,6 +162,7 @@ final class Syntax
     private static SyntaxValue applyContext(Evaluator eval,
                                             SyntaxSymbol context,
                                             SyntaxValue datum)
+        throws FusionException
     {
         if (context != null)
         {
@@ -168,8 +172,41 @@ final class Syntax
     }
 
 
+    private static Object pairToStrippedSyntaxMaybe(Evaluator eval,
+                                                    Object pair,
+                                                    boolean first)
+        throws FusionException
+    {
+        Object rawHead = unsafePairHead(eval, pair);
+        Object rawTail = unsafePairTail(eval, pair);
+
+        SyntaxValue newHead = datumToStrippedSyntaxMaybe(eval, rawHead);
+
+        Object newTail;
+        if (isPair(eval, rawTail))
+        {
+            newTail = pairToStrippedSyntaxMaybe(eval, rawTail, false);
+        }
+        else if (isEmptySexp(eval, rawTail))
+        {
+            newTail = rawTail;
+        }
+        else
+        {
+            newTail = datumToStrippedSyntaxMaybe(eval, rawTail);
+        }
+
+        if (newHead == null || newTail == null) return null;
+
+        BaseSexp newPair = pair(eval, ((BaseSexp) pair).myAnnotations,
+                                newHead, newTail);
+
+        return (first ? SyntaxSexp.make(eval, null, newPair) : newPair);
+    }
+
+
     /**
-     * @return null if something in the datum can't be converted into synatx.
+     * @return null if something in the datum can't be converted into syntax.
      */
     private static SyntaxValue
     datumToStrippedSyntaxMaybe(final Evaluator eval, Object datum)
@@ -177,7 +214,7 @@ final class Syntax
     {
         if (isSyntax(eval, datum))
         {
-            // TODO Should strip location and properties
+            // TODO FUSION-183 Should strip location and properties?
             //      Well, probably not, that throws away existing
             //      context when called from datum_to_syntax
             return ((SyntaxValue) datum).stripWraps(eval);
@@ -210,29 +247,14 @@ final class Syntax
             return SyntaxList.make(null, children);
         }
 
-        if (isSexp(eval, datum))
+        if (isPair(eval, datum))
         {
-            // FIXME this is broken when some pair is a syntax sexp
-            //  Must rework SyntaxSexp to use pairs...
-            int size = unsafeSexpSize(eval, datum);
-            SyntaxValue[] children = new SyntaxValue[size];
+            return (SyntaxValue) pairToStrippedSyntaxMaybe(eval, datum, true);
+        }
 
-            int i = 0;
-            for (Object pair = datum;
-                 FusionSexp.isPair(eval, pair);
-                 pair = unsafePairTail(eval, pair))
-            {
-                Object rawChild = unsafePairHead(eval, pair);
-                SyntaxValue child = datumToStrippedSyntaxMaybe(eval, rawChild);
-                if (child == null)
-                {
-                    // Hit something that's not syntax-able
-                    return null;
-                }
-                children[i++] = child;
-            }
-            assert i == size;
-            return SyntaxSexp.make(eval, children);
+        if (isSexp(eval, datum))  // null.sexp or ()
+        {
+            return SyntaxSexp.make(eval, null, (BaseSexp) datum);
         }
 
         if (isStruct(eval, datum))
@@ -278,6 +300,8 @@ final class Syntax
     /**
      * @param context may be null, in which case no lexical information is
      * applied (and any existing is stripped).
+     *
+     * @return null if something in the datum can't be converted into syntax.
      */
     static SyntaxValue datumToSyntaxMaybe(Evaluator eval,
                                           Object datum,
@@ -325,7 +349,7 @@ final class Syntax
                                      SyntaxSymbol context)
         throws FusionException
     {
-        // TODO Should strip location and properties  XXX really?
+        // TODO FUSION-183 Strip location and properties?
         datum = datum.stripWraps(eval);
         return applyContext(eval, context, datum);
     }

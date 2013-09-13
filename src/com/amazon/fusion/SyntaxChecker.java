@@ -8,11 +8,13 @@ package com.amazon.fusion;
  */
 class SyntaxChecker
 {
+    final Evaluator myEvaluator;
     final String myFormName;
     final SyntaxSequence myForm;
 
-    SyntaxChecker(String formName, SyntaxSequence form)
+    SyntaxChecker(Evaluator eval, String formName, SyntaxSequence form)
     {
+        myEvaluator = eval;
         myFormName = formName;
         myForm = form;
     }
@@ -26,21 +28,21 @@ class SyntaxChecker
 
     //========================================================================
 
-    SyntaxFailure failure(String message)
+    SyntaxException failure(String message)
     {
-        return new SyntaxFailure(myFormName, message, myForm);
+        return new SyntaxException(myFormName, message, myForm);
     }
 
-    SyntaxFailure failure(String message, SyntaxValue subform)
+    SyntaxException failure(String message, SyntaxValue subform)
     {
-        return new SyntaxFailure(myFormName, message, subform, myForm);
+        return new SyntaxException(myFormName, message, subform, myForm);
     }
 
     /**
      * Arity includes the initial syntactic form identifier!
      */
     void arityExact(int count)
-        throws SyntaxFailure
+        throws FusionException
     {
         if (myForm.size() != count)
         {
@@ -54,7 +56,7 @@ class SyntaxChecker
      * identifier).
      */
     final int arityAtLeast(int count)
-        throws SyntaxFailure
+        throws FusionException
     {
         int size = myForm.size();
         if (size < count)
@@ -66,11 +68,11 @@ class SyntaxChecker
 
 
     final SyntaxValue requiredForm(String expectation, int argNum)
-        throws SyntaxFailure
+        throws FusionException
     {
         try
         {
-            return myForm.get(argNum);
+            return myForm.get(myEvaluator, argNum);
         }
         catch (IndexOutOfBoundsException e) {}
 
@@ -79,7 +81,7 @@ class SyntaxChecker
 
 
     final SyntaxSequence requiredSequence(String expectation, int argNum)
-        throws SyntaxFailure
+        throws FusionException
     {
         SyntaxValue form = requiredForm(expectation, argNum);
         return checkSyntax(SyntaxSequence.class, expectation,
@@ -88,7 +90,7 @@ class SyntaxChecker
 
 
     final SyntaxSexp requiredSexp(String expectation, int argNum)
-        throws SyntaxFailure
+        throws FusionException
     {
         SyntaxValue form = requiredForm(expectation, argNum);
         return checkSyntax(SyntaxSexp.class, expectation,
@@ -97,7 +99,7 @@ class SyntaxChecker
 
 
     final String requiredString(String expectation, int argNum)
-        throws SyntaxFailure
+        throws FusionException
     {
         SyntaxValue form = requiredForm(expectation, argNum);
         return checkSyntax(SyntaxString.class, expectation,
@@ -106,7 +108,7 @@ class SyntaxChecker
 
 
     final String requiredNonEmptyString(String expectation, int argNum)
-        throws SyntaxFailure
+        throws FusionException
     {
         String str = requiredString(expectation, argNum);
         // TODO check emptyness
@@ -117,7 +119,7 @@ class SyntaxChecker
     // TODO problematic WRT keywords
     @Deprecated
     final SyntaxSymbol requiredSymbol(String expectation, int argNum)
-        throws SyntaxFailure
+        throws FusionException
     {
         SyntaxValue form = requiredForm(expectation, argNum);
         return checkSyntax(SyntaxSymbol.class, expectation,
@@ -126,7 +128,7 @@ class SyntaxChecker
 
 
     final String requiredText(String expectation, int argNum)
-        throws SyntaxFailure
+        throws FusionException
     {
         SyntaxValue form = requiredForm(expectation, argNum);
         return checkSyntax(SyntaxText.class, expectation,
@@ -135,7 +137,7 @@ class SyntaxChecker
 
 
     final SyntaxSymbol requiredIdentifier(String expectation, int argNum)
-        throws SyntaxFailure
+        throws FusionException
     {
         SyntaxValue form = requiredForm(expectation, argNum);
         // Special case for better error messaging
@@ -151,7 +153,7 @@ class SyntaxChecker
     }
 
     final SyntaxSymbol requiredIdentifier(int argNum)
-        throws SyntaxFailure
+        throws FusionException
     {
         return requiredIdentifier("identifier", argNum);
     }
@@ -159,7 +161,7 @@ class SyntaxChecker
 
     @Deprecated
     final String requiredNonEmptySymbol(String expectation, int argNum)
-        throws SyntaxFailure
+        throws FusionException
     {
         SyntaxSymbol sym = requiredSymbol(expectation, argNum);
         // TODO check emptyness
@@ -171,7 +173,7 @@ class SyntaxChecker
                                                String expectation,
                                                boolean nullable,
                                                SyntaxValue form)
-        throws SyntaxFailure
+        throws SyntaxException
     {
         try
         {
@@ -188,14 +190,14 @@ class SyntaxChecker
     //========================================================================
 
     SyntaxChecker subformSexp(String description, int index)
-        throws SyntaxFailure
+        throws FusionException
     {
         SyntaxSexp subsexp = requiredSexp(description, index);
         return new SubformChecker(this, description, subsexp);
     }
 
     SyntaxChecker subformSeq(String description, int index)
-        throws SyntaxFailure
+        throws FusionException
     {
         SyntaxSequence subsexp = requiredSequence(description, index);
         return new SubformChecker(this, description, subsexp);
@@ -208,27 +210,27 @@ class SyntaxChecker
         SubformChecker(SyntaxChecker base, String description,
                        SyntaxSequence form)
         {
-            super(description, form);
+            super(base.myEvaluator, description, form);
             myBaseForm = base;
         }
 
         @Override
-        SyntaxFailure failure(String message)
+        SyntaxException failure(String message)
         {
-            return new SyntaxFailure(myBaseForm.myFormName, message,
-                                     myForm, myBaseForm.myForm);
+            return new SyntaxException(myBaseForm.myFormName, message,
+                                       myForm, myBaseForm.myForm);
         }
 
         @Override
-        SyntaxFailure failure(String message, SyntaxValue subform)
+        SyntaxException failure(String message, SyntaxValue subform)
         {
-            return new SyntaxFailure(myBaseForm.myFormName, message,
-                                     subform, myBaseForm.myForm);
+            return new SyntaxException(myBaseForm.myFormName, message,
+                                       subform, myBaseForm.myForm);
         }
 
         @Override
         void arityExact(int count)
-            throws SyntaxFailure
+            throws FusionException
         {
             if (myForm.size() != count)
             {
@@ -240,7 +242,7 @@ class SyntaxChecker
 
         @Override
         SyntaxChecker subformSexp(String description, int index)
-            throws SyntaxFailure
+            throws FusionException
         {
             SyntaxSexp subsexp = requiredSexp(description, index);
             return new SubformChecker(myBaseForm, description, subsexp);
@@ -248,7 +250,7 @@ class SyntaxChecker
 
         @Override
         SyntaxChecker subformSeq(String description, int index)
-            throws SyntaxFailure
+            throws FusionException
         {
             SyntaxSequence subsexp = requiredSequence(description, index);
             return new SubformChecker(myBaseForm, description, subsexp);

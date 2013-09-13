@@ -2,59 +2,95 @@
 
 package com.amazon.fusion;
 
-import static com.amazon.fusion.FusionSexp.EMPTY_SEXP;
-import static com.amazon.fusion.FusionSexp.emptySexp;
+import static com.amazon.fusion.FusionList.unsafeListToSexp;
+import static com.amazon.fusion.FusionSexp.immutableSexp;
+import static com.amazon.fusion.FusionSexp.isEmptySexp;
+import static com.amazon.fusion.FusionSexp.isNullSexp;
+import static com.amazon.fusion.FusionSexp.isPair;
+import static com.amazon.fusion.FusionSexp.isSexp;
 import static com.amazon.fusion.FusionSexp.nullSexp;
 import static com.amazon.fusion.FusionSexp.pair;
+import static com.amazon.fusion.FusionSexp.unsafePairDot;
+import static com.amazon.fusion.FusionSexp.unsafePairHead;
+import static com.amazon.fusion.FusionSexp.unsafePairTail;
+import static com.amazon.fusion.FusionSexp.unsafeSexpSize;
 import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
 import static com.amazon.fusion.FusionWrite.safeWrite;
 import static com.amazon.fusion.LetValuesForm.compilePlainLet;
+import com.amazon.fusion.FusionSexp.BaseSexp;
+import com.amazon.fusion.FusionSexp.ImmutablePair;
 import com.amazon.fusion.LambdaForm.CompiledLambdaBase;
 import com.amazon.fusion.LambdaForm.CompiledLambdaExact;
-import com.amazon.ion.IonType;
 import com.amazon.ion.IonWriter;
 import java.io.IOException;
 import java.util.IdentityHashMap;
+import java.util.List;
 
 final class SyntaxSexp
     extends SyntaxSequence
 {
+    private BaseSexp mySexp;
+
+
+    /**
+     * @param sexp must not be null.
+     */
+    private SyntaxSexp(Evaluator eval, SourceLocation loc, BaseSexp sexp)
+    {
+        super(loc, sexp.myAnnotations);
+        assert eval != null;
+        mySexp = sexp;
+    }
+
     /**
      * Instance will be {@link #isNullValue()} if children is null.
      *
+     * @param anns must not be null.
+     * This method takes ownership of the array; the array and its elements
+     * must not be changed by calling code afterwards!
      * @param children the children of the new sexp.
      * This method takes ownership of the array; the array and its elements
      * must not be changed by calling code afterwards!
-     * @param anns must not be null.
      */
-    private SyntaxSexp(Evaluator eval, SyntaxValue[] children, String[] anns,
-                       SourceLocation loc)
+    private SyntaxSexp(Evaluator eval, SourceLocation loc, String[] anns,
+                       SyntaxValue[] children)
     {
-        super(children, anns, loc);
+        super(loc, anns);
         assert eval != null;
+        mySexp = (children == null
+                      ? nullSexp(eval, anns)
+                      : immutableSexp(eval, anns, children));
     }
 
     /** Copy constructor shares children and replaces unpushed wraps. */
     private SyntaxSexp(SyntaxSexp that, SyntaxWraps wraps)
     {
-        super(that, wraps);
+        super(that.getAnnotations(), that.getLocation(), wraps);
+        mySexp = that.mySexp;
     }
 
 
+    static SyntaxSexp make(Evaluator eval, SourceLocation loc, BaseSexp sexp)
+    {
+        return new SyntaxSexp(eval, loc, sexp);
+    }
+
     /**
      * Instance will be {@link #isNullValue()} if children is null.
-
+     *
+     * @param anns must not be null.
+     * This method takes ownership of the array; the array and its elements
+     * must not be changed by calling code afterwards!
      * @param children the children of the new sexp.
      * This method takes ownership of the array; the array and its elements
      * must not be changed by calling code afterwards!
-     * @param anns must not be null.
      */
     static SyntaxSexp make(Evaluator eval,
-                           SyntaxValue[] children,
+                           SourceLocation loc,
                            String[] anns,
-                           SourceLocation loc)
+                           SyntaxValue[] children)
     {
-        return new SyntaxSexp(eval, children, anns, loc);
+        return new SyntaxSexp(eval, loc, anns, children);
     }
 
     /**
@@ -66,7 +102,7 @@ final class SyntaxSexp
      */
     static SyntaxSexp make(Evaluator eval, SyntaxValue... children)
     {
-        return new SyntaxSexp(eval, children, EMPTY_STRING_ARRAY, null);
+        return new SyntaxSexp(eval, null, EMPTY_STRING_ARRAY, children);
     }
 
     /**
@@ -79,7 +115,7 @@ final class SyntaxSexp
     static SyntaxSexp make(Evaluator eval, SourceLocation loc,
                            SyntaxValue... children)
     {
-        return new SyntaxSexp(eval, children, EMPTY_STRING_ARRAY, loc);
+        return new SyntaxSexp(eval, loc, EMPTY_STRING_ARRAY, children);
     }
 
     /**
@@ -91,9 +127,10 @@ final class SyntaxSexp
      */
     static SyntaxSexp make(Expander expander, SyntaxValue... children)
     {
-        return new SyntaxSexp(expander.getEvaluator(), children,
-                              EMPTY_STRING_ARRAY, null);
+        return new SyntaxSexp(expander.getEvaluator(), null,
+                              EMPTY_STRING_ARRAY, children);
     }
+
 
     /**
      * Instance will be {@link #isNullValue()} if children is null.
@@ -105,14 +142,151 @@ final class SyntaxSexp
     static SyntaxSexp make(Expander expander, SourceLocation loc,
                            SyntaxValue... children)
     {
-        return new SyntaxSexp(expander.getEvaluator(), children,
-                              EMPTY_STRING_ARRAY, loc);
+        return new SyntaxSexp(expander.getEvaluator(), loc,
+                              EMPTY_STRING_ARRAY, children);
+    }
+
+
+    //========================================================================
+
+
+    private static ImmutablePair pushWraps(Evaluator eval,
+                                           ImmutablePair pair,
+                                           SyntaxWraps wraps)
+        throws FusionException
+    {
+        Object head = unsafePairHead(eval, pair);
+        Object tail = unsafePairTail(eval, pair);
+
+        Object newHead = head;
+        if (head instanceof SyntaxValue)
+        {
+            newHead = ((SyntaxValue) head).addWraps(wraps);
+        }
+
+        Object newTail = tail;
+        if (isPair(eval, tail))
+        {
+            newTail = pushWraps(eval, (ImmutablePair) tail, wraps);
+        }
+        else if (tail instanceof SyntaxValue)
+        {
+            newTail = ((SyntaxValue) tail).addWraps(wraps);
+        }
+
+        if (head != newHead || tail != newTail)
+        {
+            pair = pair(eval, pair.myAnnotations, newHead, newTail);
+        }
+
+        return pair;
+    }
+
+
+    /**
+     * If we have wraps cached here, push them down into fresh copies of all
+     * children. This must be called before exposing any children outside of
+     * this instance, so that it appears as if the wraps were pushed when they
+     * were created.
+     */
+    private void pushWraps(Evaluator eval)
+        throws FusionException
+    {
+        if (myWraps != null)  // We only have wraps when we have children.
+        {
+            mySexp = pushWraps(eval, (ImmutablePair) mySexp, myWraps);
+            myWraps = null;
+        }
+    }
+
+
+    @Override
+    SyntaxValue[] extract(Evaluator eval)
+        throws FusionException
+    {
+        pushWraps(eval);
+
+        if (isNullSexp(eval, mySexp)) return null;
+
+        int len = unsafeSexpSize(eval, mySexp);
+        SyntaxValue[] extracted = new SyntaxValue[len];
+
+        int i = 0;
+        for (Object p = mySexp; isPair(eval, p); p = unsafePairTail(eval, p))
+        {
+            extracted[i] = (SyntaxValue) unsafePairHead(eval, p);
+            i++;
+        }
+
+        return extracted;
+    }
+
+
+    void extract(Evaluator eval, List<SyntaxValue> list, int from)
+        throws FusionException
+    {
+        pushWraps(eval);
+
+        int i = 0;
+        for (Object p = mySexp; isPair(eval, p); p = unsafePairTail(eval, p))
+        {
+            if (from <= i)
+            {
+                SyntaxValue child = (SyntaxValue) unsafePairHead(eval, p);
+                list.add(child);
+            }
+            i++;
+        }
+    }
+
+
+    private static ImmutablePair stripWraps(Evaluator eval,
+                                            ImmutablePair pair)
+        throws FusionException
+    {
+        Object head = unsafePairHead(eval, pair);
+        Object tail = unsafePairTail(eval, pair);
+
+        Object newHead = head;
+        if (head instanceof SyntaxValue)
+        {
+            newHead = ((SyntaxValue) head).stripWraps(eval);
+        }
+
+        Object newTail = tail;
+        if (isPair(eval, tail))
+        {
+            newTail = stripWraps(eval, (ImmutablePair) tail);
+        }
+        else if (tail instanceof SyntaxValue)
+        {
+            newTail = ((SyntaxValue) tail).stripWraps(eval);
+        }
+
+        if (head != newHead || tail != newTail)
+        {
+            pair = pair(eval, pair.myAnnotations, newHead, newTail);
+        }
+
+        return pair;
+    }
+
+    @Override
+    SyntaxSequence stripWraps(Evaluator eval)
+        throws FusionException
+    {
+        if (hasNoChildren()) return this;  // No children, no marks, all okay!
+
+        BaseSexp newSexp = stripWraps(eval, (ImmutablePair) mySexp);
+        return new SyntaxSexp(eval, getLocation(), newSexp);
     }
 
 
     @Override
     SyntaxSexp copyReplacingWraps(SyntaxWraps wraps)
+        throws FusionException
     {
+        assert ! hasNoChildren() && wraps != null;
         return new SyntaxSexp(this, wraps);
     }
 
@@ -125,19 +299,177 @@ final class SyntaxSexp
 
 
     @Override
-    SyntaxSexp makeSimilar(Evaluator eval, SyntaxValue[] children,
-                           String[] anns,
-                           SourceLocation loc)
+    boolean isNullValue()
     {
-        return new SyntaxSexp(eval, children, anns, loc);
+        return mySexp.isAnyNull();
     }
+
+
+    @Override
+    boolean hasNoChildren()
+        throws FusionException
+    {
+        return ! (mySexp instanceof ImmutablePair);
+    }
+
+
+    @Override
+    int size()
+        throws FusionException
+    {
+        return mySexp.size();
+    }
+
+
+    @Override
+    SyntaxValue get(Evaluator eval, int index)
+        throws FusionException
+    {
+        pushWraps(eval);
+        return (SyntaxValue) unsafePairDot(eval, mySexp, index);
+    }
+
 
     @Override
     void ionize(Evaluator eval, IonWriter out)
         throws IOException, FusionException
     {
-        ionizeSequence(eval, out, IonType.SEXP);
+        // Ionization doesn't require wraps to be pushed.
+        mySexp.ionize(eval, out);
     }
+
+
+    //========================================================================
+    // Helpers for quote, syntax_to_datum, and syntax_unwrap
+
+
+    private static Object unwrap(Evaluator eval, BaseSexp sexp)
+        throws FusionException
+    {
+        if (isPair(eval, sexp))
+        {
+            Object head = unsafePairHead(eval, sexp);
+            head = ((SyntaxValue) head).unwrap(eval, true);
+
+            Object tail = unsafePairTail(eval, sexp);
+            if (isSexp(eval, tail))
+            {
+                tail = unwrap(eval, (BaseSexp) tail);
+            }
+            else
+            {
+                tail = ((SyntaxValue) tail).unwrap(eval, true);
+            }
+
+            sexp = pair(eval, sexp.myAnnotations, head, tail);
+        }
+
+        return sexp;
+    }
+
+
+    @Override
+    Object unwrap(Evaluator eval, boolean recurse)
+        throws FusionException
+    {
+        pushWraps(eval);
+
+        if (recurse)
+        {
+            return unwrap(eval, mySexp);
+        }
+
+        return mySexp;
+    }
+
+
+    //========================================================================
+    // Helpers for syntax_append and syntax_subseq
+
+
+    private static BaseSexp append(Evaluator eval, Object front, BaseSexp back)
+        throws FusionException
+    {
+        if (isPair(eval, front))
+        {
+            Object tail = unsafePairTail(eval, front);
+            tail = append(eval, tail, back);
+            if (tail != null)
+            {
+                Object head = unsafePairHead(eval, front);
+                return FusionSexp.pair(eval, head, tail);
+            }
+        }
+        else if (isEmptySexp(eval, front))
+        {
+            return back;
+        }
+
+        return null;
+    }
+
+
+    @Override
+    SyntaxSequence makeAppended(Evaluator eval, SyntaxSequence that)
+        throws FusionException
+    {
+        Object back = that.unwrap(eval, false);
+
+        BaseSexp backSexp;
+        if (that instanceof SyntaxSexp)
+        {
+            backSexp = (BaseSexp) back;
+        }
+        else
+        {
+            backSexp = unsafeListToSexp(eval, back);
+        }
+
+        pushWraps(eval);
+
+        BaseSexp appended = append(eval, mySexp, backSexp);
+        if (appended == null)
+        {
+            return null;
+        }
+
+        return SyntaxSexp.make(eval, null, appended);
+    }
+
+
+    /**
+     * @return null if not a proper sexp and we go beyond the end.
+     */
+    private static Object subseq(Evaluator eval, Object sexp, int from)
+        throws FusionException
+    {
+        if (from == 0) return sexp;
+
+        if (isEmptySexp(eval, sexp))
+        {
+            return sexp;
+        }
+
+        if (isPair(eval, sexp))
+        {
+            Object tail = unsafePairTail(eval, sexp);
+            return subseq(eval, tail, from - 1);
+        }
+
+        return null;
+    }
+
+    @Override
+    SyntaxSequence makeSubseq(Evaluator eval, int from)
+        throws FusionException
+    {
+        pushWraps(eval);
+
+        BaseSexp sub = (BaseSexp) subseq(eval, mySexp, from);
+
+        return make(eval, null, sub);
+    }
+
 
 
     //========================================================================
@@ -146,11 +478,14 @@ final class SyntaxSexp
      * Finds the binding for the leading symbol in the sexp, or null if the
      * sexp doesn't start with a symbol.
      */
-    Binding firstBinding()
+    Binding firstBinding(Evaluator eval)
+        throws FusionException
     {
-        if (size() != 0)
+        if (isPair(eval, mySexp))
         {
-            SyntaxValue first = get(0);
+            pushWraps(eval);
+
+            Object first = unsafePairHead(eval, mySexp);
             if (first instanceof SyntaxSymbol)
             {
                 Binding binding = ((SyntaxSymbol)first).uncachedResolve();
@@ -170,10 +505,10 @@ final class SyntaxSexp
         {
             String message =
                 "not a valid syntactic form. You probably want to quote this.";
-            throw new SyntaxFailure(null, message, this);
+            throw new SyntaxException(null, message, this);
         }
 
-        SyntaxValue[] children = extract();
+        SyntaxValue[] children = extract(expander.getEvaluator());
 
         SyntaxValue first = children[0];
         if (first instanceof SyntaxSymbol)
@@ -233,10 +568,13 @@ final class SyntaxSexp
         int len = size();
         if (len == 0)
         {
-            throw new SyntaxFailure(null, "not a valid syntactic form", this);
+            String message =
+                "not a valid syntactic form. You probably want to quote this.";
+            throw new SyntaxException(null, message, this);
         }
 
-        SyntaxValue first = get(0); // calls pushAnyWraps()
+        Evaluator eval = expander.getEvaluator();
+        SyntaxValue first = get(eval, 0); // calls pushAnyWraps()
         if (first instanceof SyntaxSymbol)
         {
             SyntaxSymbol maybeMacro = (SyntaxSymbol) first;
@@ -272,49 +610,6 @@ final class SyntaxSexp
     }
 
 
-
-    @Override
-    Object unwrap(Evaluator eval, boolean recurse)
-        throws FusionException
-    {
-        String[] annotations = getAnnotations();
-
-        if (isNullValue())
-        {
-            return nullSexp(eval, annotations);
-        }
-
-        int size = size();
-        if (size == 0)
-        {
-            return emptySexp(eval, annotations);
-        }
-
-        if (recurse)
-        {
-            Object sexp = EMPTY_SEXP;
-            for (int i = size; i-- != 0;)
-            {
-                SyntaxValue s = get(i);
-                Object head = s.unwrap(eval, true);
-                if (i == 0)
-                {
-                    sexp = pair(eval, annotations, head, sexp);
-                }
-                else
-                {
-                    sexp = pair(eval, head, sexp);
-                }
-            }
-
-            return sexp;
-        }
-        Object head = get(0);
-        Object tail = (size == 1 ? EMPTY_SEXP : makeSubseq(eval, 1, size));
-        return pair(eval, annotations, head, tail);
-    }
-
-
     //========================================================================
 
 
@@ -322,7 +617,7 @@ final class SyntaxSexp
     CompiledForm doCompile(Evaluator eval, Environment env)
         throws FusionException
     {
-        SyntaxValue first = get(0);
+        SyntaxValue first = get(eval, 0);
         if (first instanceof SyntaxSymbol)
         {
             Binding binding = ((SyntaxSymbol) first).getBinding();
@@ -359,8 +654,8 @@ final class SyntaxSexp
                     "procedure expects " + lambda.myArgNames.length +
                     " arguments but application has " + argForms.length +
                     " expressions";
-                 throw new SyntaxFailure("procedure application", message,
-                                         this);
+                 throw new SyntaxException("procedure application", message,
+                                           this);
             }
 
             return compilePlainLet(argForms, lambda.myBody);

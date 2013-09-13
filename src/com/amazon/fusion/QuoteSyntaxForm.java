@@ -14,9 +14,9 @@ final class QuoteSyntaxForm
 
     @Override
     SyntaxValue expand(Expander expander, Environment env, SyntaxSexp stx)
-        throws SyntaxFailure
+        throws FusionException
     {
-        check(stx).arityExact(2);
+        check(expander, stx).arityExact(2);
 
         return stx;
     }
@@ -26,7 +26,7 @@ final class QuoteSyntaxForm
     CompiledForm compile(Evaluator eval, Environment env, SyntaxSexp stx)
         throws FusionException
     {
-        SyntaxValue quoted = stx.get(1);
+        SyntaxValue quoted = stx.get(eval, 1);
         return new CompiledQuoteSyntax(quoted);
     }
 

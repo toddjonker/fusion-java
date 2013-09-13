@@ -28,18 +28,20 @@ final class QuasiSyntaxForm
     SyntaxValue expand(Expander expander, Environment env, SyntaxSexp stx)
         throws FusionException
     {
+        final Evaluator eval = expander.getEvaluator();
+
         if (stx.size() != 2)
         {
-            throw new SyntaxFailure(identify(),
-                                    "a single template required",
-                                    stx);
+            throw new SyntaxException(identify(),
+                                      "a single template required",
+                                      stx);
         }
 
-        SyntaxValue subform = stx.get(1);
+        SyntaxValue subform = stx.get(eval, 1);
         subform = expand(expander, env, subform, 0);
 
         stx = SyntaxSexp.make(expander, stx.getLocation(),
-                              stx.get(0), subform);
+                              stx.get(eval, 0), subform);
         return stx;
     }
 
@@ -62,10 +64,12 @@ final class QuasiSyntaxForm
                                SyntaxSexp stx, int depth)
         throws FusionException
     {
+        final Evaluator eval = expander.getEvaluator();
+
         int size = stx.size();
         if (size == 0) return stx;
 
-        SyntaxValue[] children = stx.extract();
+        SyntaxValue[] children = stx.extract(eval);
         SyntaxValue first = children[0];
         if (first instanceof SyntaxSymbol)
         {
@@ -77,13 +81,22 @@ final class QuasiSyntaxForm
 
                 if (myUsBinding == binding)
                 {
-                    check(stx).arityExact(2);
+                    check(eval, stx).arityExact(2);
 
                     if (depth < 1)
                     {
                         SyntaxValue subform = children[1];
                         children[1] = expander.expandExpression(env, subform);
-                        stx = SyntaxSexp.make(expander, stx.getLocation(),
+
+                        // TODO accept annotations on unsyntax form?
+                        if (stx.getAnnotations().length != 0)
+                        {
+                            String message =
+                                "Annotations not accepted on unsyntax form";
+                            throw check(eval, stx).failure(message);
+                        }
+
+                        stx = SyntaxSexp.make(eval, stx.getLocation(),
                                               children);
                         return stx;
                     }
@@ -92,7 +105,7 @@ final class QuasiSyntaxForm
                 }
                 else if (myQsBinding == binding)
                 {
-                    check(stx).arityExact(2);
+                    check(eval, stx).arityExact(2);
 
                     depth++;
                 }
@@ -101,11 +114,12 @@ final class QuasiSyntaxForm
 
         for (int i = 0; i < size; i++)
         {
-            SyntaxValue subform = stx.get(i);
+            SyntaxValue subform = stx.get(eval, i);
             children[i] = expand(expander, env, subform, depth);
         }
 
-        stx = SyntaxSexp.make(expander, stx.getLocation(), children);
+        stx = SyntaxSexp.make(eval, stx.getLocation(), stx.getAnnotations(),
+                              children);
         return stx;
     }
 
@@ -117,7 +131,7 @@ final class QuasiSyntaxForm
     CompiledForm compile(Evaluator eval, Environment env, SyntaxSexp stx)
         throws FusionException
     {
-        SyntaxValue node = stx.get(1);
+        SyntaxValue node = stx.get(eval, 1);
         return compile(eval, env, node, 0);
     }
 
@@ -144,9 +158,10 @@ final class QuasiSyntaxForm
         int size = stx.size();
         if (size == 0) return new CompiledQuoteSyntax(stx);
 
+        // Look for an (unsyntax ...) form
         if (size == 2)
         {
-            SyntaxValue first = stx.get(0);
+            SyntaxValue first = stx.get(eval, 0);
             if (first instanceof SyntaxSymbol)
             {
                 Binding binding = ((SyntaxSymbol)first).uncachedResolveMaybe();
@@ -158,7 +173,8 @@ final class QuasiSyntaxForm
                     {
                         if (depth == 0)
                         {
-                            SyntaxValue unquotedSyntax = stx.get(1);
+                            assert stx.getAnnotations().length == 0;
+                            SyntaxValue unquotedSyntax = stx.get(eval, 1);
                             CompiledForm unquotedForm =
                                 eval.compile(env, unquotedSyntax);
                             return new CompiledUnsyntax(unquotedSyntax,
@@ -178,7 +194,7 @@ final class QuasiSyntaxForm
         CompiledForm[] children = new CompiledForm[size];
         for (int i = 0; i < size; i++)
         {
-            SyntaxValue orig = stx.get(i);
+            SyntaxValue orig = stx.get(eval, i);
             children[i] = compile(eval, env, orig, depth);
             same &= (children[i] instanceof CompiledQuoteSyntax);
         }
@@ -189,7 +205,9 @@ final class QuasiSyntaxForm
             return new CompiledQuoteSyntax(stx);
         }
 
-        return new CompiledQuasiSyntaxSexp(stx.getLocation(), children);
+        return new CompiledQuasiSyntaxSexp(stx.getLocation(),
+                                           stx.getAnnotations(),
+                                           children);
     }
 
 
@@ -200,13 +218,16 @@ final class QuasiSyntaxForm
         implements CompiledForm
     {
         private final SourceLocation myLocation;
+        private final String[]       myAnnotations;
         private final CompiledForm[] myChildForms;
 
         CompiledQuasiSyntaxSexp(SourceLocation location,
+                                String[]       annotations,
                                 CompiledForm[] childForms)
         {
-            myLocation   = location;
-            myChildForms = childForms;
+            myLocation    = location;
+            myAnnotations = annotations;
+            myChildForms  = childForms;
         }
 
         @Override
@@ -220,10 +241,10 @@ final class QuasiSyntaxForm
                 Object child = eval.eval(store, myChildForms[i]);
 
                 // This cast is safe because children are either quote-syntax
-                // or unquote, which always return syntax.
+                // or unsyntax, which always return syntax.
                 children[i] = (SyntaxValue) child;
             }
-            return SyntaxSexp.make(eval, myLocation, children);
+            return SyntaxSexp.make(eval, myLocation, myAnnotations, children);
         }
     }
 
@@ -258,7 +279,7 @@ final class QuasiSyntaxForm
                 safeWriteToString(eval, myUnquotedSyntax) +
                 ") isn't a syntax value: " +
                 safeWriteToString(eval, unquoted);
-            throw new ContractFailure(message);
+            throw new ContractException(message);
         }
     }
 }

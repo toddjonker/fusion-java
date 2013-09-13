@@ -1,4 +1,4 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -132,7 +132,7 @@ public class CoreTestCase
         throws FusionException
     {
         TopLevel top = topLevel();
-        return top.eval(expressionIon);
+        return top.load(expressionIon);
     }
 
 
@@ -411,14 +411,14 @@ public class CoreTestCase
     void expectSyntaxFailure(String expr)
         throws Exception
     {
-        expectFailure(SyntaxFailure.class, expr);
+        expectFailure(SyntaxException.class, expr);
     }
 
 
     void expectContractFailure(String expr)
         throws Exception
     {
-        expectFailure(ContractFailure.class, expr);
+        expectFailure(ContractException.class, expr);
     }
 
 

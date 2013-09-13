@@ -23,7 +23,7 @@ final class ThunkThrowsProc
             Procedure proc = (Procedure) thunk;
             eval.callNonTail(proc);
         }
-        catch (SyntaxFailure e)
+        catch (SyntaxException e)
         {
             // Good!  We are expecting this.
             return eval.newString("syntax");
@@ -36,7 +36,7 @@ final class ThunkThrowsProc
         {
             return eval.newString("arity");
         }
-        catch (ContractFailure e)
+        catch (ContractException e)
         {
             return eval.newString("contract");
         }

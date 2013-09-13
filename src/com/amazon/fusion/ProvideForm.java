@@ -31,7 +31,9 @@ final class ProvideForm
     SyntaxValue expand(Expander expander, Environment env, SyntaxSexp form)
         throws FusionException
     {
-        SyntaxChecker check = check(form);
+        final Evaluator eval = expander.getEvaluator();
+
+        SyntaxChecker check = check(eval, form);
 
         if (!expander.isModuleContext())
         {
@@ -40,14 +42,13 @@ final class ProvideForm
 
 
         Namespace moduleNamespace = (Namespace) env;
-        Evaluator eval = expander.getEvaluator();
 
         ArrayList<SyntaxValue> expanded = new ArrayList<>(form.size());
-        expanded.add(form.get(0));
+        expanded.add(form.get(eval, 0));
 
         for (int i = 1; i < form.size(); i++)
         {
-            SyntaxValue spec = form.get(i);
+            SyntaxValue spec = form.get(eval, i);
             switch (spec.getType())
             {
                 case SYMBOL:
@@ -68,14 +69,16 @@ final class ProvideForm
                 }
                 default:
                 {
-                    throw check.failure("expected provide-spec", form.get(i));
+                    throw check.failure("expected provide-spec",
+                                        form.get(eval, i));
                 }
             }
         }
 
         SyntaxValue[] children =
             expanded.toArray(new SyntaxValue[expanded.size()]);
-        return SyntaxSexp.make(eval, children, form.getAnnotations(), form.getLocation());
+        return SyntaxSexp.make(eval, form.getLocation(), form.getAnnotations(),
+                               children);
     }
 
     private void expandProvideId(Namespace moduleNamespace,
@@ -123,12 +126,12 @@ final class ProvideForm
                                    ArrayList<SyntaxValue> expanded)
         throws FusionException
     {
-        Binding b = specForm.firstBinding();
+        Binding b = specForm.firstBinding(eval);
         if (b == eval.getGlobalState().myKernelAllDefinedOutBinding)
         {
             check.arityExact(1);
 
-            SyntaxSymbol tag = (SyntaxSymbol) specForm.get(0);
+            SyntaxSymbol tag = (SyntaxSymbol) specForm.get(eval, 0);
 
             // Filter by lexical context: we shouldn't export identifiers
             // introduced by macros unless this form was also introduced
@@ -197,7 +200,7 @@ final class ProvideForm
         SyntaxValue expand(Expander expander, Environment env, SyntaxSexp stx)
             throws FusionException
         {
-            throw check(stx).failure("must be used inside `provide`");
+            throw check(expander, stx).failure("must be used inside `provide`");
         }
 
         @Override

@@ -27,12 +27,14 @@ final class TopForm
     SyntaxValue expand(Expander expander, Environment env, SyntaxSexp stx)
         throws FusionException
     {
-        SyntaxChecker check = check(stx);
+        final Evaluator eval = expander.getEvaluator();
+
+        SyntaxChecker check = check(eval, stx);
         check.arityExact(2);
 
         SyntaxSymbol id = check.requiredIdentifier("top-level variable", 1);
 
-        SyntaxValue[] children = stx.extract();
+        SyntaxValue[] children = stx.extract(eval);
 
         Namespace ns = env.namespace();
         if (ns instanceof TopLevelNamespace)
@@ -46,7 +48,7 @@ final class TopForm
                 // There's no top-level binding with the same marks, so just
                 // lookup by name.
 
-                SyntaxSymbol stripped = id.stripWraps(expander.getEvaluator());
+                SyntaxSymbol stripped = id.stripWraps(eval);
                 assert stripped.resolve() instanceof FreeBinding;
 
                 binding = ns.localResolve(stripped);
@@ -85,15 +87,15 @@ final class TopForm
         }
 
         children[1] = id;
-        return SyntaxSexp.make(expander.getEvaluator(), children,
-                               stx.getAnnotations(), stx.getLocation());
+        return SyntaxSexp.make(eval, stx.getLocation(), stx.getAnnotations(),
+                               children);
     }
 
     @Override
     CompiledForm compile(Evaluator eval, Environment env, SyntaxSexp stx)
         throws FusionException
     {
-        SyntaxSymbol id = (SyntaxSymbol) stx.get(1);
+        SyntaxSymbol id = (SyntaxSymbol) stx.get(eval, 1);
 
         return id.resolve().compileTopReference(eval, env, id);
     }

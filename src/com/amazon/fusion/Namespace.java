@@ -82,7 +82,7 @@ abstract class Namespace
         {
             String message =
                 "Mutation of top-level variables is not supported";
-            throw new ContractFailure(message);
+            throw new ContractException(message);
         }
 
         CompiledForm compileDefine(Evaluator eval,
@@ -198,6 +198,7 @@ abstract class Namespace
      * namespace and of required modules.
      */
     SyntaxValue syntaxIntroduce(SyntaxValue source)
+        throws FusionException
     {
         // TODO there's a case where we are applying the same wraps that are
         // already on the source.  This happens when expand-ing (and maybe when
@@ -645,7 +646,7 @@ abstract class Namespace
                 String message =
                     "define_syntax value is not a transformer: " +
                     safeWriteToString(eval, value);
-                throw new ContractFailure(message);
+                throw new ContractException(message);
             }
 
             return value;

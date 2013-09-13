@@ -20,7 +20,7 @@ abstract class SyntaxValue
         STRING, SYMBOL, LIST, SEXP, STRUCT, KEYWORD
     }
 
-    /** A zero-lengeth array. */
+    /** A zero-length array. */
     final static SyntaxValue[] EMPTY_ARRAY = new SyntaxValue[0];
 
     private final String[] myAnnotations;
@@ -63,6 +63,7 @@ abstract class SyntaxValue
      * This will return a new instance as necessary to preserve immutability.
      */
     SyntaxValue addWrap(SyntaxWrap wrap)
+        throws FusionException
     {
         return this;
     }
@@ -72,12 +73,14 @@ abstract class SyntaxValue
      * This will return a new instance as necessary to preserve immutability.
      */
     SyntaxValue addWraps(SyntaxWraps wraps)
+        throws FusionException
     {
         return this;
     }
 
 
     SyntaxValue addOrRemoveMark(int mark)
+        throws FusionException
     {
         SyntaxWrap wrap = new MarkWrap(mark);
         return addWrap(wrap);
@@ -90,6 +93,7 @@ abstract class SyntaxValue
      * May return this instance when that's already the case.
      */
     SyntaxValue stripWraps(Evaluator eval)
+        throws FusionException
     {
         return this;
     }

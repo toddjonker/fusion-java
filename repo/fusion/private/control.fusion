@@ -4,8 +4,8 @@
 
   (require
     "/fusion/experimental/defines"
+    "/fusion/experimental/syntax"
     "/fusion/private/compare"
-    "/fusion/syntax"
     "/fusion/void")
 
 
@@ -51,7 +51,7 @@ The last `expr` is in tail position. Given no `expr`s, the result is false.
 
       // (or)          -->  false
       // (or A)        -->  A
-      // (or A B ...)  -->  (let [(a A)] (if a a (and B ...)))
+      // (or A B ...)  -->  (let [(a A)] (if a a (or B ...)))
 
       (let [(size (syntax_size stx))]
         (if (= 1 size)

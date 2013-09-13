@@ -5,6 +5,7 @@ package com.amazon.fusion;
 import static com.amazon.fusion.BindingDoc.COLLECT_DOCS_MARK;
 import static com.amazon.fusion.FusionEval.evalSyntax;
 import static com.amazon.fusion.GlobalState.DEFINE_SYNTAX;
+import static com.amazon.fusion.GlobalState.PROVIDE;
 import static com.amazon.fusion.ModuleIdentity.isValidAbsoluteModulePath;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -56,15 +57,16 @@ final class ModuleForm
                        SyntaxSexp source)
         throws FusionException
     {
-        SyntaxChecker check = check(source);
+        final Evaluator   eval    = expander.getEvaluator();
+        final GlobalState globals = eval.getGlobalState();
+
+        SyntaxChecker check = check(eval, source);
         if (! expander.isTopLevelContext())
         {
             throw check.failure("`module` declaration not at top-level");
         }
 
 
-        final GlobalState globals = expander.getGlobalState();
-        final Evaluator   eval    = expander.getEvaluator();
 
         SyntaxSymbol moduleNameSymbol = check.requiredSymbol("module name", 1);
         ModuleIdentity.validateLocalName(moduleNameSymbol);
@@ -80,7 +82,7 @@ final class ModuleForm
         {
             String message =
                 "Error determining module identity: " + e.getMessage();
-            SyntaxFailure ex = check.failure(message);
+            SyntaxException ex = check.failure(message);
             ex.initCause(e);
             throw ex;
         }
@@ -89,12 +91,12 @@ final class ModuleForm
         ModuleInstance language;
         {
             String path = check.requiredText("initial module path", 2);
-            SyntaxValue initialBindingsStx = source.get(2);
+            SyntaxValue initialBindingsStx = source.get(eval, 2);
 
             if (! isValidAbsoluteModulePath(path))
             {
                 String message = "Module path for language must be absolute";
-                throw new ModuleNotFoundFailure(message, initialBindingsStx);
+                throw new ModuleNotFoundException(message, initialBindingsStx);
             }
 
             try
@@ -105,7 +107,7 @@ final class ModuleForm
                 language = registry.lookup(initialBindingsId);
                 assert language != null;  // Otherwise resolve should fail
             }
-            catch (ModuleNotFoundFailure e)
+            catch (ModuleNotFoundException e)
             {
                 e.addContext(initialBindingsStx);
                 throw e;
@@ -114,9 +116,9 @@ final class ModuleForm
             {
                 String message =
                     "Error installing initial bindings: " + e.getMessage();
-                SyntaxFailure ex =
-                    new SyntaxFailure(getInferredName(), message,
-                                      initialBindingsStx);
+                SyntaxException ex =
+                    new SyntaxException(getInferredName(), message,
+                                        initialBindingsStx);
                 ex.initCause(e);
                 throw ex;
             }
@@ -142,7 +144,7 @@ final class ModuleForm
         ArrayList<Boolean>     preparedFormFlags = new ArrayList<>();
 
         LinkedList<SyntaxValue> forms = new LinkedList<>();
-        source.extract(forms, 3);
+        source.extract(eval, forms, 3);
 
         int formsAlreadyWrapped = 0;
         while (! forms.isEmpty())
@@ -167,7 +169,7 @@ final class ModuleForm
             if (expanded instanceof SyntaxSexp)
             {
                 SyntaxSexp sexp = (SyntaxSexp)expanded;
-                Binding binding = sexp.firstBinding();
+                Binding binding = sexp.firstBinding(eval);
 
                 if (binding == globals.myKernelDefineBinding)
                 {
@@ -184,7 +186,7 @@ final class ModuleForm
                             eval.compile(moduleNamespace, expanded);
                         eval.eval(moduleNamespace, compiled);
                     }
-                    catch (SyntaxFailure e)
+                    catch (SyntaxException e)
                     {
                         e.addContext(form);
                         throw e;
@@ -192,7 +194,8 @@ final class ModuleForm
                     catch (FusionException e)
                     {
                         String message = e.getMessage();
-                        throw new SyntaxFailure(DEFINE_SYNTAX, message, form);
+                        throw new SyntaxException(DEFINE_SYNTAX, message,
+                                                  form);
                     }
                     formIsPrepared = true;
                 }
@@ -206,9 +209,9 @@ final class ModuleForm
                     catch (FusionException e)
                     {
                         String message = e.getMessage();
-                        SyntaxFailure ex =
-                            new SyntaxFailure(binding.getName(),
-                                              message, form);
+                        SyntaxException ex =
+                            new SyntaxException(binding.getName(),
+                                                message, form);
                         ex.initCause(e);
                         throw ex;
                     }
@@ -225,7 +228,7 @@ final class ModuleForm
                     int last = sexp.size() - 1;
                     for (int i = last; i != 0;  i--)
                     {
-                        forms.push(sexp.get(i));
+                        forms.push(sexp.get(eval, i));
                     }
                     formsAlreadyWrapped += last;
                     expanded = null;
@@ -246,9 +249,9 @@ final class ModuleForm
             new SyntaxValue[4 + otherForms.size() + provideForms.size()];
 
         int i = 0;
-        subforms[i++] = source.get(0); // module
-        subforms[i++] = source.get(1); // name
-        subforms[i++] = source.get(2); // language
+        subforms[i++] = source.get(eval, 0); // module
+        subforms[i++] = source.get(eval, 1); // name
+        subforms[i++] = source.get(eval, 2); // language
 
         // FIXME a ludicrous hack to communicate this data to the compiler!
         {
@@ -278,7 +281,7 @@ final class ModuleForm
         {
             if (! prepared.next())
             {
-                if (firstBinding(stx) == globals.myKernelDefineBinding)
+                if (firstBinding(eval, stx) == globals.myKernelDefineBinding)
                 {
                     assert expander.isModuleContext();
                     stx = expander.expand(moduleNamespace, stx);
@@ -297,16 +300,17 @@ final class ModuleForm
             subforms[i++] = stx;
         }
 
-        SyntaxSexp result = SyntaxSexp.make(expander, source.getLocation(),
+        SyntaxSexp result = SyntaxSexp.make(eval, source.getLocation(),
                                             subforms);
         return result;
     }
 
-    Binding firstBinding(SyntaxValue stx)
+    Binding firstBinding(Evaluator eval, SyntaxValue stx)
+        throws FusionException
     {
         if (stx instanceof SyntaxSexp)
         {
-            return ((SyntaxSexp) stx).firstBinding();
+            return ((SyntaxSexp) stx).firstBinding(eval);
         }
         return null;
     }
@@ -322,7 +326,7 @@ final class ModuleForm
         // See Racket reference 11.9.1
         // http://docs.racket-lang.org/reference/Expanding_Top-Level_Forms.html#%28part._modinfo%29
 
-        SyntaxStruct meta = (SyntaxStruct) stx.get(3);
+        SyntaxStruct meta = (SyntaxStruct) stx.get(eval, 3);
 
         ModuleIdentity id;
         {
@@ -354,13 +358,13 @@ final class ModuleForm
 
         int bodyPos = 4;
         String docs = null;
-        if (stx.size() > 5 && stx.get(4) instanceof SyntaxString)
+        if (stx.size() > 5 && stx.get(eval, 4) instanceof SyntaxString)
         {
             // We're gonna call this documentation!
             bodyPos++;
             if (eval.firstContinuationMark(COLLECT_DOCS_MARK) != null)
             {
-                docs = ((SyntaxString) stx.get(4)).stringValue();
+                docs = ((SyntaxString) stx.get(eval, 4)).stringValue();
             }
         }
 
@@ -371,8 +375,8 @@ final class ModuleForm
         int i;
         for (i = bodyPos; i < stx.size(); i++)
         {
-            SyntaxValue form = stx.get(i);
-            if (firstBinding(form) == kernelProvideBinding)
+            SyntaxValue form = stx.get(eval, i);
+            if (firstBinding(eval, form) == kernelProvideBinding)
             {
                 break;
             }
@@ -432,13 +436,13 @@ final class ModuleForm
 
         for (int p = firstProvidePos; p < moduleStx.size(); p++)
         {
-            SyntaxSexp form = (SyntaxSexp) moduleStx.get(p);
-            SyntaxChecker check = new SyntaxChecker("provide", form);
+            SyntaxSexp form = (SyntaxSexp) moduleStx.get(eval, p);
+            SyntaxChecker check = new SyntaxChecker(eval, PROVIDE, form);
 
             int size = form.size();
             for (int i = 1; i < size; i++)
             {
-                SyntaxValue spec = form.get(i);
+                SyntaxValue spec = form.get(eval, i);
                 switch (spec.getType())
                 {
                     case SYMBOL:
