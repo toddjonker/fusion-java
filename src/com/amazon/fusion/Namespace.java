@@ -4,6 +4,8 @@ package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionVoid.voidValue;
 import static com.amazon.fusion.FusionWrite.safeWriteToString;
+import com.amazon.fusion.ModuleNamespace.ModuleBinding;
+import com.amazon.fusion.TopLevelNamespace.TopLevelBinding;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -22,7 +24,7 @@ abstract class Namespace
     implements Environment, NamespaceStore
 {
     abstract static class NsBinding
-        implements Binding
+        extends Binding
     {
         private final SyntaxSymbol myIdentifier;
         final int myAddress;
@@ -42,18 +44,6 @@ abstract class Namespace
         final SyntaxSymbol getIdentifier()
         {
             return myIdentifier;
-        }
-
-        @Override
-        public boolean isFree(String name)
-        {
-            return false;
-        }
-
-        @Override
-        public Binding originalBinding()
-        {
-            return this;
         }
 
         @Override
@@ -83,14 +73,6 @@ abstract class Namespace
             String message =
                 "Mutation of top-level variables is not supported";
             throw new ContractException(message);
-        }
-
-        CompiledForm compileDefine(Evaluator eval,
-                                   Environment env,
-                                   CompiledForm valueForm)
-        {
-            String name = getName();
-            return new CompiledTopDefine(name, myAddress, valueForm);
         }
 
         CompiledForm compileDefineSyntax(Evaluator eval,
@@ -263,11 +245,11 @@ abstract class Namespace
 
 
     /**
+     * @param name must be non-empty.
      * @return null is equivalent to a {@link FreeBinding}.
      */
     Binding resolve(String name)
     {
-        // TODO FUSION-114 check that the name has at least one character!
         return myWraps.resolve(name);
     }
 
@@ -354,10 +336,18 @@ abstract class Namespace
      * Allows rebinding of existing names!
      *
      * @param value must not be null
+     *
+     * @throws IllegalArgumentException if the name is null or empty.
      */
     public void bind(String name, Object value)
         throws FusionException
     {
+        if (name == null || name.length() == 0)
+        {
+            String message = "bound name must be non-null and non-empty";
+            throw new IllegalArgumentException(message);
+        }
+
         SyntaxSymbol identifier = SyntaxSymbol.make(name);
         identifier = predefine(identifier, null);
         NsBinding binding = (NsBinding) identifier.getBinding();
@@ -403,6 +393,34 @@ abstract class Namespace
         }
         return false;
     }
+
+
+
+    abstract CompiledForm compileDefine(Evaluator eval,
+                                        FreeBinding binding,
+                                        SyntaxSymbol id,
+                                        CompiledForm valueForm)
+        throws FusionException;
+
+    abstract CompiledForm compileDefine(Evaluator eval,
+                                        TopLevelBinding binding,
+                                        SyntaxSymbol id,
+                                        CompiledForm valueForm)
+        throws FusionException;
+
+    abstract CompiledForm compileDefine(Evaluator eval,
+                                        ModuleBinding binding,
+                                        SyntaxSymbol id,
+                                        CompiledForm valueForm)
+        throws FusionException;
+
+
+    /**
+     * Compile a free variable reference.  These are allowed at top-level but
+     * not within a module.
+     */
+    abstract CompiledForm compileFreeTopReference(SyntaxSymbol identifier)
+        throws FusionException;
 
 
     @Override
@@ -581,7 +599,7 @@ abstract class Namespace
     }
 
 
-    private static class CompiledTopDefine
+    protected static class CompiledTopDefine
         implements CompiledForm
     {
         private final String       myName;

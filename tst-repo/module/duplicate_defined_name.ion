@@ -1,7 +1,0 @@
-(module dupe_define '/fusion/base'
-
-  (define dupe 1)
-
-  // ERROR: 'dupe' is already bound via definition.
-  (define dupe 2)
-)

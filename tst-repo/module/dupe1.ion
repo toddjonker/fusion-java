@@ -1,6 +1,0 @@
-(module dupe1 '/fusion/base'
-
-  (define dupe 1)
-
-  (provide dupe)
-)

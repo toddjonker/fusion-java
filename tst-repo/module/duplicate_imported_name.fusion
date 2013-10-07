@@ -1,0 +1,9 @@
+// Copyright (c) 2013 Amazon.com, Inc.  All rights reserved.
+
+(module dupe_import "/fusion"
+
+  (require "/module/require/dupe1")
+
+  // ERROR: 'dupe' is already bound via import.
+  (require "/module/require/dupe2")
+)

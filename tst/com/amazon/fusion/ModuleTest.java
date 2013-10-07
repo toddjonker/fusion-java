@@ -13,6 +13,7 @@ public class ModuleTest
 {
     @Before
     public void requires()
+        throws FusionException
     {
         useTstRepo();
     }
@@ -56,7 +57,7 @@ public class ModuleTest
         eval("(module m \"lang\" (define x 1))");
     }
 
-    // TODO similar tests for 'use' to the language tests above
+    // TODO similar tests for 'require' to the language tests above
 
 
     @Test(expected = FusionException.class) // ModuleNotFoundException gets wrapped
@@ -186,12 +187,19 @@ public class ModuleTest
         expectSyntaxFailure("(require (lib \"/fusion/list\"))");
     }
 
+    @Test(expected = FusionException.class)
+    public void testRequireNonModule()
+        throws Exception
+    {
+        eval("(require \"/nonmodule/trivialDefine\")");
+    }
+
     @Test
     public void testRequireUnderTop()
         throws Exception
     {
         String code =
-            "(module m '/fusion/base'" +
+            "(module m '/fusion'" +
             "  (if true (require '/fusion/list') false))";
         expectSyntaxFailure(code);
     }
@@ -201,14 +209,14 @@ public class ModuleTest
     public void testBadSexpAtModuleLevel()
         throws Exception
     {
-        eval("(module m '/fusion/base' (1))");
+        eval("(module m '/fusion' (1))");
     }
 
     @Test
     public void testModuleAtTopLevel()
         throws Exception
     {
-        eval("(module mod '/fusion/base'" +
+        eval("(module mod '/fusion'" +
              "  (define M 1054)" +
             "   (define N (lambda () (+ 1 M)))" +
              "  (provide M N))");
@@ -228,7 +236,7 @@ public class ModuleTest
     public void testProvideFailsLate()
         throws Exception
     {
-        eval("(module x '/fusion/base'" +
+        eval("(module x '/fusion'" +
              "  (require '/fusion/experimental/syntax')" +
              "  (define_syntax broken (lambda (s) x))" +
              "  (provide broken))");

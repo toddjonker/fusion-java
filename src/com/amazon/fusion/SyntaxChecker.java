@@ -147,7 +147,7 @@ class SyntaxChecker
                 "expected " + expectation + ", not a keyword";
             throw failure(message, form);
         }
-        // TODO check emptyness
+        // TODO FUSION-204 check emptyness
         return checkSyntax(SyntaxSymbol.class, expectation,
                            false /* nullable */, form);
     }
@@ -156,16 +156,6 @@ class SyntaxChecker
         throws FusionException
     {
         return requiredIdentifier("identifier", argNum);
-    }
-
-
-    @Deprecated
-    final String requiredNonEmptySymbol(String expectation, int argNum)
-        throws FusionException
-    {
-        SyntaxSymbol sym = requiredSymbol(expectation, argNum);
-        // TODO check emptyness
-        return sym.stringValue();
     }
 
 

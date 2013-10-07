@@ -1,4 +1,4 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion.cli;
 
@@ -6,11 +6,7 @@ import static com.amazon.fusion.FusionVoid.isVoid;
 import static com.amazon.fusion.FusionWrite.write;
 import com.amazon.fusion.ExitException;
 import com.amazon.fusion.FusionException;
-import com.amazon.fusion.FusionRuntime;
-import com.amazon.fusion.FusionRuntimeBuilder;
 import com.amazon.fusion.TopLevel;
-import com.amazon.ion.IonSystem;
-import com.amazon.ion.system.IonSystemBuilder;
 import java.io.File;
 import java.io.IOException;
 
@@ -46,17 +42,15 @@ final class Load
 
 
     private static class Executor
-        implements Command.Executor
+        extends FusionExecutor
     {
-        private final IonSystem     mySystem;
-        private final FusionRuntime myRuntime;
-        private final String        myFileName;
+        private final String myFileName;
 
 
         private Executor(String fileName)
         {
-            mySystem   = IonSystemBuilder.standard().build();
-            myRuntime  = FusionRuntimeBuilder.standard().build();
+            super(/* documenting */ false);
+
             myFileName = fileName;
         }
 
@@ -65,7 +59,7 @@ final class Load
         public int execute()
             throws Exception
         {
-            TopLevel top = myRuntime.getDefaultTopLevel();
+            TopLevel top = runtime().getDefaultTopLevel();
 
             try
             {

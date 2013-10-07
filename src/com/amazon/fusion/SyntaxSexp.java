@@ -528,7 +528,7 @@ final class SyntaxSexp
                 assert expander.expand(env, first) == first;
                 // else the next stmt must change
 
-                // TODO tail expand
+                // TODO FUSION-207 tail expand
 
                 // We use the same expansion context as we already have.
                 // Don't need to replace the sexp since we haven't changed it.
@@ -712,11 +712,18 @@ final class SyntaxSexp
                 StringBuilder b = new StringBuilder();
                 b.append("Application expected procedure, given: ");
                 safeWrite(eval, b, proc);
-                b.append("\nArguments were: ");
-                for (int i = 0; i < args.length; i++)
+                if (args.length == 0)
                 {
-                    b.append("\n  ");
-                    safeWrite(eval, b, args[i]);
+                    b.append("\nNo arguments were provided.");
+                }
+                else
+                {
+                    b.append("\nArguments were: ");
+                    for (int i = 0; i < args.length; i++)
+                    {
+                        b.append("\n  ");
+                        safeWrite(eval, b, args[i]);
+                    }
                 }
 
                 throw new FusionException(b.toString());

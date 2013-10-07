@@ -42,6 +42,7 @@ public class RuntimeTest
 
     @Test(expected = IllegalArgumentException.class)
     public void testCurrentDirectoryDoesNotExist()
+        throws Exception
     {
         File file = new File("no-such-file");
         assertFalse(file.exists());
@@ -51,6 +52,7 @@ public class RuntimeTest
 
     @Test(expected = IllegalArgumentException.class)
     public void testCurrentDirectoryIsNormalFile()
+        throws Exception
     {
         File file = new File("build.xml");
         assertTrue(file.isFile());
@@ -86,7 +88,7 @@ public class RuntimeTest
         throws Exception
     {
         useTstRepo();
-        eval("(use grain)");
+        eval("(require '''/grain''')");
         assertString("soup", "barley");
     }
 
@@ -102,7 +104,7 @@ public class RuntimeTest
         assertEval(3328, "x");
 
         // Test eval'ing a module
-        Object mod = loadFile("tst-repo/grain.ion");
+        Object mod = loadFile("tst-repo/grain.fusion");
         assertTrue(mod instanceof ModuleInstance);
     }
 
@@ -110,7 +112,6 @@ public class RuntimeTest
     public void testNullInjection()
         throws Exception
     {
-        topLevel().requireModule("/fusion/function");
         Object fv = topLevel().call("identity", (Object) null);
         assertTrue(isVoid(topLevel(), fv));
 

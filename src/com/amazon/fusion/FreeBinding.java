@@ -3,7 +3,8 @@
 package com.amazon.fusion;
 
 
-final class FreeBinding implements Binding
+final class FreeBinding
+    extends Binding
 {
     private final String myName;
 
@@ -28,13 +29,6 @@ final class FreeBinding implements Binding
 
 
     @Override
-    public Binding originalBinding()
-    {
-        return this;
-    }
-
-
-    @Override
     public boolean sameTarget(Binding other)
     {
         if (this == other) return true;
@@ -54,6 +48,16 @@ final class FreeBinding implements Binding
     }
 
     @Override
+    CompiledForm compileDefine(Evaluator eval,
+                               Environment env,
+                               SyntaxSymbol id,
+                               CompiledForm valueForm)
+        throws FusionException
+    {
+        return env.namespace().compileDefine(eval, this, id, valueForm);
+    }
+
+    @Override
     public CompiledForm compileReference(Evaluator eval, Environment env)
         throws FusionException
     {
@@ -67,7 +71,7 @@ final class FreeBinding implements Binding
                                             SyntaxSymbol id)
         throws FusionException
     {
-        throw new UnboundIdentifierFailure(null, id);
+        return env.namespace().compileFreeTopReference(id);
     }
 
     @Override

@@ -1,0 +1,110 @@
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+
+(module fusion "/fusion/base"
+
+  // WARNING: Doc syntax isn't supported yet.
+  '''
+The main Fusion language. This is the default language for Fusion scripts
+and the recommended language for most modules.
+
+# Warning!
+
+<!-- Note similar content in the site index! -->
+
+This documentation is your contract.  Use of non-public and/or
+undocumented features, APIs, procedures, modules, _etc._ is NOT SUPPORTED.
+Behavior that is not documented here is non-contractual and is subject to
+change at any time.  If you have any questions about supported behavior,
+contact us for clarification.
+  '''
+
+
+  // Top-Level Forms
+  (provide begin define)
+
+  // Module Forms
+  (provide all_defined_out module provide require)
+
+  // Misc core forms
+  (provide quote set type_annotations '#%top')
+
+  // TODO FUSION-202 Backwards compat
+  (provide assert)                        // TODO FUSION-181 remove from here
+  (provide to_int)                        // TODO FUSION-177 remove from here
+  (provide to_string)                     // TODO FUSION-173 remove from here
+  (provide use)                           // TODO FUSION-133 remove from here
+
+
+  //=========================================================================
+  // Scalar Types
+
+  (provide is_null is_null_null)
+
+  // bool
+  (provide is_bool not)
+
+  (require "/fusion/number")
+  (provide + - * / int_to_string is_decimal is_float is_int string_to_int)
+
+  (require "/fusion/string")
+  (provide is_string string_append string_to_symbol)
+
+  (require "/fusion/timestamp")
+  (provide is_timestamp timestamp_now timestamp_to_epoch_millis)
+
+  (require "/fusion/void")
+  (provide is_void void)
+
+  (provide is_symbol is_clob is_blob)
+
+  (provide < <= = >= >)
+
+
+  //=========================================================================
+  // Collection Types
+
+  (require "/fusion/collection")
+  (provide . any do element elt find is_empty size)
+
+  (require "/fusion/sequence")
+  (provide add choose first last map)
+
+  (require "/fusion/list")
+  (provide is_list list list_element subseq)
+
+  (require "/fusion/sexp")
+  (provide head is_pair is_sexp pair sexp tail)
+
+  (require "/fusion/struct")
+  (provide is_struct remove_keys retain_keys struct struct_for_each
+    struct_merge struct_zip)
+
+
+  //=========================================================================
+  // Binding Forms
+
+  (provide let let_values letrec lets)
+
+
+  //=========================================================================
+  // Control Forms
+
+  (provide and cond exit if or unless when)
+
+
+  //=========================================================================
+  // Procedures
+
+  (require "/fusion/procedure")
+  (provide always apply compose conjoin disjoin identity is_procedure lambda
+    negate thunk)
+
+
+  //=========================================================================
+  // I/O
+
+  (require "/fusion/io")
+  (provide display displayln eof ionize is_eof read with_ion_from_file
+    write writeln)
+
+)

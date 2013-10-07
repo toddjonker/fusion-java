@@ -1,0 +1,8 @@
+// Copyright (c) 2013 Amazon.com, Inc.  All rights reserved.
+
+(module dupe1 "/fusion"
+
+  (define dupe 1)
+
+  (provide dupe)
+)

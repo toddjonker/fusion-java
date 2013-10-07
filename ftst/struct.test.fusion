@@ -1,0 +1,216 @@
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+
+(require
+  "/check"
+  "/fusion/list"
+  "/fusion/struct")
+
+
+(check_equal (. (quote {f:[]}) "f") [] "[] in quoted struct")
+
+(check_equal (append_m (. {f:[]} "f") [1]) [1] "pulling list from struct")
+
+
+(define test_predicates
+  (lambda (struct expect_null expect_empty)
+    (assert (is_struct struct))
+    (check = (is_null  struct) expect_null)
+    (check = (is_empty struct) expect_empty)
+    // TODO ...
+    ))
+
+
+// Construction via literals
+
+(test_predicates           null.struct  true  true)
+(test_predicates (quote    null.struct) true  true)
+(test_predicates (quote a::null.struct) true  true)
+(test_predicates           {}           false true)
+(test_predicates (quote    {})          false true)
+(test_predicates (quote a::{})          false true)
+
+
+(check_annotations (quote null.struct) (quote []))
+(check_annotations (quote {}) (quote []))
+(check_annotations (quote a::{}) (quote ["a"]))
+(check_annotations (quote a::b::{}) (quote ["a","b"]))
+(check_annotations (quote a::b::a::{}) (quote ["a","b","a"]))
+
+
+//==========================================================================
+// size
+
+(check = (size null.struct) 0)
+(check = (size {}) 0)
+(check = (size {f:1}) 1)
+(check = (size {f:2, f:2}) 2)  // repeated field
+(check = (size {f:2, g:2}) 2)
+
+
+//==========================================================================
+// struct_merge
+
+(check ion_equals (struct_merge {} {}) {})
+(check ion_equals (struct_merge {f:3} {f:4}) {f:3,f:4})
+(check ion_equals (struct_merge {f:3} {g:4}) {f:3,g:4})
+(check ion_equals (struct_merge {f:3} {g:4,h:5}) {f:3,g:4,h:5})
+
+
+//==========================================================================
+// struct_ref
+
+(check_void (struct_ref null.struct "x" void))
+(check_void (struct_ref null.struct "x" (void)))
+(check = (struct_ref null.struct "x" 1157) 1157)
+
+(check = (struct_ref {} "x" 1158) 1158)
+(check = (struct_ref {f:1} "x" 1159) 1159)
+
+(check = (struct_ref {f:1} "f" 1159) 1)
+(check = (struct_ref {f:1, g:2} "g" 1159) 2)
+(check = (struct_ref {f:1, g:"h"} "h" (always 1201)) 1201)
+
+
+//==========================================================================
+// struct_zip
+
+(check ion_equals (struct_zip ["f"] [3]) {f:3})
+(check ion_equals (struct_zip ["hello"] ["world"]) {hello:"world"})
+(check ion_equals (struct_zip ["f","g"] [3,"hello"]) {f:3,g:"hello"})
+(check ion_equals (struct_zip ["A","B"] [3,[true,false,[]]])
+  {A:3,B:[true,false,[]]})
+
+// Repeated fields
+(check ion_equals (struct_zip ["A","A","A"] [2,1,3]) {A:1,A:2,A:3})
+
+// Unequal lengths
+(check ion_equals (struct_zip ["A","B"] [3]) {A:3})
+
+
+//==========================================================================
+// struct_for_each
+
+(define rip_and_zip
+  (lambda (struct)
+    (let [(names  (stretchy_list)),
+          (values (stretchy_list))]
+      (let [(result (struct_for_each
+                      (lambda (name value)
+                        (add_m names name)
+                        (add_m values value))
+                      struct))]
+        // TODO FUSION-88 (check eq result struct)
+        (let [(zipped (struct_zip names values))]
+          (check ion_equals zipped struct))))))
+
+(rip_and_zip {})
+(rip_and_zip {a:1,b:[2,3],c:{d:(quote e)}})
+(rip_and_zip {a:1,b:[2,3],a:{d:(quote e)}})  // Repeated field
+
+// TODO test struct_zip with null/empty string/symbol
+
+// struct_for_each returns its input struct.
+(check =
+  (. (struct_for_each (lambda (k v) 3) {f:1}) "f")
+  1)
+
+
+//==========================================================================
+// remove_keys
+
+(check ion_equals (remove_keys null.struct) null.struct)
+(check ion_equals (remove_keys null.struct "f") null.struct)
+
+(check ion_equals (remove_keys {}) {})
+(check ion_equals (remove_keys {} "f") {})
+
+(check ion_equals (remove_keys {f:1} "f") {})
+(check ion_equals (remove_keys {f:1,f:2} "f") {})
+(check ion_equals (remove_keys {f:1,f:2} "g") {f:1,f:2})
+(check ion_equals (remove_keys {g:2,f:1} "f" "h") {g:2})
+(check ion_equals (remove_keys {f:1,g:2} "f" (quote g)) {})
+
+(check ion_equals (remove_keys (quote a::null.struct)) (quote a::null.struct))
+(check ion_equals (remove_keys (quote a::{f:1}) "f") (quote a::{}))
+(check ion_equals (remove_keys (quote a::{f:1}) "g") (quote a::{f:1}))
+
+
+//==========================================================================
+// retain_keys
+
+(check ion_equals (retain_keys null.struct) null.struct)
+(check ion_equals (retain_keys null.struct "f") null.struct)
+
+(check ion_equals (retain_keys {})     {})
+(check ion_equals (retain_keys {} "f") {})
+
+(check ion_equals (retain_keys {f:1}     "g") {})
+(check ion_equals (retain_keys {f:1,f:2} "g") {})
+(check ion_equals (retain_keys {f:1,f:2} "f") {f:1,f:2})
+(check ion_equals (retain_keys {f:1,g:2} "f") {f:1})
+(check ion_equals (retain_keys {f:1,g:2} "h") {})
+(check ion_equals (retain_keys {f:1,g:2})     {})
+
+(check ion_equals (retain_keys {a:1,b:3,c:2}) {})
+(check ion_equals (retain_keys {a:3} "a") {a:3})
+(check ion_equals (retain_keys {a:3,a:4} "a") {a:3,a:4})
+(check ion_equals (retain_keys {a:1,b:3,c:2} "a" "c") {a:1,c:2})
+
+(check ion_equals (retain_keys (quote a::null.struct)) (quote a::null.struct))
+(check ion_equals (retain_keys (quote a::{f:1}) "f") (quote a::{f:1}))
+(check ion_equals (retain_keys (quote a::{f:1}) "g") (quote a::{}))
+
+
+//==========================================================================
+// any
+
+(check_false (any T null.struct))
+(check_false (any T {}))
+(check_false (any F {f:1, g:2}))
+(check_true  (any T {f:1, g:2}))
+
+(check_true  (any (lambda (e) (= e "hi")) {f:"oh", g:"hi"}))
+(check_false (any (lambda (e) (= e "ho")) {f:"oh", g:"hi"}))
+
+(check =    (any (lambda (e) (when (= e "hi") e)) {f:"oh", g:"hi"}) "hi")
+
+// Check that it returns the truthy predicate result, not the selected element
+(check = 408
+  (any (lambda (e) (when (= e 204) (* e 2)))
+    {f:123, f:204, f:567}))
+(check = 1134
+  (any (lambda (e) (when (= e 567) (* e 2)))
+    {f:123, f:204, f:567}))
+
+// Check than it returns the last predicate result if none are truthy
+(check_pred (conjoin is_null is_int)
+  (any (lambda (s) null.int)
+    {a:false, b:(void)}))
+(check_pred is_null_null
+  (any (lambda (s) null)
+    {a:false, b:true}))
+(check_void
+  (any (lambda (s) (void))
+    {a:false, b:null.int, c:null.list}))
+
+
+//==========================================================================
+// do
+
+(check_equal (do (lambda (x) (+ 1 x)) {f:2, g:3})
+   (void) "do returns void")
+
+(let [(sum 0)]
+  (do (lambda (x) (set sum (+ sum x))) {f:2, g:3})
+  (check = sum 5))
+
+
+//==========================================================================
+// find
+
+(assert (is_void (find F null.struct)))
+(assert (is_void (find F {})))
+(assert (is_void (find F {f:1, g:2})))
+(check = (find T {f:1}) 1)
+
+(check = (find (lambda (e) (= e "hi")) {f:"oh", g:"hi"}) "hi")

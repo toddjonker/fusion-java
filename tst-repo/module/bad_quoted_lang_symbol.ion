@@ -1,3 +1,0 @@
-(module m (quote 'no_such_module')
-  (define x 1)
-)

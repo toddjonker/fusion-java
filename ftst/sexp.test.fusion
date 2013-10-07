@@ -1,0 +1,174 @@
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+
+(require
+  "/check"
+  "/fusion/list")
+
+
+(define valNull  (quote null.sexp))
+(define valEmpty (quote ()))
+(define val12    (quote (1 2)))
+
+
+//(check_true (is_null  null.sexp))  // Not valid syntax
+//(check_true (is_empty null.sexp))
+(check_true (is_null  (quote null.sexp)))
+(check_true (is_empty (quote null.sexp)))
+(check_true (is_null  (quote a::null.sexp)))
+(check_true (is_empty (quote a::null.sexp)))
+
+(check_false (is_null (quote ())))
+(check_false (is_null (quote a::())))
+
+
+(define test_predicates
+  (lambda (sexp empty)
+    (assert (is_sexp sexp))
+    (check = (is_empty sexp) empty)
+    // TODO ...
+    ))
+
+
+// Construction via literals
+
+(define x "anything")
+
+(test_predicates (quote ())    true)
+(test_predicates (quote (0))   false)
+(test_predicates (quote (0 T)) false)
+
+
+// Construction via procedures
+
+(define test_makers
+  (lambda (maker)
+    (test_predicates (apply maker (quote ())) true)
+    (test_predicates (apply maker (quote (0))) false)
+    (check_equal (apply maker (quote ()))
+      (quote ()) "()")
+    (check_equal (apply maker (quote (0 1)))
+      (quote (0 1)) "(0 1)")))
+
+(test_makers sexp)
+// TODO immutable_sexp
+
+
+(check_annotations (quote ()) (quote []))
+(check_annotations (quote a::(c)) (quote ["a"]))
+(check_annotations (quote a::b::(c d)) (quote ["a","b"]))
+(check_annotations (quote a::b::a::(a)) (quote ["a","b","a"]))
+
+
+//==========================================================================
+// pair
+
+(check_true (is_sexp (pair 1 2)))
+(check = (head (pair 1 2)) 1)
+(check = (tail (pair 1 2)) 2)
+
+
+//==========================================================================
+// first
+
+(check = (first (quote (1))) 1)
+(check = (first (sexp 1 2)) 1)
+
+(check_arg_exn (first (quote null.sexp)))
+(check_arg_exn (first (sexp)))
+
+
+//==========================================================================
+// last
+
+(check = (last (quote (1))) 1)
+(check = (last (sexp 1 2)) 2)
+
+(check_arg_exn (last (quote null.sexp)))
+(check_arg_exn (last (sexp)))
+
+
+//==========================================================================
+// add
+
+(check_equal (add (sexp 1 2) 3)  (sexp 3 1 2)  "add 3")
+(check_equal (add (sexp 1 2) [3])  (sexp [3] 1 2)  "add [3]")
+
+
+//==========================================================================
+// find
+
+(assert (is_void (find F valNull)))
+(assert (is_void (find F valEmpty)))
+(assert (is_void (find F val12)))
+(check = (find T val12) 1)
+(check = (find (lambda (e) (= e 2)) val12) 2)
+
+
+//==========================================================================
+// any
+
+(check_false (any T valNull))
+(check_false (any T valEmpty))
+(check_false (any F val12))
+(check_true  (any T val12))
+
+(check_true  (any (lambda (e) (= e "hi")) (sexp "oh" "hi")))
+(check_false (any (lambda (e) (= e "ho")) (sexp "oh" "hi")))
+
+// Check that it returns the truthy predicate result, not the selected element
+(check = 408
+  (any (lambda (e) (when (= e 204) (* e 2)))
+    (sexp 123 204 567)))
+(check = 1134
+  (any (lambda (e) (when (= e 567) (* e 2)))
+    (sexp 123 204 567)))
+
+// Check than it returns the last predicate result if none are truthy
+(check_pred (conjoin is_null is_int)
+  (any (lambda (s) (if (is_void s) null.int null))
+    (sexp false (void))))
+(check_pred (conjoin is_null is_int)
+  (any (lambda (s) (if (is_null s) null.int null))
+    (sexp false null.int)))
+(check_void
+  (any (lambda (s) (if (is_null s) (void) null))
+    (sexp false null.int null.list)))
+
+
+//==========================================================================
+// TODO map not implemented for sexp
+/*
+(check_equal (map + valNull) valNull "map1")
+(check_equal (map + valEmpty) [] "map1")
+(check_equal (map + [1, 2]) [1, 2] "map2")
+(check_equal (map (lambda (n) (+ 3 n)) [1, 2]) [4, 5] "map3")
+
+(check_equal (choose T []) [] "filter1")
+(check_equal (choose F []) [] "filter2")
+(check_equal (choose T [1, 2]) [1, 2] "filter3")
+(check_equal (choose F [1, 2]) [] "filter4")
+
+(check_equal (choose (lambda (n) (< 10 n)) [1, 11, 10, 12]) [11, 12] "filter5")
+*/
+
+
+//==========================================================================
+// do
+
+(check_equal (do (lambda (x) (+ 1 x)) (quote (2 3)))
+   (void) "do returns void")
+
+(let [(v (stretchy_list))]
+  (do (lambda (x) (add_m v (+ 1 x))) (quote (2 3)))
+  (check_equal v [3, 4] "do side effects"))
+
+
+//==========================================================================
+// size
+
+(check = (size (quote ())) 0)
+(check = (size (sexp 1)) 1)
+(check = (size (sexp 1 51)) 2)
+(check = (size (pair 1 (pair 2 (quote ())))) 2)
+
+(check_arg_exn (size (pair 1 215)))

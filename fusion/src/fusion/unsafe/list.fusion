@@ -1,0 +1,37 @@
+// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+
+(module unsafe_list '/fusion/private/builtins'
+
+  '''
+Unsafe (but fast) operations on lists.
+
+These operations perform no type-checking or bounds-checking, and they
+**will crash or exhibit other unspecified behavior**
+if called with invalid arguments.
+**Use with extreme caution!**
+
+See the module [`/fusion/list`](fusion/list.html) for more information and
+related operations on lists.
+  '''
+
+  (require "/fusion/experimental/defines")
+
+
+  (defpub_j unsafe_list_size
+    "com.amazon.fusion.FusionList$UnsafeListSizeProc")
+
+  (defpub_j unsafe_list_element
+    "com.amazon.fusion.FusionList$UnsafeListElementProc")
+
+  (defpub_j unsafe_list_set
+    "com.amazon.fusion.FusionList$UnsafeListSetProc")
+
+  (defpub_j unsafe_list_add
+    "com.amazon.fusion.FusionList$UnsafeListAddProc")
+
+  (defpub_j unsafe_list_add_m
+    "com.amazon.fusion.FusionList$UnsafeListAddMProc")
+
+  (defpub_j unsafe_list_iterator
+    "com.amazon.fusion.FusionList$UnsafeListIterateProc")
+)
