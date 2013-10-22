@@ -10,6 +10,7 @@ import java.text.BreakIterator;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -23,7 +24,6 @@ final class ModuleDoc
 
     private Map<String,ModuleDoc>  mySubmodules;
     private Map<String,BindingDoc> myBindings;
-
 
 
     public static ModuleDoc buildDocTree(FusionRuntime runtime, Filter filter,
@@ -113,7 +113,7 @@ final class ModuleDoc
         if (myBindings != null)
         {
             names = myBindings.keySet().toArray(EMPTY_STRING_ARRAY);
-            Arrays.sort(names);
+            Arrays.sort(names, new BindingComparator());
         }
         return names;
     }
@@ -225,15 +225,6 @@ final class ModuleDoc
                 String moduleName = fileName.substring(0, endIndex);
                 addSubmodule(filter, moduleName);
             }
-
-            // TODO FUSION-159 remove support for .ion extension
-            if (fileName.endsWith(".ion"))
-            {
-                // We assume that all .ion files are modules.
-                String moduleName =
-                    fileName.substring(0, fileName.length() - 4);
-                addSubmodule(filter, moduleName);
-            }
         }
 
         // Second pass: look for directories, which are implicitly submodules.
@@ -261,7 +252,11 @@ final class ModuleDoc
         ModuleNameResolver resolver =
             eval.getGlobalState().myModuleNameResolver;
 
-        return resolver.resolveLib(eval, modulePath, null);
+        return resolver.resolveModulePath(eval,
+                                          null,       // baseModule
+                                          modulePath,
+                                          true,       // load the module
+                                          null);      // syntax form for errors
     }
 
 
@@ -279,10 +274,37 @@ final class ModuleDoc
         boolean accept(ModuleIdentity id)
         {
             String name = id.internString();
-            if (name.startsWith("#%")) return false;
             if (name.endsWith("/private")) return false;
             if (name.contains("/private/")) return false;
             return true;
+        }
+    }
+
+
+    /**
+     * Customer comparator to hide ugly #% bindings down at the bottom of
+     * binding lists. Otherwise they tend to show up early, which is silly
+     * since most people don't care about them and shouldn't use them.
+     */
+    private static final class BindingComparator
+        implements Comparator<String>
+    {
+        @Override
+        public int compare(String arg0, String arg1)
+        {
+            if (arg0.startsWith("#%"))
+            {
+                if (! arg1.startsWith("#%"))
+                {
+                    return 1;
+                }
+            }
+            else if (arg1.startsWith("#%"))
+            {
+                return -1;
+            }
+
+            return arg0.compareTo(arg1);
         }
     }
 }
