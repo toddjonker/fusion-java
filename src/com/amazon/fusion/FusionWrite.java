@@ -13,8 +13,9 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 
 /**
- *
+ * @deprecated Use {@link FusionIo} instead.
  */
+@Deprecated // Deprecated for public use.
 public final class FusionWrite
 {
     private FusionWrite() {}
@@ -61,9 +62,10 @@ public final class FusionWrite
         }
         else
         {
-            out.append("{{{ ");
+            out.append(value.getClass().getName());
+            out.append("::{{{");
             out.append(value.toString());
-            out.append(" }}}");
+            out.append("}}}");
         }
     }
 
@@ -90,9 +92,10 @@ public final class FusionWrite
         }
         else
         {
-            out.append("{{{ ");
+            out.append(value.getClass().getName());
+            out.append("::{{{");
             out.append(value.toString());
-            out.append(" }}}");
+            out.append("}}}");
         }
     }
 
@@ -145,7 +148,10 @@ public final class FusionWrite
      *
      * @throws FusionException if there's an exception thrown by the output
      * stream.
+     *
+     * @deprecated Use {@link FusionIo#write(TopLevel, Object, Appendable)}.
      */
+    @Deprecated
     public static void write(TopLevel top, Appendable out, Object value)
         throws FusionException
     {

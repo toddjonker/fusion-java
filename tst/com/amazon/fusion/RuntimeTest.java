@@ -11,6 +11,7 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 import com.amazon.ion.IonInt;
+import com.amazon.ion.IonReader;
 import com.amazon.ion.IonValue;
 import java.io.File;
 import java.math.BigInteger;
@@ -104,8 +105,7 @@ public class RuntimeTest
         assertEval(3328, "x");
 
         // Test eval'ing a module
-        Object mod = loadFile("tst-repo/grain.fusion");
-        assertTrue(mod instanceof ModuleInstance);
+        loadFile("tst-repo/grain.fusion");
     }
 
     @Test
@@ -117,7 +117,7 @@ public class RuntimeTest
 
         // Check that define() injects the given value.
         topLevel().define("v", null);
-        fv = topLevel().load("(identity v)");
+        fv = topLevel().eval("(identity v)");
         assertTrue(isVoid(topLevel(), fv));
     }
 
@@ -130,7 +130,7 @@ public class RuntimeTest
 
         // Check that define() injects the given value.
         topLevel().define("v", 22);
-        fv = topLevel().load("(= v 22)");
+        fv = topLevel().eval("(= v 22)");
         assertTrue(isTrue(topLevel(), fv));
     }
 
@@ -142,7 +142,7 @@ public class RuntimeTest
         assertFalse(isTrue(topLevel(), fv));
 
         topLevel().define("v", true);
-        fv = topLevel().load("v");
+        fv = topLevel().eval("v");
         assertTrue(isTrue(topLevel(), fv));
     }
 
@@ -242,5 +242,15 @@ public class RuntimeTest
     {
         useTstRepo();
         runtime().makeTopLevel("/let");
+    }
+
+
+    @Test
+    public void testEvalUsesCurrentIonReaderValue()
+        throws Exception
+    {
+        IonReader r = system().newReader("(define a 338) a");
+        Object result = topLevel().eval(r);
+        checkLong(338, result);
     }
 }

@@ -2,6 +2,8 @@
 
 package com.amazon.fusion;
 
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -57,7 +59,6 @@ public class ModuleTest
         eval("(module m \"lang\" (define x 1))");
     }
 
-    // TODO similar tests for 'require' to the language tests above
 
 
     @Test(expected = FusionException.class) // ModuleNotFoundException gets wrapped
@@ -210,6 +211,7 @@ public class ModuleTest
         throws Exception
     {
         eval("(module m '/fusion' (1))");
+        topLevel().requireModule("m");
     }
 
     @Test
@@ -240,5 +242,42 @@ public class ModuleTest
              "  (require '/fusion/experimental/syntax')" +
              "  (define_syntax broken (lambda (s) x))" +
              "  (provide broken))");
+    }
+
+
+    @Test
+    public void testModuleCircularity()
+        throws Exception
+    {
+        try
+        {
+            topLevel().requireModule("/cycle0");
+            fail("Expected exception");
+        }
+        catch (FusionException e)
+        {
+            String message = e.getMessage();
+            assertTrue(message.contains("/cycle1"));
+            assertTrue(message.contains("/cycle2"));
+            assertTrue(message.contains("/cycle3"));
+        }
+    }
+
+
+    @Test
+    public void testTopLevelLocalModuleIsolation()
+        throws Exception
+    {
+        TopLevel top1 = topLevel();
+        TopLevel top2 = runtime().makeTopLevel();
+
+        top1.eval("(module M '/fusion' (define v 1) (provide v))");
+        top2.eval("(module M '/fusion' (define v 2) (provide v))");
+
+        top1.eval("(require M)");
+        top2.eval("(require M)");
+
+        assertEval(top1, 1, "v");
+        assertEval(top2, 2, "v");
     }
 }

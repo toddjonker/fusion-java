@@ -63,75 +63,76 @@ final class StandardTopLevel
     }
 
 
-    @Deprecated @Override
-    public Object eval(String source, SourceName name)
-        throws ExitException, FusionException
-    {
-        return load(source, name);
-    }
-
     @Override
-    public Object load(String source, SourceName name)
+    public Object eval(String source, SourceName name)
         throws ExitException, FusionException
     {
         IonSystem system = myEvaluator.getGlobalState().myIonSystem;
         IonReader i = system.newReader(source);
-        return load(i, name);
+        return eval(i, name);
+    }
+
+    @Deprecated @Override
+    public Object load(String source, SourceName name)
+        throws ExitException, FusionException
+    {
+        return eval(source, name);
     }
 
 
-    @Deprecated @Override
+    @Override
     public Object eval(String source)
         throws ExitException, FusionException
     {
-        return load(source, null);
+        return eval(source, null);
     }
 
-    @Override
+    @Deprecated @Override
     public Object load(String source)
         throws ExitException, FusionException
     {
-        return load(source, null);
+        return eval(source, null);
     }
 
-
-    @Deprecated @Override
-    public Object eval(IonReader source, SourceName name)
-        throws ExitException, FusionException
-    {
-        return load(source, name);
-    }
 
     @Override
-    public Object load(IonReader source, SourceName name)
+    public Object eval(IonReader source, SourceName name)
         throws ExitException, FusionException
     {
         Object result = voidValue(myEvaluator);
 
-        // TODO should work even if already positioned on first value
+        if (source.getType() == null) source.next();
 
-        while (source.next() != null)
+        while (source.getType() != null)
         {
             SyntaxValue sourceExpr = Syntax.read(myEvaluator, source, name);
             result = FusionEval.eval(myEvaluator, sourceExpr, myNamespace);
+            source.next();
         }
 
         return result;
     }
 
-
     @Deprecated @Override
+    public Object load(IonReader source, SourceName name)
+        throws ExitException, FusionException
+    {
+        return eval(source, name);
+    }
+
+
+    @Override
     public Object eval(IonReader source)
         throws ExitException, FusionException
     {
-        return load(source, null);
+        return eval(source, null);
     }
 
-    @Override
+    @Deprecated @Override
     public Object load(IonReader source)
         throws ExitException, FusionException
     {
-        return load(source, null);
+        return eval(source, null);
     }
 
 

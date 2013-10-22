@@ -282,6 +282,9 @@ final class FusionStruct
         abstract ImmutableStruct transformFields(StructFieldVisitor visitor)
             throws FusionException;
 
+        abstract boolean hasKey(Evaluator eval, String key)
+            throws FusionException;
+
         /** Returns void if the field doesn't exist. */
         abstract Object dot(Evaluator eval, String field)
             throws FusionException;
@@ -349,6 +352,13 @@ final class FusionStruct
         NullStruct transformFields(StructFieldVisitor visitor)
         {
             return this;
+        }
+
+        @Override
+        boolean hasKey(Evaluator eval, String key)
+            throws FusionException
+        {
+            return false;
         }
 
         @Override
@@ -549,6 +559,13 @@ final class FusionStruct
             return new NonNullImmutableStruct(newMap, myAnnotations);
         }
 
+        @Override
+        boolean hasKey(Evaluator eval, String key)
+            throws FusionException
+        {
+            return myMap.get(key) != null;
+        }
+
         Object get(String fieldName)
         {
             Object result = myMap.get(fieldName);
@@ -660,6 +677,8 @@ final class FusionStruct
         {
             writeAnnotations(out, myAnnotations);
             out.append('{');
+
+            boolean comma = false;
             for (Map.Entry<String, Object> entry : myMap.entrySet())
             {
                 String fieldName = entry.getKey();
@@ -669,18 +688,22 @@ final class FusionStruct
                 {
                     for (Object element : (Object[]) value)
                     {
+                        if (comma) out.append(',');
+
                         printSymbol(out, fieldName);
                         out.append(':');
                         dispatchWrite(eval, out, element);
-                        out.append(',');
+                        comma = true;
                     }
                 }
                 else
                 {
+                    if (comma) out.append(',');
+
                     printSymbol(out, fieldName);
                     out.append(':');
                     dispatchWrite(eval, out, value);
-                    out.append(',');
+                    comma = true;
                 }
             }
             out.append('}');
@@ -777,6 +800,28 @@ final class FusionStruct
 
 
 
+    static final class UnsafeStructHasKeyProc
+        extends Procedure
+    {
+        UnsafeStructHasKeyProc()
+        {
+            //    "                                                                               |
+            super("UNSUPPORTED.  `name` must be text.",
+                  "struct", "name");
+        }
+
+        @Override
+        Object doApply(Evaluator eval, Object[] args)
+            throws FusionException
+        {
+            BaseStruct s = (BaseStruct) args[0];
+            String key = checkTextArg(1, args);    // TODO reduce safety checks
+            return eval.newBool(s.hasKey(eval, key));
+        }
+    }
+
+
+
     static final class UnsafeStructRefProc
         extends Procedure
     {
@@ -795,7 +840,7 @@ final class FusionStruct
             throws FusionException
         {
             BaseStruct s = (BaseStruct) args[0];
-            String name = checkTextArg(1, args);
+            String name = checkTextArg(1, args);   // TODO reduce safety checks
             return s.ref(eval, name, args[2]);
         }
     }
