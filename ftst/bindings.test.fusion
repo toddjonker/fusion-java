@@ -17,6 +17,13 @@
 (check_equal (apply rester 1 2 [3, 4]) (sexp 1 2 3 4) "apply rester 4")
 
 
+// Duplicate bound names
+(check_compile_exn
+  (lambda (x x) true))
+(check_compile_exn
+  (lambda (x a b c x) true))
+
+
 //==========================================================================
 // set
 
@@ -34,8 +41,15 @@
 
 
 //==========================================================================
+// let
+
+// Duplicate bound names
+(check_compile_exn
+  (let [(x 1), (b 2), (x 3)] true))
+
+
+//==========================================================================
 // let_values
-// TODO FUSION-84 test multiple return values
 
 (check = (let_values [] 1) 1)
 
@@ -44,7 +58,7 @@
 (check =
   (let_values
     [((x) 1),
-     ((y) 2)]
+     ((y) (values 2))]
     (+ x y))
   3)
 
@@ -65,6 +79,38 @@
       y))
   11)
 
+(check =
+  (let_values [(() (values))] 303)
+  303)
+(check =
+  (let [(dummy -1), (x 1)]
+    (let_values [((x y) (values 10 x)),
+                 ((z p) (values x 100))]
+      (+ x y z p)))
+  112)
+
+
+// Duplicate bound names
+(check_compile_exn
+  (let_values [((x) 1), ((x) 2)] 3))
+(check_compile_exn
+  (let_values [((x x) (values 1 2))] 3))
+
+// Arity mismatch
+(check_contract_exn
+  (let_values [(() 1)] 3))
+(check_contract_exn
+  (let_values [((x) (values))] 3))
+(check_contract_exn
+  (let_values [((x) (values 1 2 3))] 3))
+(check_contract_exn
+  (let_values [((x y) (values 1))] 3))
+(check_contract_exn
+  (let_values [((x y) (values 1 2 3))] 3))
+(check_contract_exn
+  (let_values [((x) 1), ((y z) (values 1 2 3))] 3))
+  
+  
 //==========================================================================
 // letrec
 
@@ -75,6 +121,11 @@
   (letrec [(x y), (y 2)] x)
   (letrec [(a b), (c 3), (b a)] a))
 )
+
+
+// Duplicate bound names
+(check_compile_exn
+  (letrec [(x 1), (b 2), (x 3)] true))
 
 
 //==========================================================================

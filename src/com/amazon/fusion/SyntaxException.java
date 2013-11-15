@@ -2,7 +2,7 @@
 
 package com.amazon.fusion;
 
-import static com.amazon.fusion.FusionWrite.safeWrite;
+import static com.amazon.fusion.FusionIo.safeWrite;
 import com.amazon.ion.util.IonTextUtils;
 import java.io.IOException;
 import java.util.Arrays;
@@ -17,6 +17,10 @@ public class SyntaxException
     private final String myName;
     private SyntaxValue[] mySources;
 
+    /**
+     * @param whatForm may be null.
+     * @param message must not be null.
+     */
     SyntaxException(String whatForm, String message, SyntaxValue... sources)
     {
         super(message);

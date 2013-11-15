@@ -43,10 +43,11 @@ contact us for clarification.
   (provide + - * / int_to_string is_decimal is_float is_int string_to_int)
 
   (require "/fusion/string")
-  (provide is_string string_append string_to_symbol)
+  (provide is_string string_append string_to_symbol symbol_to_string)
 
   (require "/fusion/timestamp")
-  (provide is_timestamp timestamp_now timestamp_to_epoch_millis)
+  (provide is_timestamp string_to_timestamp timestamp_now
+    timestamp_to_epoch_millis timestamp_to_string)
 
   (require "/fusion/void")
   (provide is_void void)
@@ -60,32 +61,40 @@ contact us for clarification.
   // Collection Types
 
   (require "/fusion/collection")
-  (provide . any do element elt every find is_empty size)
+  (provide . any do element elt every find has_key is_empty size)
 
   (require "/fusion/sequence")
-  (provide add choose first last map)
+  (provide add choose first fold_left is_sequence last map)
 
   (require "/fusion/list")
-  (provide is_list list list_element subseq)
+  (provide is_list list list_element list_iterator list_from_iterator subseq)
 
   (require "/fusion/sexp")
   (provide head is_pair is_sexp pair sexp tail)
 
   (require "/fusion/struct")
-  (provide is_struct remove_keys retain_keys struct struct_for_each
-    struct_merge struct_zip)
+  (provide is_struct put remove_keys retain_keys struct struct_do
+    struct_for_each struct_iterator struct_merge struct_unzip struct_zip)
 
 
   //=========================================================================
   // Binding Forms
 
-  (provide let let_values letrec lets)
+  (provide let let_values letrec lets values)
 
 
   //=========================================================================
   // Control Forms
 
   (provide and cond exit if or unless when)
+
+  (require "/fusion/iterator")
+  (provide empty_iterator is_iterator iterator_append iterator_choose
+    iterator_find iterator_has_next iterator_map iterator_map_splicing
+    iterator_next make_iterator value_iterator)
+
+  (require "/fusion/for")
+  (provide for_list)
 
 
   //=========================================================================

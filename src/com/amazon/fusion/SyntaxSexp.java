@@ -2,6 +2,7 @@
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionIo.safeWrite;
 import static com.amazon.fusion.FusionList.unsafeListToSexp;
 import static com.amazon.fusion.FusionSexp.immutableSexp;
 import static com.amazon.fusion.FusionSexp.isEmptySexp;
@@ -15,7 +16,6 @@ import static com.amazon.fusion.FusionSexp.unsafePairHead;
 import static com.amazon.fusion.FusionSexp.unsafePairTail;
 import static com.amazon.fusion.FusionSexp.unsafeSexpSize;
 import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
-import static com.amazon.fusion.FusionWrite.safeWrite;
 import static com.amazon.fusion.LetValuesForm.compilePlainLet;
 import com.amazon.fusion.FusionSexp.BaseSexp;
 import com.amazon.fusion.FusionSexp.ImmutablePair;
@@ -490,6 +490,27 @@ final class SyntaxSexp
             {
                 Binding binding = ((SyntaxSymbol)first).uncachedResolve();
                 return binding.originalBinding();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Finds the binding for the leading symbol in the sexp, or null if the
+     * sexp doesn't start with a symbol with a binding.
+     */
+    Binding firstBindingMaybe(Evaluator eval)
+        throws FusionException
+    {
+        if (isPair(eval, mySexp))
+        {
+            pushWraps(eval);
+
+            Object first = unsafePairHead(eval, mySexp);
+            if (first instanceof SyntaxSymbol)
+            {
+                Binding binding = ((SyntaxSymbol)first).uncachedResolveMaybe();
+                return (binding == null ? null : binding.originalBinding());
             }
         }
         return null;

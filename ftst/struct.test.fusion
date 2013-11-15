@@ -3,7 +3,85 @@
 (require
   "/check"
   "/fusion/list"
+  "/fusion/private/builtins"  // annotate
   "/fusion/struct")
+
+
+(define _struct_copy
+  (lambda (ctor s)
+    (apply annotate
+      (if (is_null s)
+        s
+        (let [(args (stretchy_list))]
+          (struct_for_each
+            (lambda (name value)
+              (add_m args name)
+              (add_m args value))
+            s)
+          (apply ctor args)))
+      (type_annotations s))))
+
+(define struct_copy
+  (lambda (s)
+    (_struct_copy struct s)))
+
+(define mutable_struct_copy
+  (lambda (s)
+    (_struct_copy mutable_struct s)))
+
+
+(define_check (check_mod msg op val args expect)            // msg is rest arg
+  "Functional modification check"
+  (let [(s (struct_copy val))]
+    (let [(result (apply op s args))]
+      (check_pred is_immutable_struct result
+        "result of " op " should be immutable")
+      (check ion_equals result expect
+        "Unexpected result from " op " on immutable " s)
+      (check ion_equals s val                                 // s not mutated
+        "Immutable struct was mutated by " op)))
+  (unless (is_null val)                             // There's no mutable null
+    (let [(s (mutable_struct_copy val))]
+      (let [(result (apply op s args))]
+        (check_pred is_mutable_struct result
+          "result of " op " should be mutable")
+        (check ion_equals result expect
+          "Unexpected result from " op " on mutable " s)
+        (check ion_equals s val)
+        // If the result === the input, it's probably the same instance
+        (unless (ion_equals result val)
+          (put_m result "mod" "mod")
+          (check_void (. s "mod")
+            "Unexpected mutation of original"))))))
+
+
+(define_check (check_mod_m msg op val args expect)          // msg is rest arg
+  "Mutating modification check"
+  (let [(s (struct_copy val))]
+    (let [(result (apply op s args))]
+      (check_pred is_immutable_struct result
+        "result of " op " should be immutable")
+      (check ion_equals result expect
+        "Unexpected result from " op " on immutable " s)
+      (check ion_equals s val                                 // s not mutated
+        "Immutable struct was mutated by " op)))
+  (unless (is_null val)                             // There's no mutable null
+    (let [(s (mutable_struct_copy val))]
+      (let [(result (apply op s args))]
+        (check_pred is_mutable_struct result
+          "result of " op " should be mutable")
+        (check ion_equals result expect
+          "Unexpected result from " op " on mutable " s)
+        (check ion_equals s expect)))))                        // s IS mutated
+
+
+(define_check (check_mods msg op op_m val args expect)      // msg is rest arg
+  "Functional and mutating modification check"
+  (check_mod   op   val args expect)
+  (check_mod_m op_m val args expect))
+
+
+//==========================================================================
 
 
 (check_equal (. (quote {f:[]}) "f") [] "[] in quoted struct")
@@ -12,8 +90,10 @@
 
 
 (define test_predicates
-  (lambda (struct expect_null expect_empty)
+  (lambda (struct expect_mutable expect_null expect_empty)
     (assert (is_struct struct))
+    (check = (is_mutable_struct   struct)      expect_mutable )
+    (check = (is_immutable_struct struct) (not expect_mutable))
     (check = (is_null  struct) expect_null)
     (check = (is_empty struct) expect_empty)
     // TODO ...
@@ -22,12 +102,17 @@
 
 // Construction via literals
 
-(test_predicates           null.struct  true  true)
-(test_predicates (quote    null.struct) true  true)
-(test_predicates (quote a::null.struct) true  true)
-(test_predicates           {}           false true)
-(test_predicates (quote    {})          false true)
-(test_predicates (quote a::{})          false true)
+(test_predicates           null.struct  false true  true)
+(test_predicates (quote    null.struct) false true  true)
+(test_predicates (quote a::null.struct) false true  true)
+(test_predicates           {}           false false true)
+(test_predicates (quote    {})          false false true)
+(test_predicates (quote a::{})          false false true)
+
+(test_predicates (struct              ) false false true)
+(test_predicates (struct "a" =        ) false false false)
+(test_predicates (mutable_struct      ) true  false true)
+(test_predicates (mutable_struct "a" =) true  false false)
 
 
 (check_annotations (quote null.struct) (quote []))
@@ -38,13 +123,57 @@
 
 
 //==========================================================================
+// annotate
+
+(check_mod annotate null.struct []                      null.struct)
+(check_mod annotate null.struct ["a"]      (quote a::   null.struct))
+(check_mod annotate null.struct ["a", "b"] (quote a::b::null.struct))
+
+(check_mod annotate {} []                      {})
+(check_mod annotate {} ["a"]      (quote a::   {}))
+(check_mod annotate {} ["a", "b"] (quote a::b::{}))
+
+(check_mod annotate {f:1} []                      {f:1})
+(check_mod annotate {f:1} ["a"]      (quote a::   {f:1}))
+(check_mod annotate {f:1} ["a", "b"] (quote a::b::{f:1}))
+
+
+// Replacing existing annotations
+(check_mod annotate (quote x::null.struct) ["a"]      (quote a::null.struct))
+(check_mod annotate (quote x::null.struct) ["a", "b"] (quote a::b::null.struct))
+
+(check_mod annotate (quote x::{}) []                      {})
+(check_mod annotate (quote x::{}) ["a"]      (quote a::   {}))
+(check_mod annotate (quote x::{}) ["a", "b"] (quote a::b::{}))
+
+(check_mod annotate (quote x::{f:1}) []                      {f:1})
+(check_mod annotate (quote x::{f:1}) ["a"]      (quote a::   {f:1}))
+(check_mod annotate (quote x::{f:1}) ["a", "b"] (quote a::b::{f:1}))
+
+
+(check_arg_exn (annotate null.struct null))
+(check_arg_exn (annotate null.struct ""))
+(check_arg_exn (annotate null.struct null.string))
+(check_arg_exn (annotate null.struct (quote null.symbol)))
+(check_arg_exn (annotate null.struct 12))
+
+
+//==========================================================================
 // size
 
 (check = (size null.struct) 0)
-(check = (size {}) 0)
-(check = (size {f:1}) 1)
-(check = (size {f:2, f:2}) 2)  // repeated field
-(check = (size {f:2, g:2}) 2)
+
+
+(define (test_size fields expect)
+  (let [(s (apply struct fields))]
+    (check = (size s) expect))
+  (let [(s (apply mutable_struct fields))]
+    (check = (size s) expect)))
+
+(test_size (quote (       )) 0)
+(test_size (quote (f 1    )) 1)
+(test_size (quote (f 2 f 2)) 2)  // repeated field
+(test_size (quote (f 2 g 2)) 2)
 
 
 //==========================================================================
@@ -54,52 +183,256 @@
 (check_false (has_key null.struct null.string))
 (check_false (has_key null.struct 2))
 
-(check_false (has_key {} ""))
-(check_false (has_key {} null.string))
-(check_false (has_key {} 2))
 
-(check_false (has_key {a:1, b:2, c:3} ""))
-(check_false (has_key {a:1, b:2, c:3} null.string))
-(check_false (has_key {a:1, b:2, c:3} 2))
+(define (test_has_key fields key expect)
+  (let [(s (apply struct fields))]
+    (check = (has_key s key) expect))
+  (let [(s (apply mutable_struct fields))]
+    (check = (has_key s key) expect)))
 
+(test_has_key (quote ()) ""          false)
+(test_has_key (quote ()) null.string false)
+(test_has_key (quote ()) NULL_SYMBOL false)
+(test_has_key (quote ()) 2           false)
 
-(check_true (has_key {a:1, b:2, c:3} "a"))
-(check_true (has_key {a:1, b:2, c:3} (quote a)))
-(check_true (has_key {a:null  } "a"))
-(check_true (has_key {a:false } "a"))
-(check_true (has_key {a:(void)} "a"))
+(test_has_key (quote (a 1 b 2 c 3)) ""          false)
+(test_has_key (quote (a 1 b 2 c 3)) null.string false)
+(test_has_key (quote (a 1 b 2 c 3)) NULL_SYMBOL false)
+(test_has_key (quote (a 1 b 2 c 3)) 2           false)
+(test_has_key (quote (a 1 b 2 c 3)) "a"         true)
+(test_has_key (quote (a 1 b 2 c 3)) (quote a)   true)
+
+(test_has_key (quote (a null  )) "a"         true)
+(test_has_key (quote (a false )) "a"         true)
+(test_has_key (quote (a (void))) "a"         true)
+
 
 (check_arity_exn (has_key))
 (check_arity_exn (has_key {}))
 
 
 //==========================================================================
-// struct_merge
+// put and put_m
 
-(check ion_equals (struct_merge {} {}) {})
-(check ion_equals (struct_merge {f:3} {f:4}) {f:3,f:4})
-(check ion_equals (struct_merge {f:3} {g:4}) {f:3,g:4})
-(check ion_equals (struct_merge {f:3} {g:4,h:5}) {f:3,g:4,h:5})
+(define_check (check_put msg val key v expect)
+  (check_mods put put_m val (list key v) expect)
+  // Retain existing annotations
+  (let [(ann_val    (annotate val    "a" "b")),
+        (ann_expect (annotate expect "a" "b"))]
+    (check_mods put put_m ann_val (list key v) ann_expect)))
+
+(check_put null.struct   "f" 3 {f:3})
+(check_put {}            "f" 3 {f:3})
+(check_put {a:1}         "f" 3 {a:1,f:3})
+(check_put {a:1,a:2}     "f" 3 {a:1,a:2,f:3})
+(check_put {a:1,b:2}     "f" 3 {a:1,b:2,f:3})
+(check_put {a:1,f:2}     "f" 3 {a:1,f:3})
+(check_put {a:1,f:2,f:0} "f" 3 {a:1,f:3})  // replace repeated field
+
+
+(check_arity_exn (put))
+(check_arity_exn (put   {}))
+(check_arity_exn (put   {} "f"))
+
+(check_arity_exn (put_m))
+(check_arity_exn (put_m {}))
+(check_arity_exn (put_m {} "f"))
+
+(check_arg_exn (put   [] "f" 1))
+(check_arg_exn (put   {} null.string 1))
+(check_arg_exn (put   {} (quote null.symbol) 1))
+
+(check_arg_exn (put_m [] "f" 1))
+(check_arg_exn (put_m {} null.string 1))
+(check_arg_exn (put_m {} (quote null.symbol) 1))
 
 
 //==========================================================================
-// struct_zip
+// struct_merge and struct_merge_m
 
-(check ion_equals (struct_zip ["f"] [3]) {f:3})
-(check ion_equals (struct_zip ["hello"] ["world"]) {hello:"world"})
-(check ion_equals (struct_zip ["f","g"] [3,"hello"]) {f:3,g:"hello"})
-(check ion_equals (struct_zip ["A","B"] [3,[true,false,[]]])
+(define_check (check_merge msg val other expect)
+  (assert (is_immutable_struct other))
+  (let [(other_m (mutable_struct_copy other))]
+    (check_mods struct_merge struct_merge_m val [other  ] expect)
+    (check_mods struct_merge struct_merge_m val [other_m] expect)
+    // Retain existing annotations
+    (let [(ann_val    (annotate val    "a" "b")),
+          (ann_expect (annotate expect "a" "b"))]
+      (check_mods struct_merge struct_merge_m ann_val [other  ] ann_expect)
+      (check_mods struct_merge struct_merge_m ann_val [other_m] ann_expect)))
+  (let [(s (mutable_struct_copy val)),
+        (o (struct_copy other))]
+    (let [(result (struct_merge s o))]
+      (put_m result "mod" "mod")
+      (unless (= 0 (size o))
+        (check_void (. s "mod")
+          "Unexpected mutation of 1st arg in (struct_merge " val " " other ")"))
+      (check_void (. o "mod")
+        "Unexpected mutation of 2nd arg in (struct_merge " s " " other ")"))
+    (let [(result (struct_merge_m s o))]
+      (put_m result "mod" "mod")
+      (check_void (. o "mod")
+        "Unexpected mutation of 2nd arg in (struct_merge_m " s " " other ")"))))
+
+
+(check_merge null.struct null.struct null.struct)
+(check_merge null.struct {}          null.struct)
+(check_merge null.struct {a:1}       {a:1})
+(check_merge null.struct {a:1,b:2}   {a:1,b:2})
+(check_merge null.struct {a:1,a:3}   {a:1,a:3})
+
+(check_merge {} null.struct       {})
+(check_merge {} {}                {})
+(check_merge {} {a:1}             {a:1})
+(check_merge {} {a:1,b:2}         {a:1,b:2})
+(check_merge {} {a:1,a:3}         {a:1,a:3})
+(check_merge {} {a:1,b:2,a:3,b:4} {a:1,b:2,a:3,b:4})
+
+(check_merge {a:0} null.struct       {a:0})
+(check_merge {a:0} {}                {a:0})
+(check_merge {a:0} {a:1}             {a:0,a:1})
+(check_merge {a:0} {a:1,b:2}         {a:0,a:1,b:2})
+(check_merge {a:0} {a:1,a:3}         {a:0,a:1,a:3})
+(check_merge {a:0} {a:1,b:2,a:3,b:4} {a:0,a:1,b:2,a:3,b:4})
+
+(check_merge {a:0,b:2} null.struct       {a:0,b:2})
+(check_merge {a:0,b:2} {}                {a:0,b:2})
+(check_merge {a:0,b:2} {a:1}             {a:0,b:2,a:1})
+(check_merge {a:0,b:2} {a:1,b:2}         {a:0,b:2,a:1,b:2})
+(check_merge {a:0,b:2} {a:1,a:3}         {a:0,b:2,a:1,a:3})
+(check_merge {a:0,b:2} {a:1,b:2,a:3,b:4} {a:0,b:2,a:1,b:2,a:3,b:4})
+
+
+//==========================================================================
+// struct_merge1 and struct_merge1_m
+
+(require "/fusion/experimental/struct")
+
+(define (check_merge1 val other expect)
+  (assert (is_immutable_struct other))
+  (let [(other_m (mutable_struct_copy other))]
+    (check_mods struct_merge1 struct_merge1_m val (list other  ) expect)
+    (check_mods struct_merge1 struct_merge1_m val (list other_m) expect)
+    // Retain existing annotations
+    (let [(ann_val    (annotate val    "a" "b")),
+          (ann_expect (annotate expect "a" "b"))]
+      (check_mods struct_merge1 struct_merge1_m ann_val [other  ] ann_expect)
+      (check_mods struct_merge1 struct_merge1_m ann_val [other_m] ann_expect)))
+  (let [(s (mutable_struct_copy val)),
+        (o (struct_copy other))]
+    (let [(result (struct_merge1 s o))]
+      (put_m result "mod" "mod")
+      (unless (= 0 (size o))
+        (check_void (. s "mod")
+          "Unexpected mutation of 1st arg in (struct_merge1 " val " " other ")"))
+      (check_void (. o "mod")
+        "Unexpected mutation of 2nd arg in (struct_merge1 " s " " other ")"))
+    (let [(result (struct_merge1_m s o))]
+      (put_m result "mod" "mod")
+      (check_void (. o "mod")
+        "Unexpected mutation of 2nd arg in (struct_merge_m " s " " other ")"))))
+
+
+(check_merge1 null.struct null.struct null.struct)
+(check_merge1 null.struct {}          null.struct)
+(check_merge1 null.struct {a:1}       {a:1})
+(check_merge1 null.struct {a:1,b:2}   {a:1,b:2})
+(check_merge1 null.struct {a:1,a:1}   {a:1})
+
+(check_merge1 {} null.struct       {})
+(check_merge1 {} {}                {})
+(check_merge1 {} {a:1}             {a:1})
+(check_merge1 {} {a:1,b:2}         {a:1,b:2})
+(check_merge1 {} {a:1,a:1}         {a:1})
+(check_merge1 {} {a:1,b:2,a:1,b:2} {a:1,b:2})
+
+(check_merge1 {a:0} null.struct       {a:0})
+(check_merge1 {a:0} {}                {a:0})
+(check_merge1 {a:0} {a:1}             {a:1})
+(check_merge1 {a:0} {a:1,b:2}         {a:1,b:2})
+(check_merge1 {a:0} {a:1,a:1}         {a:1})
+(check_merge1 {a:0} {a:1,b:2,a:1,b:2} {a:1,b:2})
+
+(check_merge1 {a:0,b:2} null.struct       {a:0,b:2})
+(check_merge1 {a:0,b:2} {}                {a:0,b:2})
+(check_merge1 {a:0,b:2} {a:1}             {a:1,b:2})
+(check_merge1 {a:0,b:2} {a:1,b:3}         {a:1,b:3})
+(check_merge1 {a:0,b:2} {a:1,a:1}         {a:1,b:2})
+(check_merge1 {a:0,b:2} {a:1,b:3,a:1,b:3} {a:1,b:3})
+
+(check_merge1 {a:0,a:0} null.struct       {a:0})
+(check_merge1 {a:0,a:0} {}                {a:0})
+(check_merge1 {a:0,a:0} {a:1}             {a:1})
+(check_merge1 {a:0,a:0} {a:1,b:3}         {a:1,b:3})
+(check_merge1 {a:0,a:0} {a:1,a:1}         {a:1})
+(check_merge1 {a:0,a:0} {a:1,b:3,a:1,b:3} {a:1,b:3})
+
+
+//==========================================================================
+// struct_unzip
+
+(define_check (check_unzip msg struct keys vals)
+  (let_values [((k v) (struct_unzip struct))]
+    (check_equal k keys "")
+    (check_equal v vals "")
+    (unless (is_null struct)
+      (check ion_equals (struct_zip k v) struct))))
+
+
+(check_unzip null.struct [] [])
+(check_unzip {}          [] [])
+
+(check_unzip {a:1}     (quote [a]  ) [1])
+(check_unzip {a:1,a:1} (quote [a,a]) [1,1])
+(check_unzip {a:1,a:2} (quote [a,a]) [1,2])
+(check_unzip {a:1,b:2} (quote [b,a]) [2,1])   // TODO shady test assumes order
+
+
+//==========================================================================
+// struct_zip and mutable_struct_zip
+
+(define_check (check_zip msg keys values expect)
+  (let [(v (struct_zip keys values))]
+    (check_pred is_immutable_struct v)
+    (check ion_equals v expect))
+  (let [(v (mutable_struct_zip keys values))]
+    (check_pred is_mutable_struct v)
+    (check ion_equals v expect)))
+
+(check_zip null.list [1] {})
+(check_zip ["f"] null.list {})
+
+(check_zip ["f"] [3] {f:3})
+(check_zip ["hello"] ["world"] {hello:"world"})
+(check_zip ["f","g"] [3,"hello"] {f:3,g:"hello"})
+(check_zip ["A","B"] [3,[true,false,[]]]
   {A:3,B:[true,false,[]]})
 
 // Repeated fields
-(check ion_equals (struct_zip ["A","A","A"] [2,1,3]) {A:1,A:2,A:3})
+(check_zip ["A","A","A"] [2,1,3] {A:1,A:2,A:3})
 
 // Unequal lengths
-(check ion_equals (struct_zip ["A","B"] [3]) {A:3})
+(check_zip ["A","B"] [3] {A:3})
+
+
+(check_arity_exn (        struct_zip))
+(check_arity_exn (mutable_struct_zip))
+(check_arity_exn (        struct_zip ["f"]))
+(check_arity_exn (mutable_struct_zip ["f"]))
+
+(check_arg_exn (        struct_zip  "f"  [3]))
+(check_arg_exn (mutable_struct_zip  "f"  [3]))
+(check_arg_exn (        struct_zip ["f"]  3 ))
+(check_arg_exn (mutable_struct_zip ["f"]  3 ))
+
+(check_arg_exn (struct_zip [""] [0]))
+(check_arg_exn (struct_zip [null.string] [0]))
+(check_arg_exn (struct_zip (quote [null.symbol]) [0]))
+// TODO FUSION-204 test struct_zip with empty symbol
 
 
 //==========================================================================
-// struct_for_each
+// struct_do (aka struct_for_each)
 
 (define rip_and_zip
   (lambda (struct)
@@ -118,7 +451,6 @@
 (rip_and_zip {a:1,b:[2,3],c:{d:(quote e)}})
 (rip_and_zip {a:1,b:[2,3],a:{d:(quote e)}})  // Repeated field
 
-// TODO test struct_zip with null/empty string/symbol
 
 // struct_for_each returns its input struct.
 (check =
@@ -127,49 +459,53 @@
 
 
 //==========================================================================
-// remove_keys
+// remove_keys and remove_keys_m
 
-(check ion_equals (remove_keys null.struct) null.struct)
-(check ion_equals (remove_keys null.struct "f") null.struct)
+(define_check (check_remove_keys msg val keys expect)
+  (check_mods remove_keys remove_keys_m val keys expect)
+  // Retain existing annotations
+  (let [(ann_val    (annotate val    "a" "b")),
+        (ann_expect (annotate expect "a" "b"))]
+    (check_mods remove_keys remove_keys_m ann_val keys ann_expect)))
 
-(check ion_equals (remove_keys {}) {})
-(check ion_equals (remove_keys {} "f") {})
+(check_remove_keys null.struct [   ] null.struct)
+(check_remove_keys null.struct ["f"] null.struct)
 
-(check ion_equals (remove_keys {f:1} "f") {})
-(check ion_equals (remove_keys {f:1,f:2} "f") {})
-(check ion_equals (remove_keys {f:1,f:2} "g") {f:1,f:2})
-(check ion_equals (remove_keys {g:2,f:1} "f" "h") {g:2})
-(check ion_equals (remove_keys {f:1,g:2} "f" (quote g)) {})
+(check_remove_keys {}        [   ] {})
+(check_remove_keys {}        ["f"] {})
+(check_remove_keys {f:1}     [   ] {f:1})
+(check_remove_keys {f:1}     ["f"] {})
+(check_remove_keys {f:1,f:2} ["f"] {})
+(check_remove_keys {f:1,f:2} ["g"] {f:1,f:2})
 
-(check ion_equals (remove_keys (quote a::null.struct)) (quote a::null.struct))
-(check ion_equals (remove_keys (quote a::{f:1}) "f") (quote a::{}))
-(check ion_equals (remove_keys (quote a::{f:1}) "g") (quote a::{f:1}))
+(check_remove_keys {g:2,f:1} ["f", "h"      ] {g:2})
+(check_remove_keys {f:1,g:2} ["f", (quote g)] {})
 
 
 //==========================================================================
-// retain_keys
+// retain_keys and retain_keys_m
 
-(check ion_equals (retain_keys null.struct) null.struct)
-(check ion_equals (retain_keys null.struct "f") null.struct)
+(define_check (check_retain_keys msg val keys expect)
+  (check_mods retain_keys retain_keys_m val keys expect)
+  // Retain existing annotations
+  (let [(ann_val    (annotate val    "a" "b")),
+        (ann_expect (annotate expect "a" "b"))]
+     (check_mods retain_keys retain_keys_m ann_val keys ann_expect)))
 
-(check ion_equals (retain_keys {})     {})
-(check ion_equals (retain_keys {} "f") {})
+(check_retain_keys null.struct []    null.struct)
+(check_retain_keys null.struct ["f"] null.struct)
 
-(check ion_equals (retain_keys {f:1}     "g") {})
-(check ion_equals (retain_keys {f:1,f:2} "g") {})
-(check ion_equals (retain_keys {f:1,f:2} "f") {f:1,f:2})
-(check ion_equals (retain_keys {f:1,g:2} "f") {f:1})
-(check ion_equals (retain_keys {f:1,g:2} "h") {})
-(check ion_equals (retain_keys {f:1,g:2})     {})
+(check_retain_keys {       } [   ] {})
+(check_retain_keys {       } ["f"] {})
+(check_retain_keys {f:1    } ["g"] {})
+(check_retain_keys {f:1,f:2} ["g"] {})
+(check_retain_keys {f:1,f:2} ["f"] {f:1,f:2})
+(check_retain_keys {f:1,g:2} ["f"] {f:1})
+(check_retain_keys {f:1,g:2} ["h"] {})
+(check_retain_keys {f:1,g:2} [   ] {})
 
-(check ion_equals (retain_keys {a:1,b:3,c:2}) {})
-(check ion_equals (retain_keys {a:3} "a") {a:3})
-(check ion_equals (retain_keys {a:3,a:4} "a") {a:3,a:4})
-(check ion_equals (retain_keys {a:1,b:3,c:2} "a" "c") {a:1,c:2})
-
-(check ion_equals (retain_keys (quote a::null.struct)) (quote a::null.struct))
-(check ion_equals (retain_keys (quote a::{f:1}) "f") (quote a::{f:1}))
-(check ion_equals (retain_keys (quote a::{f:1}) "g") (quote a::{}))
+(check_retain_keys {a:1,b:3,c:2} [   ] {})
+(check_retain_keys {a:1,b:3,c:2} [(quote a), "c"] {a:1,c:2})
 
 
 //==========================================================================
@@ -252,3 +588,29 @@
 (check = (find T {f:1}) 1)
 
 (check = (find (lambda (e) (= e "hi")) {f:"oh", g:"hi"}) "hi")
+
+
+//==========================================================================
+// Iteration
+
+(define check_iter
+  (lambda (iter values)
+    "Checks that the ITER produces the VALUES (given as a list)"
+    (check_pred is_iterator iter)
+    (let [(len (size values))]
+      (let loop [(i 0)]
+        (if (= i len)
+          (check_true (not (iterator_has_next iter)) "iterator should be empty")
+          (begin
+            (check_pred iterator_has_next iter)
+            (let_values [((key value) (iterator_next iter))]
+              (let [(actual   [key, value]),
+                    (expected (. values i))]
+              (check_equal actual expected "iterator element")
+              (loop (+ 1 i))))))))))
+
+(check_iter (struct_iterator null.struct) [])
+(check_iter (struct_iterator {}) [])
+(check_iter (struct_iterator {a:1}) (quote [[a,1]]))
+(check_iter (struct_iterator {a:1,a:2}) (quote [[a,1],[a,2]]))
+(check_iter (struct_iterator {a:1,b:3,a:2}) (quote [[b,3],[a,1],[a,2]]))

@@ -2,9 +2,9 @@
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionIo.dispatchIonize;
+import static com.amazon.fusion.FusionIo.dispatchWrite;
 import static com.amazon.fusion.FusionVoid.voidValue;
-import static com.amazon.fusion.FusionWrite.dispatchIonize;
-import static com.amazon.fusion.FusionWrite.dispatchWrite;
 import com.amazon.fusion.FusionIterator.AbstractIterator;
 import com.amazon.fusion.FusionSequence.BaseSequence;
 import com.amazon.ion.IonSequence;
@@ -285,7 +285,7 @@ final class FusionSexp
         int size() throws FusionException { return 0; }
 
         @Override
-        Object dot(Evaluator eval, int pos)
+        Object elt(Evaluator eval, int pos)
             throws FusionException
         {
             return voidValue(eval);
@@ -324,6 +324,13 @@ final class FusionSexp
         }
 
         @Override
+        Object annotate(Evaluator eval, String[] annotations)
+            throws FusionException
+        {
+            return new NullSexp(annotations);
+        }
+
+        @Override
         IonSexp copyToIonValue(ValueFactory factory,
                               boolean throwOnConversionFailure)
             throws FusionException
@@ -358,6 +365,13 @@ final class FusionSexp
         EmptySexp(String[] annotations)
         {
             super(annotations);
+        }
+
+        @Override
+        Object annotate(Evaluator eval, String[] annotations)
+            throws FusionException
+        {
+            return new EmptySexp(annotations);
         }
 
         @Override
@@ -408,6 +422,13 @@ final class FusionSexp
         }
 
 
+        @Override
+        Object annotate(Evaluator eval, String[] annotations)
+            throws FusionException
+        {
+            return new ImmutablePair(annotations, myHead, myTail);
+        }
+
         Object head() { return myHead; }
         Object tail() { return myTail; }
 
@@ -432,7 +453,7 @@ final class FusionSexp
         }
 
         @Override
-        Object dot(Evaluator eval, int pos)
+        Object elt(Evaluator eval, int pos)
             throws FusionException
         {
             ImmutablePair p = this;

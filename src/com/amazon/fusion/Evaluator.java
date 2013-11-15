@@ -100,9 +100,12 @@ final class Evaluator
 
     Object injectMaybe(Number value)
     {
-        if (value instanceof Integer)
+        if (   value instanceof Long
+            || value instanceof Integer
+            || value instanceof Short
+            || value instanceof Byte)
         {
-            return newInt(((Integer) value).longValue());
+            return newInt(value.longValue());
         }
         else if (value instanceof BigInteger)
         {
@@ -482,7 +485,9 @@ final class Evaluator
                 if (result instanceof TailCall)
                 {
                     TailCall tail = (TailCall) result;
-                    result = tail.myProc.doApply(this, tail.myArgs);
+                    Object[] args = tail.myArgs;
+                    checkSingleArgResults(args);
+                    result = tail.myProc.doApply(this, args);
                     continue checkingResult;
                 }
                 if (result == null)
@@ -508,6 +513,7 @@ final class Evaluator
     {
         calling: while (true)
         {
+            checkSingleArgResults(args);
             Object result = proc.doApply(this, args);
 
             checkingResult: while (true)
@@ -531,6 +537,30 @@ final class Evaluator
                 }
                 return result;
             }
+        }
+    }
+
+
+    final void checkSingleResult(Object values, String formIdentifier)
+        throws FusionException
+    {
+        if (values instanceof Object[])
+        {
+            Object[] valuesArray = (Object[]) values;
+            String expectation =
+                "1 result but received " + valuesArray.length;
+            throw new ResultFailure(formIdentifier,
+                                    expectation, -1, valuesArray);
+        }
+    }
+
+
+    private final void checkSingleArgResults(Object[] args)
+        throws FusionException
+    {
+        for (Object o : args)
+        {
+            checkSingleResult(o, "procedure argument");
         }
     }
 

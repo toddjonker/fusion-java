@@ -20,13 +20,25 @@ types.
     "/fusion/exception"
     "/fusion/experimental/defines"
     "/fusion/private/builtins"   // Some basic list ops
-    "/fusion/unsafe/list")
+    "/fusion/private/sexp"
+    "/fusion/procedure"
+    "/fusion/unsafe/list"
+    "/fusion/unsafe/sexp")
 
   // Pass-through bindings from /fusion/collection
   (provide . any do element elt every find has_key is_empty size)
 
 
   (defpub_j add    "com.amazon.fusion.AddProc")
+
+  (defpub is_sequence
+    '''
+    (is_sequence value)
+
+Determines whether `value` is a sequence, returning `true` or `false`.
+    '''
+    (disjoin is_list is_sexp))
+
 
   (defpub first
     (lambda (sequence)
@@ -56,45 +68,164 @@ elements.
 
   // Name per Dylan.  I prefer `choose` over `filter` because the latter is
   // ambiguous whether you're filtering "in" or "out".
-  // TODO FUSION-143 implement for sexp
   (defpub choose
-    (lambda (pred list)
+    (lambda (pred sequence)
       '''
-Applies the one-parameter predicate `pred` to each element of `list`, returning
-a new list of the elements (in order) for which `pred` returns truthy.
+Applies the one-parameter predicate `pred` to each element of `sequence`,
+returning a new sequence of the same type, containing the elements (in order)
+for which `pred` returns truthy.
       '''
-      (if (not (is_list list))
-        (raise_argument_error "choose" "list" 1 pred list)
-        (let [(len (size list))]
-          (let loop [(i 0),
-                     (result (stretchy_list))]
-            (if (= i len)
-              result
-              (let [(elt (. list i))]
-                (loop
-                  (+ 1 i)
-                  (if (pred elt)
-                    (unsafe_list_add_m result elt)
-                    result)))))))))
+      (cond
+        ((is_list sequence)
+          (let [(len (size sequence))]
+            (let loop [(i 0),
+                       (result (stretchy_list))]
+              (if (= i len)
+                result
+                (let [(elt (. sequence i))]
+                  (loop
+                    (+ 1 i)
+                    (if (pred elt)
+                      (unsafe_list_add_m result elt)
+                      result)))))))
+        ((is_sexp sequence)
+          (let loop [(ptr sequence)]
+            (if (is_empty ptr)
+              (quote ())
+              (let [(v (unsafe_pair_head ptr))]
+                (if (pred v)
+                  (pair v (loop (unsafe_pair_tail ptr)))
+                  (loop (unsafe_pair_tail ptr)))))))
+        (true
+          (raise_argument_error "choose" "sequence" 1 pred sequence)))))
+
 
 
   // Name per Dylan and SRFI-1. Dylan allows mapping over multiple key-value
   // collections but that's a bit crazy and it's unclear how useful that is.
-  // TODO FUSION-143 implement for sexp
   (defpub map
-    (lambda (proc list)
+    (lambda (proc sequence)
       '''
-Applies the one-parameter procedure `proc` to each element of `list`, returning
-a new list of the results in order.
+Applies the one-parameter procedure `proc` to each element of `sequence`,
+returning a new sequence of the same type, containing the results in order.
       '''
-      (if (not (is_list list))
-        (raise_argument_error "map" "list" 1 proc list)
-        (let [(len (size list))]
-          (let loop [(i 0),
-                     (result (stretchy_list))]
-            (if (= i len)
-              result
-              (loop
-                (+ 1 i)
-                (unsafe_list_add_m result (proc (. list i))))))))))
+      (cond
+        ((is_list sequence)
+          (let [(len (size sequence))]
+            (let loop [(i 0),
+                       (result (stretchy_list))]
+              (if (= i len)
+                result
+                (loop
+                  (+ 1 i)
+                  (unsafe_list_add_m result (proc (. sequence i))))))))
+        ((is_sexp sequence)
+          (let loop [(ptr sequence)]
+            (if (is_empty ptr)
+              (quote ())
+              (pair
+                (proc (unsafe_pair_head ptr))
+                (loop (unsafe_pair_tail ptr))))))
+        (true
+          (raise_argument_error "map" "sequence" 1 proc sequence)))))
+
+  (defpub fold_left
+    '''
+    (fold_left proc init sequence ...)
+
+Applies the given procedure to zero or more sequences producing a single value
+determined by `proc`. `proc` must take n+1 arguments where n is the number of
+sequences. The `proc`'s first argument is the combined return value and is
+initially set to `init`. Sequences are visited left to right with the result of
+`fold_left` being the value produced by the last application of `proc` after
+one or more sequences runs out of values. If no sequences are given or any
+sequence is empty, the result is `init`.
+
+Adding numbers:
+
+    (fold_left + 0 (sexp 1 2 3) [4, 5, 6, 7])  => 21
+
+That performs these procedure calls:
+
+      (+ 0 1 4)  => 5
+      (+ 5 2 5)  => 12
+      (+ 12 3 6) => 21
+
+Reversing a linked list:
+
+    (fold_left
+      (lambda (t h) (pair h t))
+      (quote ())
+      (sexp 1 2 3 4 5)) => (sexp 5 4 3 2 1)
+
+Vizualizing `fold_left`:
+
+    (fold_left f z (1 2 3 4 5))
+
+       . --------------------> f
+      / \\                     / \\ 
+     1   .                   f   5
+        / \\                 / \\ 
+       2   .               f   4
+          / \\             / \\ 
+         3   .           f   3
+            / \\         / \\ 
+           4   .       f   2
+              / \\     / \\ 
+             5  ()   z   1
+
+
+    (fold_left f z (1 2 3 4 5) (6 7 8 9 0))
+
+       . --------------------> f
+      /|\\                     /|\\ 
+     1 6 .                   f 5 0
+        /|\\                 /|\\ 
+       2 7 .               f 4 9
+          /|\\             /|\\ 
+         3 8 .           f 3 8
+            /|\\         /|\\ 
+           4 9 .       f 2 7
+              /|\\     /|\\ 
+             5 0()   z 1 6
+    '''
+    (lambda args
+      (if (< (size args) 2)
+        (apply raise_arity_error "fold_left" 2 args)
+        (let [(proc (head args)),
+              (init (. args tail head)),
+              (seqs (. args tail tail))]
+          (cond
+            ((not (is_procedure proc))
+              (apply raise_argument_error "fold_left" "procedure" 0 args))
+            ((not (every is_sequence seqs))
+              (let errorloop [(i 2)]
+                (if (not (is_sequence (. args i)))
+                  (apply raise_argument_error "fold_left" "sequence" i args)
+                  (errorloop (+ i 1)))))
+            ((is_empty seqs) init)
+            (true
+              (let loop [(i 0),
+                         (result init),
+                         (_seqs seqs)]
+                (if
+                  (any
+                    (lambda (seq)
+                      (or
+                        (and (is_sexp seq) (is_empty seq))
+                        (and (is_list seq) (>= i (size seq)))))
+                    _seqs)
+                  result
+                  (let [(_args
+                          (pair
+                            result
+                            (map
+                              (lambda (seq)
+                                (if (is_sexp seq) (unsafe_pair_head seq) (. seq i)))
+                              _seqs))),
+                        (next
+                          (map
+                            (lambda (seq) (if (is_sexp seq) (unsafe_pair_tail seq) seq))
+                            _seqs))]
+                    (loop (+ i 1) (apply proc _args) next))))))))))
 )

@@ -2,9 +2,9 @@
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionIo.safeDisplay;
+import static com.amazon.fusion.FusionIo.safeWriteToString;
 import static com.amazon.fusion.FusionVoid.voidValue;
-import static com.amazon.fusion.FusionWrite.safeDisplay;
-import static com.amazon.fusion.FusionWrite.safeWriteToString;
 
 final class AssertForm
     extends SyntacticForm
@@ -95,8 +95,7 @@ final class AssertForm
                 message = null;
             }
 
-            throw new FusionAssertionFailure(message, myLocation, myExpression,
-                                             result);
+            throw new FusionAssertionException(message, myLocation, myExpression, result);
         }
     }
 }

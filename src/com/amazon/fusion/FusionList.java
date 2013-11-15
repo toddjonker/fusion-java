@@ -2,14 +2,14 @@
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionIo.dispatchIonize;
+import static com.amazon.fusion.FusionIo.dispatchWrite;
+import static com.amazon.fusion.FusionNumber.unsafeTruncateToInt;
 import static com.amazon.fusion.FusionUtils.EMPTY_OBJECT_ARRAY;
 import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
 import static com.amazon.fusion.FusionVoid.voidValue;
-import static com.amazon.fusion.FusionWrite.dispatchIonize;
-import static com.amazon.fusion.FusionWrite.dispatchWrite;
 import com.amazon.fusion.FusionSequence.BaseSequence;
 import com.amazon.fusion.FusionSexp.BaseSexp;
-import com.amazon.ion.IonInt;
 import com.amazon.ion.IonList;
 import com.amazon.ion.IonSequence;
 import com.amazon.ion.IonType;
@@ -296,7 +296,7 @@ final class FusionList
         BaseList l = (BaseList) list;
         for (int i = l.size(); i-- != 0; )
         {
-            Object head = l.dot(eval, i);
+            Object head = l.elt(eval, i);
             s = FusionSexp.pair(eval, head, s);
         }
 
@@ -385,7 +385,7 @@ final class FusionList
 
 
         @Override
-        Object dot(Evaluator eval, int pos)
+        Object elt(Evaluator eval, int pos)
             throws FusionException
         {
             if (pos < 0 || size() <= pos) return voidValue(eval);
@@ -533,6 +533,14 @@ final class FusionList
             return new MutableList(annotations, values);
         }
 
+        @Override
+        Object annotate(Evaluator eval, String[] annotations)
+        {
+            // Since this instance is mutable, we cannot share the array.
+            Object[] values = Arrays.copyOf(myValues, size());
+            return makeSimilar(annotations, values);
+        }
+
         void unsafeSet(int pos, Object value)
         {
             myValues[pos] = value;
@@ -557,6 +565,13 @@ final class FusionList
         BaseList makeSimilar(String[] annotations, Object[] values)
         {
             return new ImmutableList(annotations, values);
+        }
+
+        @Override
+        Object annotate(Evaluator eval, String[] annotations)
+        {
+            // Since this instance is immutable, we can share the array.
+            return makeSimilar(annotations, myValues);
         }
     }
 
@@ -587,8 +602,14 @@ final class FusionList
         }
 
         @Override
+        Object annotate(Evaluator eval, String[] annotations)
+        {
+            return new NullList(annotations);
+        }
+
+        @Override
         IonList copyToIonValue(ValueFactory factory,
-                              boolean throwOnConversionFailure)
+                               boolean throwOnConversionFailure)
             throws FusionException
         {
             IonList list = factory.newNullList();
@@ -742,11 +763,20 @@ final class FusionList
         }
 
         @Override
-        Object dot(Evaluator eval, int pos)
+        Object annotate(Evaluator eval, String[] annotations)
+        {
+            // Since this instance is immutable, we can share the array AFTER
+            // we inject the children.
+            injectElements(eval);
+            return super.annotate(eval, annotations);
+        }
+
+        @Override
+        Object elt(Evaluator eval, int pos)
             throws FusionException
         {
             injectElements(eval);
-            return super.dot(eval, pos);
+            return super.elt(eval, pos);
         }
 
         @Override
@@ -975,7 +1005,7 @@ final class FusionList
 
 
     static final class UnsafeListElementProc
-        extends Procedure2
+        extends Procedure
     {
         UnsafeListElementProc()
         {
@@ -986,12 +1016,12 @@ final class FusionList
         }
 
         @Override
-        Object doApply(Evaluator eval, Object list, Object posArg)
+        Object doApply(Evaluator eval, Object[] args)
             throws FusionException
         {
-            int pos = ((IonInt) posArg).intValue();
+            int pos = unsafeTruncateToInt(eval, args[1]);
 
-            return unsafeListRef(eval, list, pos);
+            return unsafeListRef(eval, args[0], pos);
         }
     }
 
@@ -1011,14 +1041,11 @@ final class FusionList
         Object doApply(Evaluator eval, Object[] args)
             throws FusionException
         {
-            checkArityExact(args);
+            int pos = unsafeTruncateToInt(eval, args[1]);
 
-            BaseList list = (BaseList) args[0];
-            int pos = ((IonInt) args[1]).intValue();
+            unsafeListSet(eval, args[0], pos, args[2]);
 
-            unsafeListSet(eval, list, pos, args[2]);
-
-            return null;
+            return voidValue(eval);
         }
     }
 
