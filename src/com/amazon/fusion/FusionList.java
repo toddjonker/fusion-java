@@ -1,13 +1,23 @@
-// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionBool.falseBool;
+import static com.amazon.fusion.FusionBool.makeBool;
+import static com.amazon.fusion.FusionBool.trueBool;
+import static com.amazon.fusion.FusionCompare.EqualityTier.LOOSE_EQUAL;
+import static com.amazon.fusion.FusionCompare.EqualityTier.STRICT_EQUAL;
+import static com.amazon.fusion.FusionCompare.EqualityTier.TIGHT_EQUAL;
 import static com.amazon.fusion.FusionIo.dispatchIonize;
 import static com.amazon.fusion.FusionIo.dispatchWrite;
-import static com.amazon.fusion.FusionNumber.unsafeTruncateToInt;
+import static com.amazon.fusion.FusionNumber.makeInt;
+import static com.amazon.fusion.FusionNumber.unsafeTruncateIntToJavaInt;
 import static com.amazon.fusion.FusionUtils.EMPTY_OBJECT_ARRAY;
 import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
 import static com.amazon.fusion.FusionVoid.voidValue;
+import static com.amazon.fusion.Syntax.datumToStrippedSyntaxMaybe;
+import com.amazon.fusion.FusionBool.BaseBool;
+import com.amazon.fusion.FusionCompare.EqualityTier;
 import com.amazon.fusion.FusionSequence.BaseSequence;
 import com.amazon.fusion.FusionSexp.BaseSexp;
 import com.amazon.ion.IonList;
@@ -257,6 +267,19 @@ final class FusionList
 
 
     /**
+     * Copies the elements of this list into a new array.
+     *
+     * @param list must be a list; it is not type-checked!
+     *
+     * @return null if this is null.list.
+     */
+    static Object[] unsafeListExtract(Evaluator eval, Object list)
+    {
+        return ((BaseList) list).extract(eval);
+    }
+
+
+    /**
      * @param list must be a list; it is not type-checked!
      */
     static BaseList unsafeListSubseq(Evaluator eval, Object list,
@@ -348,7 +371,7 @@ final class FusionList
      * Prevents mutation from Java code and is distinguishable from mutable
      * lists.
      */
-    private abstract static class BaseList
+    abstract static class BaseList
         extends BaseSequence
     {
         /**
@@ -373,7 +396,10 @@ final class FusionList
         }
 
 
-        /** Takes ownership of the array, doesn't make a copy. */
+        /**
+         * @param annotations must not be null. This method assumes ownership
+         * of the array and it must not be modified later.
+         */
         abstract BaseList makeSimilar(String[] annotations, Object[] values);
 
 
@@ -404,6 +430,135 @@ final class FusionList
         {
             System.arraycopy(myValues, srcPos, dest, destPos, length);
         }
+
+        Object[] extract(Evaluator eval)
+        {
+            int size = size();
+            Object[] elements = new Object[size];
+            unsafeCopy(eval, 0, elements, 0, size);
+            return elements;
+        }
+
+
+        private static BaseBool actualListEqual(Evaluator    eval,
+                                                EqualityTier tier,
+                                                BaseList     left,
+                                                BaseList     right)
+            throws FusionException
+        {
+            assert ! (left.isAnyNull() || right.isAnyNull());
+
+            int size = left.size();
+            if (size == right.size())
+            {
+                Object[] lVals = left.myValues;
+                Object[] rVals = right.myValues;
+
+                for (int i = 0; i < size; i++)
+                {
+                    Object lv = lVals[i];
+                    Object rv = rVals[i];
+
+                    BaseBool b = tier.eval(eval, lv, rv);
+                    if (b.isFalse()) return b;
+                }
+
+                return trueBool(eval);
+            }
+            return falseBool(eval);
+        }
+
+        @Override
+        BaseBool strictEquals(Evaluator eval, Object right)
+            throws FusionException
+        {
+            if (right instanceof BaseList)
+            {
+                BaseList r = (BaseList) right;
+                if (! r.isAnyNull())
+                {
+                    return actualListEqual(eval, STRICT_EQUAL, this, r);
+                }
+            }
+            return falseBool(eval);
+        }
+
+        @Override
+        BaseBool tightEquals(Evaluator eval, Object right)
+            throws FusionException
+        {
+            if (right instanceof BaseList)
+            {
+                BaseList r = (BaseList) right;
+                if (! r.isAnyNull())
+                {
+                    return actualListEqual(eval, TIGHT_EQUAL, this, r);
+                }
+            }
+            return falseBool(eval);
+        }
+
+        @Override
+        BaseBool looseEquals(Evaluator eval, Object right)
+            throws FusionException
+        {
+            if (right instanceof BaseSequence)
+            {
+                BaseSequence r = (BaseSequence) right;
+                return r.looseEquals2(eval, this);
+            }
+            return falseBool(eval);
+        }
+
+        @Override
+        BaseBool looseEquals2(Evaluator eval, BaseList left)
+            throws FusionException
+        {
+            // Neither is null.list
+            return actualListEqual(eval, LOOSE_EQUAL, left, this);
+        }
+
+        @Override
+        BaseBool looseEquals2(Evaluator eval, BaseSexp left)
+            throws FusionException
+        {
+            // (= <BaseList> <BaseSexp>) is implemented the other way
+            return left.looseEquals2(eval, this);
+        }
+
+        /**
+         * TODO FUSION-242 This needs to do cycle detection.
+         *
+         * @return null if an element can't be converted into syntax.
+         */
+        @Override
+        SyntaxValue toStrippedSyntaxMaybe(Evaluator eval)
+            throws FusionException
+        {
+            int size = size();
+            if (size == 0 && (this instanceof ImmutableList))
+            {
+                return SyntaxList.make(eval, null, this);
+            }
+
+            Object[] children = new Object[size];
+            for (int i = 0; i < size; i++)
+            {
+                Object rawChild = unsafeRef(eval, i);
+                Object child = datumToStrippedSyntaxMaybe(eval, rawChild);
+                if (child == null)
+                {
+                    // Hit something that's not syntax-able
+                    return null;
+                }
+                children[i] = child;
+            }
+
+            String[] anns = annotationsAsJavaStrings();
+            Object list = immutableList(eval, anns, children);
+            return SyntaxList.make(eval, null, list);
+        }
+
 
         /**
          * @return null if the list and its elements cannot be ionized
@@ -608,6 +763,49 @@ final class FusionList
         }
 
         @Override
+        Object[] extract(Evaluator eval)
+        {
+            return null;
+        }
+
+        @Override
+        BaseBool strictEquals(Evaluator eval, Object right)
+            throws FusionException
+        {
+            boolean b = (right instanceof NullList);
+            return makeBool(eval, b);
+        }
+
+        @Override
+        BaseBool tightEquals(Evaluator eval, Object right)
+            throws FusionException
+        {
+            boolean b = (right instanceof NullList);
+            return makeBool(eval, b);
+        }
+
+        @Override
+        BaseBool looseEquals(Evaluator eval, Object right)
+            throws FusionException
+        {
+            return isAnyNull(eval, right);
+        }
+
+        @Override
+        BaseBool looseEquals2(Evaluator eval, BaseList left)
+            throws FusionException
+        {
+            return falseBool(eval);
+        }
+
+        @Override
+        BaseBool looseEquals2(Evaluator eval, BaseSexp left)
+            throws FusionException
+        {
+            return makeBool(eval, left.isAnyNull());
+        }
+
+        @Override
         IonList copyToIonValue(ValueFactory factory,
                                boolean throwOnConversionFailure)
             throws FusionException
@@ -795,12 +993,45 @@ final class FusionList
         }
 
         @Override
-        synchronized // So another thread doesn't inject while we copy.
+        BaseBool looseEquals(Evaluator eval, Object right)
+            throws FusionException
+        {
+            injectElements(eval);
+            return super.looseEquals(eval, right);
+        }
+
+        @Override
+        BaseBool looseEquals2(Evaluator eval, BaseList left)
+            throws FusionException
+        {
+            injectElements(eval);
+            return super.looseEquals2(eval, left);
+        }
+
+        @Override
         IonList copyToIonValue(ValueFactory factory,
                                boolean throwOnConversionFailure)
             throws FusionException
         {
-            // No need to inject our elements, they will still be copied.
+            synchronized (this)
+            {
+                if (myValues[0] instanceof IonValue)
+                {
+                    int len = size();
+                    IonValue[] ions = new IonValue[len];
+
+                    for (int i = 0; i < len; i++)
+                    {
+                        ions[i] = factory.clone((IonValue) myValues[i]);
+                    }
+
+                    IonList list = factory.newList(ions);
+                    list.setTypeAnnotations(myAnnotations);
+                    return list;
+                }
+            }
+            // else our elements have already been injected, copy as normal.
+
             return super.copyToIonValue(factory, throwOnConversionFailure);
         }
 
@@ -844,7 +1075,48 @@ final class FusionList
         }
     }
 
+
     //========================================================================
+    // Procedure Helpers
+
+
+    /**
+     * @param expectation must not be null.
+     * @return the Fusion list, not null.
+     */
+    static Object checkListArg(Evaluator eval,
+                               Procedure who,
+                               String    expectation,
+                               int       argNum,
+                               Object... args)
+        throws FusionException, ArgTypeFailure
+    {
+        Object arg = args[argNum];
+        if (arg instanceof BaseList)
+        {
+            return arg;
+        }
+
+        throw who.argFailure(expectation, argNum, args);
+    }
+
+
+    /**
+     * @return the Fusion list, not null.
+     */
+    static Object checkNullableListArg(Evaluator eval,
+                                       Procedure who,
+                                       int       argNum,
+                                       Object... args)
+        throws FusionException, ArgTypeFailure
+    {
+        String expectation = "nullable list";
+        return checkListArg(eval, who, expectation, argNum, args);
+    }
+
+
+    //========================================================================
+    // Procedures
 
 
     static final class IsListProc
@@ -862,7 +1134,7 @@ final class FusionList
             throws FusionException
         {
             boolean result = isList(eval, value);
-            return eval.newBool(result);
+            return makeBool(eval, result);
         }
     }
 
@@ -882,7 +1154,7 @@ final class FusionList
             throws FusionException
         {
             boolean result = isImmutableList(eval, value);
-            return eval.newBool(result);
+            return makeBool(eval, result);
         }
     }
 
@@ -902,7 +1174,7 @@ final class FusionList
             throws FusionException
         {
             boolean result = isMutableList(eval, value);
-            return eval.newBool(result);
+            return makeBool(eval, result);
         }
     }
 
@@ -922,7 +1194,7 @@ final class FusionList
             throws FusionException
         {
             boolean result = isStretchyList(eval, value);
-            return eval.newBool(result);
+            return makeBool(eval, result);
         }
     }
 
@@ -999,7 +1271,7 @@ final class FusionList
             throws FusionException
         {
             int result = unsafeListSize(eval, list);
-            return eval.newInt(result);
+            return makeInt(eval, result);
         }
     }
 
@@ -1019,7 +1291,7 @@ final class FusionList
         Object doApply(Evaluator eval, Object[] args)
             throws FusionException
         {
-            int pos = unsafeTruncateToInt(eval, args[1]);
+            int pos = unsafeTruncateIntToJavaInt(eval, args[1]);
 
             return unsafeListRef(eval, args[0], pos);
         }
@@ -1041,7 +1313,7 @@ final class FusionList
         Object doApply(Evaluator eval, Object[] args)
             throws FusionException
         {
-            int pos = unsafeTruncateToInt(eval, args[1]);
+            int pos = unsafeTruncateIntToJavaInt(eval, args[1]);
 
             unsafeListSet(eval, args[0], pos, args[2]);
 

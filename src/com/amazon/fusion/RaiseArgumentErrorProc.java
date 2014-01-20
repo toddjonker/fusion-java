@@ -2,6 +2,9 @@
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionNumber.checkIntArgToJavaInt;
+import static com.amazon.fusion.FusionString.checkRequiredStringArg;
+import static com.amazon.fusion.FusionText.checkRequiredTextArg;
 import java.util.Arrays;
 
 
@@ -26,9 +29,9 @@ final class RaiseArgumentErrorProc
     {
         checkArityAtLeast(4, args);
 
-        String name     = checkTextArg(0, args);
-        String expected = checkStringArg(1, args);
-        int    badPos   = checkIntArg(2, args);
+        String name     = checkRequiredTextArg(eval, this, 0, args);
+        String expected = checkRequiredStringArg(eval, this, 1, args);
+        int    badPos   = checkIntArgToJavaInt(eval, this, 2, args);
 
         Object[] actuals = Arrays.copyOfRange(args, 3, args.length);
 

@@ -1,11 +1,21 @@
-// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionBool.falseBool;
+import static com.amazon.fusion.FusionBool.makeBool;
+import static com.amazon.fusion.FusionBool.trueBool;
+import static com.amazon.fusion.FusionCompare.EqualityTier.LOOSE_EQUAL;
+import static com.amazon.fusion.FusionCompare.EqualityTier.STRICT_EQUAL;
+import static com.amazon.fusion.FusionCompare.EqualityTier.TIGHT_EQUAL;
 import static com.amazon.fusion.FusionIo.dispatchIonize;
 import static com.amazon.fusion.FusionIo.dispatchWrite;
 import static com.amazon.fusion.FusionVoid.voidValue;
+import static com.amazon.fusion.Syntax.datumToStrippedSyntaxMaybe;
+import com.amazon.fusion.FusionBool.BaseBool;
+import com.amazon.fusion.FusionCompare.EqualityTier;
 import com.amazon.fusion.FusionIterator.AbstractIterator;
+import com.amazon.fusion.FusionList.BaseList;
 import com.amazon.fusion.FusionSequence.BaseSequence;
 import com.amazon.ion.IonSequence;
 import com.amazon.ion.IonSexp;
@@ -301,6 +311,27 @@ final class FusionSexp
         }
 
         @Override
+        BaseBool looseEquals(Evaluator eval, Object right)
+            throws FusionException
+        {
+            if (this == right) return trueBool(eval);
+
+            if (right instanceof BaseSequence)
+            {
+                BaseSequence r = (BaseSequence) right;
+                return r.looseEquals2(eval, this);
+            }
+            return falseBool(eval);
+        }
+
+        @Override
+        SyntaxValue toStrippedSyntaxMaybe(Evaluator eval)
+            throws FusionException
+        {
+            return SyntaxSexp.make(eval, null, this);
+        }
+
+        @Override
         abstract IonSexp copyToIonValue(ValueFactory factory,
                                         boolean throwOnConversionFailure)
             throws FusionException;
@@ -328,6 +359,34 @@ final class FusionSexp
             throws FusionException
         {
             return new NullSexp(annotations);
+        }
+
+        @Override
+        BaseBool tightEquals(Evaluator eval, Object right)
+            throws FusionException
+        {
+            return makeBool(eval, right instanceof NullSexp);
+        }
+
+        @Override
+        BaseBool looseEquals(Evaluator eval, Object right)
+            throws FusionException
+        {
+            return isAnyNull(eval, right);
+        }
+
+        @Override
+        BaseBool looseEquals2(Evaluator eval, BaseList left)
+            throws FusionException
+        {
+            return falseBool(eval);
+        }
+
+        @Override
+        BaseBool looseEquals2(Evaluator eval, BaseSexp left)
+            throws FusionException
+        {
+            return falseBool(eval);
         }
 
         @Override
@@ -372,6 +431,27 @@ final class FusionSexp
             throws FusionException
         {
             return new EmptySexp(annotations);
+        }
+
+        @Override
+        BaseBool tightEquals(Evaluator eval, Object right)
+            throws FusionException
+        {
+            return makeBool(eval, right instanceof EmptySexp);
+        }
+
+        @Override
+        BaseBool looseEquals2(Evaluator eval, BaseSexp right)
+            throws FusionException
+        {
+            return makeBool(eval, right instanceof EmptySexp);
+        }
+
+        @Override
+        BaseBool looseEquals2(Evaluator eval, BaseList right)
+            throws FusionException
+        {
+            return makeBool(eval, right.size() == 0);
         }
 
         @Override
@@ -477,6 +557,146 @@ final class FusionSexp
                 "No index " + i + " in sequence " + this;
             throw new IndexOutOfBoundsException(message);
         }
+
+
+        private static BaseBool actualPairEqual(Evaluator     eval,
+                                                EqualityTier  tier,
+                                                ImmutablePair left,
+                                                ImmutablePair right)
+            throws FusionException
+        {
+            while (true)
+            {
+                Object lv = left.myHead;
+                Object rv = right.myHead;
+
+                BaseBool b = tier.eval(eval, lv, rv);
+                if (b.isFalse()) return b;
+
+                lv = left.myTail;
+                rv = right.myTail;
+                if (lv instanceof ImmutablePair)
+                {
+                    if (rv instanceof ImmutablePair)
+                    {
+                        left  = (ImmutablePair) lv;
+                        right = (ImmutablePair) rv;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    return tier.eval(eval, lv, rv);
+                }
+            }
+
+            return falseBool(eval);
+        }
+
+        @Override
+        BaseBool strictEquals(Evaluator eval, Object right)
+            throws FusionException
+        {
+            if (right instanceof ImmutablePair)
+            {
+                ImmutablePair rp = (ImmutablePair) right;
+                return actualPairEqual(eval, STRICT_EQUAL, this, rp);
+            }
+            return falseBool(eval);
+        }
+
+        @Override
+        BaseBool tightEquals(Evaluator eval, Object right)
+            throws FusionException
+        {
+            if (right instanceof ImmutablePair)
+            {
+                ImmutablePair rp = (ImmutablePair) right;
+                return actualPairEqual(eval, TIGHT_EQUAL, this, rp);
+            }
+            return falseBool(eval);
+        }
+
+        @Override
+        BaseBool looseEquals2(Evaluator eval, BaseSexp right)
+            throws FusionException
+        {
+            if (right instanceof ImmutablePair)
+            {
+                ImmutablePair rp = (ImmutablePair) right;
+                return actualPairEqual(eval, LOOSE_EQUAL, this, rp);
+            }
+            return falseBool(eval);
+        }
+
+        @Override
+        BaseBool looseEquals2(Evaluator eval, BaseList right)
+            throws FusionException
+        {
+            final int rSize = right.size();
+
+            ImmutablePair lp = this;
+            for (int i = 0; i < rSize; i++)
+            {
+                BaseBool result =
+                    looseEquals(eval, lp.myHead, right.unsafeRef(eval, i));
+
+                if (result.isFalse()) return result;
+
+                Object tail = lp.myTail;
+                if (tail instanceof ImmutablePair)
+                {
+                    lp = (ImmutablePair) tail;
+                }
+                else if (tail instanceof EmptySexp)
+                {
+                    return makeBool(eval, i+1 == rSize);
+                }
+                else break;
+            }
+
+            return falseBool(eval);
+        }
+
+        /**
+         * Converts this pair to a normal pair of syntax objects.
+         */
+        private BaseSexp toPairOfStrippedSyntaxMaybe(Evaluator eval)
+            throws FusionException
+        {
+            SyntaxValue head = datumToStrippedSyntaxMaybe(eval, myHead);
+            if (head == null) return null;
+
+            Object tail = myTail;
+            if (isPair(eval, tail))
+            {
+                tail = ((ImmutablePair)tail).toPairOfStrippedSyntaxMaybe(eval);
+            }
+            else if (! isEmptySexp(eval, tail))
+            {
+                tail = datumToStrippedSyntaxMaybe(eval, tail);
+            }
+            if (tail == null) return null;
+
+            return pair(eval, myAnnotations, head, tail);
+        }
+
+        /**
+         * TODO FUSION-242 This needs to do cycle detection.
+         *
+         * @return null if an element can't be converted into syntax.
+         */
+        @Override
+        SyntaxValue toStrippedSyntaxMaybe(Evaluator eval)
+            throws FusionException
+        {
+            BaseSexp newPair = toPairOfStrippedSyntaxMaybe(eval);
+            return SyntaxSexp.make(eval, null, newPair);
+        }
+
 
         @Override
         IonSexp copyToIonValue(ValueFactory factory,
@@ -617,7 +837,7 @@ final class FusionSexp
             throws FusionException
         {
             boolean result = isSexp(eval, arg);
-            return eval.newBool(result);
+            return makeBool(eval, result);
         }
     }
 
@@ -656,7 +876,7 @@ final class FusionSexp
             throws FusionException
         {
             boolean result = isPair(eval, value);
-            return eval.newBool(result);
+            return makeBool(eval, result);
         }
     }
 

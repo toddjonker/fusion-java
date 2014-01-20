@@ -2,17 +2,16 @@
 
 package com.amazon.fusion;
 
-import static com.amazon.fusion.FusionIo.dispatchIonize;
 import static com.amazon.fusion.FusionStruct.EMPTY_STRUCT;
 import static com.amazon.fusion.FusionStruct.NULL_STRUCT;
 import static com.amazon.fusion.FusionStruct.immutableStruct;
 import static com.amazon.fusion.FusionStruct.nullStruct;
 import static com.amazon.fusion.FusionStruct.structImplAdd;
 import static com.amazon.fusion.SourceLocation.currentLocation;
-import com.amazon.fusion.FusionCollection.BaseCollection;
 import com.amazon.fusion.FusionStruct.ImmutableStruct;
 import com.amazon.fusion.FusionStruct.NonNullImmutableStruct;
 import com.amazon.fusion.FusionStruct.StructFieldVisitor;
+import com.amazon.ion.IonException;
 import com.amazon.ion.IonReader;
 import com.amazon.ion.IonWriter;
 import java.io.IOException;
@@ -28,44 +27,53 @@ final class SyntaxStruct
     /**
      * @param struct must not be null.
      */
-    private SyntaxStruct(ImmutableStruct struct,
-                         SourceLocation loc, SyntaxWraps wraps)
+    private SyntaxStruct(SourceLocation  loc,
+                         ImmutableStruct struct)
     {
-        super(((BaseCollection)struct).myAnnotations, loc, wraps);
-        assert (wraps == null) || (struct.size() != 0);
+        super(loc);
         myStruct = struct;
     }
 
     /**
-     * @param map may be null but may only be non-null when map has children.
+     * Copy constructor, shares the enclosed datum and replaces wraps.
+     * The datum will be copied when wraps are pushed but not before.
+     *
+     * @param wraps must not be null.
      */
-    private SyntaxStruct(Map<String, Object> map, String[] anns,
-                         SourceLocation loc, SyntaxWraps wraps)
+    private SyntaxStruct(SyntaxStruct that,
+                         SyntaxWraps  wraps)
     {
-        super(anns, loc, wraps);
-        assert (wraps == null) || (map != null && ! map.isEmpty());
-        myStruct = immutableStruct(map, anns);
+        super(that.getLocation(), wraps);
+        assert wraps != null;
+        myStruct = that.myStruct;
     }
 
 
-    static SyntaxStruct make(ImmutableStruct struct,
-                             SourceLocation loc, SyntaxWraps wraps)
+    /**
+     * @param datum must be an immutable struct
+     */
+    static SyntaxStruct make(Evaluator eval,
+                             SourceLocation loc,
+                             Object datum)
     {
-        return new SyntaxStruct(struct, loc, wraps);
+        return new SyntaxStruct(loc, (ImmutableStruct) datum);
     }
 
-    static SyntaxStruct make(String[] names, SyntaxValue[] values,
-                             String[] anns)
+
+    //========================================================================
+
+
+    @Override
+    String[] annotationsAsJavaStrings()
     {
-        ImmutableStruct struct = immutableStruct(names, values, anns);
-        return new SyntaxStruct(struct, null, null);
+        return myStruct.annotationsAsJavaStrings();
     }
 
 
     @Override
-    boolean isNullValue()
+    boolean isAnyNull()
     {
-        return ((FusionValue)myStruct).isAnyNull();
+        return ((BaseValue)myStruct).isAnyNull();
     }
 
 
@@ -79,8 +87,7 @@ final class SyntaxStruct
     @Override
     SyntaxStruct copyReplacingWraps(SyntaxWraps wraps)
     {
-        // We can share the Map because its never mutated.
-        return new SyntaxStruct(myStruct, getLocation(), wraps);
+        return new SyntaxStruct(this, wraps);
     }
 
 
@@ -96,7 +103,7 @@ final class SyntaxStruct
         // Make a copy of the map, then mutate it to replace children
         // as necessary.
         Map<String, Object> newMap =
-            ((NonNullImmutableStruct) myStruct).copyMap();
+            ((NonNullImmutableStruct) myStruct).copyMap(eval);
 
         for (Map.Entry<String, Object> entry : newMap.entrySet())
         {
@@ -139,7 +146,9 @@ final class SyntaxStruct
 
         if (! mustReplace) return this;
 
-        return new SyntaxStruct(newMap, getAnnotations(), getLocation(), null);
+        ImmutableStruct s =
+            immutableStruct(newMap, annotationsAsJavaStrings());
+        return new SyntaxStruct(getLocation(), s);
     }
 
 
@@ -168,14 +177,7 @@ final class SyntaxStruct
             struct = immutableStruct(map, anns);
         }
 
-        return new SyntaxStruct(struct, loc, null);
-    }
-
-
-    @Override
-    Type getType()
-    {
-        return Type.STRUCT;
+        return new SyntaxStruct(loc, struct);
     }
 
 
@@ -190,22 +192,24 @@ final class SyntaxStruct
 
 
     @Override
-    Object unwrap(Evaluator eval, boolean recurse)
+    Object unwrap(Evaluator eval)
         throws FusionException
     {
-        if (recurse ? myStruct.size() == 0 : myWraps == null)
+        if (myWraps == null)
         {
             return myStruct;
         }
 
-        // We have children, and wraps to propagate (when not recursing)
+        // We have wraps to propagate (and therefore children).
 
         // Make a copy of the map, then mutate it to replace children
         // as necessary.
         Map<String, Object> newMap =
-            ((NonNullImmutableStruct) myStruct).copyMap();
+            ((NonNullImmutableStruct) myStruct).copyMap(eval);
 
         // TODO optimize this to not allocate new objects when nothing changes.
+        // Idea: keep track of when there are symbols contained (recursively),
+        // when there's not, maybe we can skip all this.
 
         for (Map.Entry<String, Object> entry : newMap.entrySet())
         {
@@ -213,9 +217,7 @@ final class SyntaxStruct
             if (! (value instanceof Object[]))
             {
                 SyntaxValue child = (SyntaxValue) value;
-                Object childValue =
-                    (recurse ? child.unwrap(eval, true)
-                             : child.addWraps(myWraps));
+                Object childValue = child.addWraps(myWraps);
                 entry.setValue(childValue);
             }
             else
@@ -227,24 +229,64 @@ final class SyntaxStruct
                 for (Object c : children)
                 {
                     SyntaxValue child = (SyntaxValue) c;
-                    Object childValue =
-                        (recurse ? child.unwrap(eval, true)
-                                 : child.addWraps(myWraps));
+                    Object childValue = child.addWraps(myWraps);
                     childValues[cPos++] = childValue;
                 }
                 entry.setValue(childValues);
             }
         }
 
-        NonNullImmutableStruct result =
-            immutableStruct(newMap, getAnnotations());
-        if (!recurse) // We've push wraps to children, retain them!
+        myStruct = immutableStruct(newMap, annotationsAsJavaStrings());
+        myWraps = null;
+
+        return myStruct;
+    }
+
+
+    @Override
+    Object syntaxToDatum(Evaluator eval)
+        throws FusionException
+    {
+        if (myStruct.size() == 0)
         {
-            myStruct = result;
-            myWraps = null;
+            return myStruct;
         }
 
-        return result;
+        // We have children, and wraps to propagate (when not recursing)
+
+        // Make a copy of the map, then mutate it to replace children
+        // as necessary.
+        Map<String, Object> newMap =
+            ((NonNullImmutableStruct) myStruct).copyMap(eval);
+
+        // TODO optimize this to not allocate new objects when nothing changes.
+
+        for (Map.Entry<String, Object> entry : newMap.entrySet())
+        {
+            Object value = entry.getValue();
+            if (! (value instanceof Object[]))
+            {
+                SyntaxValue child = (SyntaxValue) value;
+                Object childValue = child.syntaxToDatum(eval);
+                entry.setValue(childValue);
+            }
+            else
+            {
+                Object[] children = (Object[]) value;
+                Object[] childValues = new Object[children.length];
+
+                int cPos = 0;
+                for (Object c : children)
+                {
+                    SyntaxValue child = (SyntaxValue) c;
+                    Object childValue = child.syntaxToDatum(eval);
+                    childValues[cPos++] = childValue;
+                }
+                entry.setValue(childValues);
+            }
+        }
+
+        return immutableStruct(newMap, annotationsAsJavaStrings());
     }
 
 
@@ -260,7 +302,7 @@ final class SyntaxStruct
         // Make a copy of the map, then mutate it to replace children
         // as necessary.
         Map<String, Object> newMap =
-            ((NonNullImmutableStruct) myStruct).copyMap();
+            ((NonNullImmutableStruct) myStruct).copyMap(expander.getEvaluator());
 
         for (Map.Entry<String, Object> entry : newMap.entrySet())
         {
@@ -296,15 +338,17 @@ final class SyntaxStruct
 
 
         // Wraps have been pushed down so the copy doesn't need them.
-        return new SyntaxStruct(newMap, getAnnotations(), getLocation(), null);
+        ImmutableStruct s =
+            immutableStruct(newMap, annotationsAsJavaStrings());
+        return new SyntaxStruct(getLocation(), s);
     }
 
 
     @Override
     void ionize(Evaluator eval, IonWriter writer)
-        throws IOException, FusionException
+        throws IOException, IonException, FusionException, IonizeFailure
     {
-        dispatchIonize(null, writer, myStruct);
+        myStruct.ionize(eval, writer);
     }
 
 
@@ -317,7 +361,7 @@ final class SyntaxStruct
     {
         assert myWraps == null;
 
-        if (isNullValue())
+        if (isAnyNull())
         {
             return new CompiledConstant(NULL_STRUCT);
         }
@@ -348,7 +392,8 @@ final class SyntaxStruct
                 return null;
             }
         };
-        myStruct.visitFields(visitor);
+
+        myStruct.visitFields(eval, visitor);
 
         return new CompiledStruct(fieldNames, fieldForms);
     }

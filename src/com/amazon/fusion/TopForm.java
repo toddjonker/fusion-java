@@ -81,11 +81,13 @@ final class TopForm
                 }
             }
 
-            throw new UnboundIdentifierFailure(null, id);
+            throw new UnboundIdentifierException(id);
         }
 
         children[1] = id;
-        return SyntaxSexp.make(eval, stx.getLocation(), stx.getAnnotations(),
+        return SyntaxSexp.make(eval,
+                               stx.getLocation(),
+                               stx.annotationsAsJavaStrings(),
                                children);
     }
 

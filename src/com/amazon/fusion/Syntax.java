@@ -2,28 +2,24 @@
 
 package com.amazon.fusion;
 
-import static com.amazon.fusion.FusionList.isList;
-import static com.amazon.fusion.FusionList.unsafeListRef;
-import static com.amazon.fusion.FusionList.unsafeListSize;
-import static com.amazon.fusion.FusionSexp.isEmptySexp;
-import static com.amazon.fusion.FusionSexp.isPair;
-import static com.amazon.fusion.FusionSexp.isSexp;
-import static com.amazon.fusion.FusionSexp.pair;
-import static com.amazon.fusion.FusionSexp.unsafePairHead;
-import static com.amazon.fusion.FusionSexp.unsafePairTail;
-import static com.amazon.fusion.FusionStruct.isStruct;
-import static com.amazon.fusion.FusionValue.castToIonValueMaybe;
+import static com.amazon.fusion.FusionBlob.makeBlob;
+import static com.amazon.fusion.FusionBool.makeBool;
+import static com.amazon.fusion.FusionClob.makeClob;
+import static com.amazon.fusion.FusionList.immutableList;
+import static com.amazon.fusion.FusionList.nullList;
+import static com.amazon.fusion.FusionNumber.makeDecimal;
+import static com.amazon.fusion.FusionNumber.makeFloat;
+import static com.amazon.fusion.FusionNumber.makeInt;
+import static com.amazon.fusion.FusionTimestamp.makeTimestamp;
+import static com.amazon.fusion.SimpleSyntaxValue.makeSyntax;
 import static com.amazon.fusion.SourceLocation.currentLocation;
-import com.amazon.fusion.FusionSexp.BaseSexp;
-import com.amazon.fusion.FusionStruct.BaseStruct;
-import com.amazon.fusion.FusionStruct.ImmutableStruct;
-import com.amazon.fusion.FusionStruct.StructFieldVisitor;
+import com.amazon.fusion.FusionList.BaseList;
 import com.amazon.ion.Decimal;
 import com.amazon.ion.IonException;
 import com.amazon.ion.IonReader;
 import com.amazon.ion.IonType;
-import com.amazon.ion.IonValue;
 import com.amazon.ion.Timestamp;
+import java.math.BigInteger;
 import java.util.ArrayList;
 
 /**
@@ -44,6 +40,10 @@ final class Syntax
     }
 
     /**
+     * Reads a single Ion datum as source.
+     *
+     * @param source must be positioned on the value to be read.
+     * @param name may be null.
      * @throws IonException if there's a problem reading the source data.
      */
     static SyntaxValue read(Evaluator eval, IonReader source, SourceName name)
@@ -55,42 +55,62 @@ final class Syntax
         String[] anns = source.getTypeAnnotations();
         SourceLocation loc = currentLocation(source, name);
 
+        BaseValue datum;
         switch (type)
         {
             case NULL:
             {
-                return SyntaxNull.make(anns, loc);
+                datum = FusionNull.makeNullNull(eval, anns);
+                break;
             }
             case BOOL:
             {
-                Boolean value =
-                    (source.isNullValue() ? null : source.booleanValue());
-                return SyntaxBool.make(value, anns, loc);
+                if (source.isNullValue())
+                {
+                    datum = makeBool(eval, anns, (Boolean) null);
+                }
+                else
+                {
+                    boolean value = source.booleanValue();
+                    datum = makeBool(eval, anns, value);
+                }
+                break;
             }
             case INT:
             {
-                return SyntaxInt.make(source.bigIntegerValue(), anns, loc);
+                BigInteger value = source.bigIntegerValue();
+                datum = makeInt(eval, anns, value);
+                break;
             }
             case DECIMAL:
             {
                 Decimal value = source.decimalValue();
-                return SyntaxDecimal.make(value, anns, loc);
+                datum = makeDecimal(eval, anns, value);
+                break;
             }
             case FLOAT:
             {
-                Double value =
-                    (source.isNullValue() ? null : source.doubleValue());
-                return SyntaxFloat.make(value, anns, loc);
+                if (source.isNullValue())
+                {
+                    datum = makeFloat(eval, anns, (Double) null);
+                }
+                else
+                {
+                    double value = source.doubleValue();
+                    datum = makeFloat(eval, anns, value);
+                }
+                break;
             }
             case TIMESTAMP:
             {
                 Timestamp value = source.timestampValue();
-                return SyntaxTimestamp.make(value, anns, loc);
+                datum = makeTimestamp(eval, anns, value);
+                break;
             }
             case STRING:
             {
                 String value = source.stringValue();
-                return SyntaxString.make(value, anns, loc);
+                return SyntaxString.make(eval, loc, anns, value);
             }
             case SYMBOL:
             {
@@ -99,26 +119,28 @@ final class Syntax
                     value.startsWith("_") &&
                     value.endsWith("_"))
                 {
-                    return SyntaxKeyword.make(value, anns, loc);
+                    return SyntaxKeyword.make(eval, loc, anns, value);
                 }
-                return SyntaxSymbol.make(value, anns, loc);
+                return SyntaxSymbol.make(eval, loc, anns, value);
             }
             case BLOB:
             {
                 byte[] value =
                     (source.isNullValue() ? null : source.newBytes());
-                return SyntaxBlob.make(value, anns, loc);
+                datum = makeBlob(eval, anns, value);
+                break;
             }
             case CLOB:
             {
                 byte[] value =
                     (source.isNullValue() ? null : source.newBytes());
-                return SyntaxClob.make(value, anns, loc);
+                datum = makeClob(eval, anns, value);
+                break;
             }
             case LIST:
             {
-                SyntaxValue[] value = readSequence(eval, source, name);
-                return SyntaxList.make(loc, anns, value);
+                datum = readList(eval, name, source, anns);
+                return SyntaxList.make(eval, loc, datum);
             }
             case SEXP:
             {
@@ -129,12 +151,23 @@ final class Syntax
             {
                 return SyntaxStruct.read(eval, source, name, anns);
             }
+            default:
+            {
+                throw new UnsupportedOperationException("Bad type: " + type);
+            }
         }
 
-        throw new UnsupportedOperationException("Bad type: " + type);
+        return makeSyntax(eval, loc, datum);
     }
 
 
+    /**
+     * @param source must be positioned on the value to be read, but not
+     * stepped-in.
+     * @param name may be null.
+     *
+     * @return null if the sequence is null (eg, {@code null.list}).
+     */
     static SyntaxValue[] readSequence(Evaluator eval,
                                       IonReader source,
                                       SourceName name)
@@ -157,6 +190,24 @@ final class Syntax
     }
 
 
+    /**
+     * @return an immutable list of syntax objects.
+     */
+    static BaseList readList(Evaluator  eval,
+                             SourceName name,
+                             IonReader  source,
+                             String[]   annotations)
+    {
+        if (source.isNullValue()) return nullList(eval, annotations);
+
+        Object[] elements = readSequence(eval, source, name);
+        return immutableList(eval, annotations, elements);
+    }
+
+
+    /**
+     * @param context may be null, in which case nothing happens.
+     */
     private static SyntaxValue applyContext(Evaluator eval,
                                             SyntaxSymbol context,
                                             SyntaxValue datum)
@@ -170,128 +221,20 @@ final class Syntax
     }
 
 
-    private static Object pairToStrippedSyntaxMaybe(Evaluator eval,
-                                                    Object pair,
-                                                    boolean first)
-        throws FusionException
-    {
-        Object rawHead = unsafePairHead(eval, pair);
-        Object rawTail = unsafePairTail(eval, pair);
-
-        SyntaxValue newHead = datumToStrippedSyntaxMaybe(eval, rawHead);
-
-        Object newTail;
-        if (isPair(eval, rawTail))
-        {
-            newTail = pairToStrippedSyntaxMaybe(eval, rawTail, false);
-        }
-        else if (isEmptySexp(eval, rawTail))
-        {
-            newTail = rawTail;
-        }
-        else
-        {
-            newTail = datumToStrippedSyntaxMaybe(eval, rawTail);
-        }
-
-        if (newHead == null || newTail == null) return null;
-
-        BaseSexp newPair = pair(eval, ((BaseSexp) pair).myAnnotations,
-                                newHead, newTail);
-
-        return (first ? SyntaxSexp.make(eval, null, newPair) : newPair);
-    }
-
-
     /**
+     * TODO FUSION-242 This needs to do cycle detection.
+     *
      * @return null if something in the datum can't be converted into syntax.
      */
-    private static SyntaxValue
-    datumToStrippedSyntaxMaybe(final Evaluator eval, Object datum)
+    static SyntaxValue datumToStrippedSyntaxMaybe(Evaluator eval, Object datum)
         throws FusionException
     {
-        if (isSyntax(eval, datum))
+        if (datum instanceof BaseValue)
         {
-            // TODO FUSION-183 Should strip location and properties?
-            //      Well, probably not, that throws away existing
-            //      context when called from datum_to_syntax
-            return ((SyntaxValue) datum).stripWraps(eval);
-        }
-
-        IonValue iv = castToIonValueMaybe(datum);
-        if (iv != null)
-        {
-            IonReader r = eval.getSystem().newReader(iv);
-            r.next();
-            return read(eval, r, null);
-            // No need to strip wraps here
-        }
-
-        if (isList(eval, datum))
-        {
-            int size = unsafeListSize(eval, datum);
-            SyntaxValue[] children = new SyntaxValue[size];
-            for (int i = 0; i < size; i++)
-            {
-                Object rawChild = unsafeListRef(eval, datum, i);
-                SyntaxValue child = datumToStrippedSyntaxMaybe(eval, rawChild);
-                if (child == null)
-                {
-                    // Hit something that's not syntax-able
-                    return null;
-                }
-                children[i] = child;
-            }
-            return SyntaxList.make(null, children);
-        }
-
-        if (isPair(eval, datum))
-        {
-            return (SyntaxValue) pairToStrippedSyntaxMaybe(eval, datum, true);
-        }
-
-        if (isSexp(eval, datum))  // null.sexp or ()
-        {
-            return SyntaxSexp.make(eval, null, (BaseSexp) datum);
-        }
-
-        if (isStruct(eval, datum))
-        {
-            StructFieldVisitor visitor = new StructFieldVisitor()
-            {
-                @Override
-                public Object visit(String name, Object value)
-                    throws FusionException
-                {
-                    SyntaxValue stripped =
-                        datumToStrippedSyntaxMaybe(eval, value);
-                    if (stripped == null)
-                    {
-                        // Hit something that's not syntax-able
-                        throw new StripFailure();
-                    }
-                    return stripped;
-                }
-            };
-
-            try
-            {
-                ImmutableStruct struct =
-                    ((BaseStruct) datum).transformFields(visitor);
-                return SyntaxStruct.make(struct, null, null);
-            }
-            catch (StripFailure e)  // This is crazy.
-            {
-                return null;
-            }
+            return ((BaseValue) datum).toStrippedSyntaxMaybe(eval);
         }
 
         return null;
-    }
-
-    @SuppressWarnings("serial")
-    private static final class StripFailure extends RuntimeException
-    {
     }
 
 
@@ -321,22 +264,42 @@ final class Syntax
     /**
      * @param context may be null, in which case no lexical information is
      * applied (and any existing is stripped).
+     * @param whosCalling The form to name for error messages; may be null.
+     *
+     * @return not null.
+     */
+    static SyntaxValue datumToSyntax(Evaluator eval,
+                                     Object datum,
+                                     SyntaxSymbol context,
+                                     String whosCalling)
+        throws FusionException
+    {
+        SyntaxValue stx = datumToSyntaxMaybe(eval, datum, context);
+        if (stx == null)
+        {
+            String message =
+                (whosCalling == null ? "datum_to_syntax" : whosCalling) +
+                " expects syntax object or ionizable data, given " + datum;
+            throw new ContractException(message);
+        }
+
+        return stx;
+    }
+
+    /**
+     * @param context may be null, in which case no lexical information is
+     * applied (and any existing is stripped).
+     *
+     * @return not null.
      */
     static SyntaxValue datumToSyntax(Evaluator eval,
                                      Object datum,
                                      SyntaxSymbol context)
         throws FusionException
     {
-        SyntaxValue stx = datumToSyntaxMaybe(eval, datum, context);
-        if (stx == null)
-        {
-            throw new ArgTypeFailure("datum_to_syntax",
-                                     "Syntax object or Ionizable data",
-                                     0, datum, context);
-        }
-
-        return stx;
+        return datumToSyntax(eval, datum, context, null);
     }
+
 
     /**
      * @param context may be null, in which case no lexical information is

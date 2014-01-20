@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -108,7 +108,7 @@ class ModuleNamespace
         @Override
         public String toString()
         {
-            return "{{{ModuleBinding " + myModuleId.internString()
+            return "{{{ModuleBinding " + myModuleId.absolutePath()
                 + ' ' + getIdentifier().debugString() + "}}}";
         }
     }
@@ -138,9 +138,9 @@ class ModuleNamespace
         @Override
         public String toString()
         {
-            String name =
-                ((ModuleNamespace)getEnvironment()).myModuleId.internString();
-            return "{{{ModuleWrap " + name + "}}}";
+            ModuleIdentity id =
+                ((ModuleNamespace) getEnvironment()).getModuleId();
+            return "{{{ModuleWrap " + id.absolutePath() + "}}}";
         }
     }
 
@@ -253,6 +253,7 @@ class ModuleNamespace
             Binding oldBinding = resolve(name);
             if (oldBinding != null
                 && ! (oldBinding instanceof FreeBinding)
+                && ! (oldBinding instanceof LanguageBinding)
                 && ! oldBinding.sameTarget(module.resolveProvidedName(name)))
             {
                 throw new AmbiguousBindingFailure(GlobalState.REQUIRE, name);

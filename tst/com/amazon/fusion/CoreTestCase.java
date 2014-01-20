@@ -2,15 +2,20 @@
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionNumber.isDecimal;
+import static com.amazon.fusion.FusionNumber.isFloat;
+import static com.amazon.fusion.FusionNumber.isInt;
+import static com.amazon.fusion.FusionNumber.unsafeIntToJavaBigInteger;
+import static com.amazon.fusion.FusionNumber.unsafeNumberToBigDecimal;
+import static com.amazon.fusion.FusionString.stringToJavaString;
+import static com.amazon.fusion.FusionValue.isAnyNull;
 import static com.amazon.fusion.FusionVoid.isVoid;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
 import com.amazon.ion.IonContainer;
-import com.amazon.ion.IonDecimal;
 import com.amazon.ion.IonInt;
 import com.amazon.ion.IonList;
 import com.amazon.ion.IonSequence;
-import com.amazon.ion.IonString;
 import com.amazon.ion.IonStruct;
 import com.amazon.ion.IonSystem;
 import com.amazon.ion.IonText;
@@ -278,19 +283,80 @@ public class CoreTestCase
 
 
     void checkString(String expected, Object actual)
+        throws FusionException
     {
-        String actualString = FusionValue.asJavaString(actual);
+        // TODO UNSAFE use of null Evaluator
+        String actualString = stringToJavaString(null, actual);
         assertEquals(expected, actualString);
     }
 
-    void checkLong(Integer expected, Object actual)
+
+    void checkInt(BigInteger expected, Object actual)
+        throws FusionException
     {
-        Long actualLong = FusionValue.asJavaLong(actual);
-        if (actualLong == null)
+        TopLevel top = topLevel();
+        if (isInt(top, actual))
         {
-            fail("Expected " + expected + " but got " + actual);
+            BigInteger actualInt = unsafeIntToJavaBigInteger(top, actual);
+            if (actualInt != null)
+            {
+                assertEquals(expected, actualInt);
+                return;
+            }
         }
-        assertEquals(expected.longValue(), actualLong.longValue());
+
+        fail("Expected " + expected + " but got " + actual);
+    }
+
+    // TODO rename
+    void checkLong(long expected, Object actual)
+        throws FusionException
+    {
+        checkInt(BigInteger.valueOf(expected), actual);
+    }
+
+
+    void checkDecimal(BigDecimal expected, Object actual)
+        throws FusionException
+    {
+        TopLevel top = topLevel();
+        if (isDecimal(top, actual))
+        {
+            BigDecimal actualDec = unsafeNumberToBigDecimal(top, actual);
+            if (actualDec != null)
+            {
+                assertEquals(expected, actualDec);
+                return;
+            }
+        }
+
+        fail("Expected " + expected + " but got " + actual);
+    }
+
+    void checkFloat(double expected, Object actual)
+        throws FusionException
+    {
+        TopLevel top = topLevel();
+        if (isFloat(top, actual) && ! isAnyNull(top, actual))
+        {
+            double d = FusionNumber.unsafeFloatToDouble(top, actual);
+            assertEquals(expected, d, 0);
+            return;
+        }
+
+        fail("Expected " + expected + " but got " + actual);
+    }
+
+
+    void checkIon(IonValue expected, Object actual)
+        throws FusionException
+    {
+        IonValue iv = runtime().ionizeMaybe(actual, system());
+        if (iv == null)
+        {
+            Assert.fail("Result isn't ion: " + actual);
+        }
+        assertEquals(expected, iv);
     }
 
 
@@ -345,14 +411,14 @@ public class CoreTestCase
 
 
     protected void assertEval(TopLevel top,
-                              int expectedInt, String expressionIon)
+                              long expectedInt, String expressionIon)
         throws FusionException
     {
-        IonValue expected = mySystem.newInt(expectedInt);
-        assertEval(top, expected, expressionIon);
+        Object fv = top.eval(expressionIon);
+        checkLong(expectedInt, fv);
     }
 
-    protected void assertEval(int expectedInt, String expressionIon)
+    protected void assertEval(long expectedInt, String expressionIon)
         throws FusionException
     {
         TopLevel top = topLevel();
@@ -364,38 +430,17 @@ public class CoreTestCase
         throws FusionException
     {
         Object fv = eval(expressionIon);
-        IonValue observed = FusionValue.castToIonValueMaybe(fv);
-        if (observed instanceof IonInt)
-        {
-            IonInt iObsExp = (IonInt)observed;
-            BigInteger obsExp = iObsExp.bigIntegerValue();
-            if (obsExp.compareTo(expectedInt) == 0)
-            {
-                return;
-            }
-            Assert.fail("Discrepency: Observed "+obsExp.toString()+", expected "+expectedInt.toString());
-        }
-        Assert.fail("Invalid type.");
+        checkInt(expectedInt, fv);
     }
 
     protected void assertEval(BigDecimal expected, String expressionIon)
         throws FusionException
     {
         Object fv = eval(expressionIon);
-        IonValue observed = FusionValue.castToIonValueMaybe(fv);
-        if (observed instanceof IonDecimal)
-        {
-            IonDecimal iObsExp = (IonDecimal)observed;
-            BigDecimal obsExp = iObsExp.bigDecimalValue();
-            if (obsExp.compareTo(expected) == 0)
-            {
-                return;
-            }
-            Assert.fail("Discrepency: Observed "+obsExp.toString()+", expected "+expected.toString());
-        }
-        Assert.fail("Invalid type.");
+        checkDecimal(expected, fv);
     }
 
+    // TODO remove, it's redundant.
     protected void assertBigInt(int expectedInt, String expressionIon)
         throws FusionException
     {
@@ -403,19 +448,18 @@ public class CoreTestCase
         assertEval(bExpInt, expressionIon);
     }
 
+    protected void assertEval(double expected, String expressionIon)
+        throws FusionException
+    {
+        Object fv = eval(expressionIon);
+        checkFloat(expected, fv);
+    }
+
     protected void assertString(String expectedString, String expressionIon)
         throws FusionException
     {
         Object fv = eval(expressionIon);
-        IonValue iv = FusionValue.castToIonValueMaybe(fv);
-        if (iv instanceof IonString)
-        {
-            IonString is = (IonString)iv;
-            String result = is.stringValue();
-            assertEquals(expressionIon, expectedString, result);
-            return;
-        }
-        Assert.fail("Input arg is of invalid type.");
+        checkString(expectedString, fv);
     }
 
     protected void assertSelfEval(String expressionIon)

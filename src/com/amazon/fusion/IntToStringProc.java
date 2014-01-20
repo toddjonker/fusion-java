@@ -2,6 +2,8 @@
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionNumber.checkNullableIntArg;
+import static com.amazon.fusion.FusionString.makeString;
 import java.math.BigInteger;
 
 final class IntToStringProc
@@ -20,9 +22,9 @@ final class IntToStringProc
     {
         checkArityExact(1, args);
 
-        BigInteger val = checkBigIntArg(eval, 0, args);
+        BigInteger val = checkNullableIntArg(eval, this, 0, args);
         String text = (val == null ? null : val.toString());
 
-        return eval.newString(text);
+        return makeString(eval, text);
     }
 }

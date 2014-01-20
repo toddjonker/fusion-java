@@ -2,34 +2,50 @@
 
 package com.amazon.fusion;
 
-import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
+import static com.amazon.fusion.FusionSymbol.makeSymbol;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
+import com.amazon.ion.IonException;
 import com.amazon.ion.IonWriter;
 import java.io.IOException;
 
 final class SyntaxKeyword
     extends SyntaxText
 {
-    private SyntaxKeyword(String value, String[] anns, SourceLocation loc)
+    /**
+     * @param datum must not be null.
+     */
+    private SyntaxKeyword(SourceLocation loc, BaseSymbol datum)
     {
-        super(value, anns, loc);
-    }
-
-    static SyntaxKeyword make(String value)
-    {
-        return new SyntaxKeyword(value, EMPTY_STRING_ARRAY, null);
-    }
-
-    static SyntaxKeyword make(String value, String[] anns, SourceLocation loc)
-    {
-        return new SyntaxKeyword(value, anns, loc);
+        super(loc, datum);
     }
 
 
-    @Override
-    Type getType()
+    /**
+     * @param datum must be a Fusion symbol.
+     */
+    static SyntaxKeyword make(Evaluator eval, SourceLocation loc, Object datum)
     {
-        return Type.KEYWORD;
+        BaseSymbol symbol = (BaseSymbol) datum;
+        return new SyntaxKeyword(loc, symbol);
     }
+
+
+    /**
+     * @param annotations must not be null and must not contain elements
+     * that are null or empty. This method assumes ownership of the array
+     * and it must not be modified later.
+     */
+    static SyntaxKeyword make(Evaluator eval,
+                              SourceLocation loc,
+                              String[] annotations,
+                              String value)
+    {
+        BaseSymbol datum = makeSymbol(eval, annotations, value);
+        return new SyntaxKeyword(loc, datum);
+    }
+
+
+    //========================================================================
 
 
     @Override
@@ -41,20 +57,21 @@ final class SyntaxKeyword
 
 
     @Override
-    Object unwrap(Evaluator eval, boolean recurse)
+    Object unwrap(Evaluator eval)
+        throws FusionException
     {
         // TODO I have no idea if this is correct long-term.
         // Should we allow it at the moment?
-        return eval.newSymbol(myText, getAnnotations());
+        return super.unwrap(eval);
     }
 
 
     @Override
     void ionize(Evaluator eval, IonWriter writer)
-        throws IOException
+        throws IOException, IonException, FusionException, IonizeFailure
     {
-        ionizeAnnotations(writer);
-        writer.writeSymbol(myText);  // TODO __ ??
+        // TODO __ ??
+        super.ionize(eval, writer);
     }
 
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 Amazon.com, Inc. All rights reserved.
+// Copyright (c) 2012-2013 Amazon.com, Inc. All rights reserved.
 
 package com.amazon.fusion;
 
@@ -14,15 +14,21 @@ abstract class SyntaxContainer
      */
     SyntaxWraps myWraps;
 
-    SyntaxContainer(String[] anns, SourceLocation loc, SyntaxWraps wraps)
+    SyntaxContainer(SourceLocation loc)
     {
-        super(anns, loc);
+        super(loc);
+        myWraps = null;
+    }
+
+    SyntaxContainer(SourceLocation loc, SyntaxWraps wraps)
+    {
+        super(loc);
         myWraps = wraps;
     }
 
 
     /**
-     * Equivalent to size() == 0.  Computing size of {@link SyntaxStruct} is
+     * Equivalent to size() == 0.  Computing size of sexp is
      * expensive so we do this instead.
      */
     abstract boolean hasNoChildren()

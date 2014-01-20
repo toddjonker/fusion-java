@@ -2,6 +2,8 @@
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionSymbol.isSymbol;
+
 final class LetForm
     extends MacroForm
 {
@@ -14,7 +16,22 @@ final class LetForm
               "covers the `body`, not the `expr`s.\n" +
               "\n" +
               "`body` may be one or more forms; the last form is in tail position and its\n" +
-              "result is the result of the entire expression.");
+              "result is the result of the entire expression.\n" +
+              "\n" +
+              "    (let loop_id [(ident expr), ...] body ...+)\n" +
+              "\n" +
+              "This variant also creates a procedure, bound to the given name `loop_id`, that\n" +
+              "accepts the same number of arguments as there are `ident`s. When invoked, the\n" +
+              "procedure binds the `ident`s to the arguments and evaluates the body.\n" +
+              "\n" +
+              "For example, this snippet loops through the standard input stream and writes\n" +
+              "the `title` field of each item:\n" +
+              "\n" +
+              "    (let loop [(item (read))]\n" +
+              "      (unless (is_eof item)\n" +
+              "        (let [(title (. item \"title\"))]\n" +
+              "          (writeln title)\n" +
+              "          (loop (read)))))");
     }
 
     /**
@@ -37,8 +54,17 @@ final class LetForm
         SyntaxChecker check = check(eval, stx);
         final int letExprSize = check.arityAtLeast(3);
 
-        SyntaxSymbol loopName = determineLoopName(check);
-        int bindingPos = (loopName == null ? 1 : 2);
+        SyntaxValue loopName = null;
+        int bindingPos = 1;
+        {
+            SyntaxValue maybeName =
+                check.requiredForm("loop name or binding pairs", 1);
+            if (isSymbol(eval, maybeName.unwrap(eval)))
+            {
+                loopName = maybeName;
+                bindingPos = 2;
+            }
+        }
         if (letExprSize < bindingPos + 2)
         {
             throw check.failure("no body");
@@ -103,17 +129,5 @@ final class LetForm
         }
 
         return SyntaxSexp.make(eval, stx.getLocation(), subforms);
-    }
-
-    SyntaxSymbol determineLoopName(SyntaxChecker check)
-        throws FusionException
-    {
-        SyntaxValue maybeName =
-            check.requiredForm("loop name or binding pairs", 1);
-        if (maybeName.getType() == SyntaxValue.Type.SYMBOL)
-        {
-            return (SyntaxSymbol) maybeName;
-        }
-        return null;
     }
 }

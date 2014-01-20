@@ -2,6 +2,8 @@
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionSexp.isSexp;
+import static com.amazon.fusion.FusionSymbol.isSymbol;
 import static com.amazon.fusion.Syntax.datumToSyntax;
 import static com.amazon.ion.util.IonTextUtils.printQuotedSymbol;
 import com.amazon.fusion.Namespace.NsBinding;
@@ -49,35 +51,32 @@ final class ProvideForm
         for (int i = 1; i < form.size(); i++)
         {
             SyntaxValue spec = form.get(eval, i);
-            switch (spec.getType())
+            Object datum = spec.unwrap(eval);
+            if (isSymbol(eval, datum))
             {
-                case SYMBOL:
-                {
-                    check.requiredIdentifier("bound identifier", i);
+                check.requiredIdentifier("bound identifier", i);
 
-                    expandProvideId(moduleNamespace, (SyntaxSymbol) spec,
-                                    check, expanded);
-                    break;
-                }
-                case SEXP:
-                {
-                    expandProvideSexp(eval, moduleNamespace,
-                                      (SyntaxSexp) spec,
-                                      check.subformSexp("provide-spec", i),
-                                      expanded);
-                    break;
-                }
-                default:
-                {
-                    throw check.failure("expected provide-spec",
-                                        form.get(eval, i));
-                }
+                expandProvideId(moduleNamespace, (SyntaxSymbol) spec,
+                                check, expanded);
+            }
+            else if (isSexp(eval, datum))
+            {
+                expandProvideSexp(eval, moduleNamespace,
+                                  (SyntaxSexp) spec,
+                                  check.subformSexp("provide-spec", i),
+                                  expanded);
+            }
+            else
+            {
+                throw check.failure("expected provide-spec", spec);
             }
         }
 
         SyntaxValue[] children =
             expanded.toArray(new SyntaxValue[expanded.size()]);
-        return SyntaxSexp.make(eval, form.getLocation(), form.getAnnotations(),
+        return SyntaxSexp.make(eval,
+                               form.getLocation(),
+                               form.annotationsAsJavaStrings(),
                                children);
     }
 
@@ -144,7 +143,7 @@ final class ProvideForm
                 // it has been pushed down to children.
                 SyntaxSymbol localized = (SyntaxSymbol)
                     datumToSyntax(eval,
-                                  SyntaxSymbol.make(binding.getName()),
+                                  SyntaxSymbol.make(eval, binding.getName()),
                                   tag);
                 localized = localized.copyAndResolveTop();
                 Binding localBinding = moduleNamespace.localResolve(localized);

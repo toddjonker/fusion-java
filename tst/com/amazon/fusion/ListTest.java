@@ -31,20 +31,6 @@ public class ListTest
 
 
     //========================================================================
-    // Annotations
-
-    @Test
-    public void testListInjection()
-        throws Exception
-    {
-        IonList list = (IonList) system().singleValue("a::[1]");
-        Object result = topLevel().call("identity", list);
-        result = runtime().ionize(result, system());
-        assertEquals(list, result);
-    }
-
-
-    //========================================================================
     // Adding and removing elements
 
 
@@ -57,8 +43,8 @@ public class ListTest
         Object result = topLevel().call("add", list, 2);
         assertEquals(2, list.size());
         assertEquals(3, unsafeListSize(null, result));
-        assertSame(list.get(0), unsafeListRef(null, result, 0));
-        assertSame(list.get(1), unsafeListRef(null, result, 1));
+        checkIon(list.get(0), unsafeListRef(null, result, 0));
+        checkIon(list.get(1), unsafeListRef(null, result, 1));
     }
 
 
@@ -71,8 +57,8 @@ public class ListTest
         Object result = topLevel().call("add_m", list, 2);
         assertEquals(2, list.size());
         assertEquals(3, unsafeListSize(null, result));
-        assertSame(list.get(0), unsafeListRef(null, result, 0));
-        assertSame(list.get(1), unsafeListRef(null, result, 1));
+        checkIon(list.get(0), unsafeListRef(null, result, 0));
+        checkIon(list.get(1), unsafeListRef(null, result, 1));
     }
 
 
@@ -280,9 +266,9 @@ public class ListTest
         result = topLevel().call("append_m", iList, fList);
         assertEquals(4, unsafeListSize(null, result));
 
-        assertSame(iList.get(0), unsafeListRef(null, result, 0));
-        assertSame(iList.get(1), unsafeListRef(null, result, 1));
-        assertSame(iList.get(2), unsafeListRef(null, result, 2));
+        checkIon(iList.get(0), unsafeListRef(null, result, 0));
+        checkIon(iList.get(1), unsafeListRef(null, result, 1));
+        checkIon(iList.get(2), unsafeListRef(null, result, 2));
         assertSame(unsafeListRef(null, fList, 0),
                    unsafeListRef(null, result, 3));
     }

@@ -3,6 +3,7 @@
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionEval.callCurrentEval;
+import static com.amazon.fusion.FusionString.makeString;
 import static com.amazon.fusion.FusionUtils.resolvePath;
 import static com.amazon.fusion.GlobalState.MODULE;
 import com.amazon.ion.IonException;
@@ -10,7 +11,6 @@ import com.amazon.ion.IonReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 
 /**
  * Parallel to Racket's load handler.
@@ -50,7 +50,7 @@ final class LoadHandler
         File parent = file.getParentFile();
 
         eval = eval.markedContinuation(myCurrentLoadRelativeDirectory,
-                                       eval.newString(parent.getAbsolutePath()));
+                                       makeString(eval, parent.getAbsolutePath()));
 
         try
         {
@@ -85,53 +85,38 @@ final class LoadHandler
     }
 
 
-    private SyntaxValue readModuleSyntax(Evaluator eval, ModuleIdentity id)
+    /**
+     * If the reader is positioned on a value, it will be read; otherwise the
+     * {@linkplain IonReader#next() next} value will be read.
+     * <p>
+     * If the reader doesn't provide exactly one top-level value, an exception
+     * is thrown.
+     *
+     * @param sourceName may be null.
+     */
+    private SyntaxSexp readModuleDeclaration(Evaluator eval,
+                                             ModuleIdentity id,
+                                             SourceName sourceName,
+                                             IonReader reader)
         throws FusionException
     {
+        if (reader.getType() == null && reader.next() == null)
+        {
+            String message = "Module source has no top-level forms: " + id;
+            throw new FusionException(message);
+        }
+
+        SyntaxValue firstTopLevel = Syntax.read(eval, reader, sourceName);
+        if (reader.next() != null)
+        {
+            String message =
+                "Module source has more than one top-level form: " + id;
+            throw new FusionException(message);
+        }
+
         try
         {
-            InputStream in = id.open();
-            try
-            {
-                IonReader reader = eval.getSystem().newReader(in);
-                if (reader.next() == null)
-                {
-                    String message =
-                        "Module file has no top-level forms: " + id;
-                   throw new FusionException(message);
-                }
-
-                SourceName name = SourceName.forModule(id);
-                SyntaxValue firstTopLevel = Syntax.read(eval, reader, name);
-                if (reader.next() != null)
-                {
-                    String message =
-                        "Module file has more than one top-level form: " +
-                        id;
-                    throw new FusionException(message);
-                }
-
-                return firstTopLevel;
-            }
-            finally
-            {
-                in.close();
-            }
-        }
-        catch (IOException e)
-        {
-            throw new FusionException(e);
-        }
-    }
-
-
-    private SyntaxSexp readModuleDeclaration(Evaluator eval, ModuleIdentity id)
-        throws FusionException
-    {
-        SyntaxValue topLevel = readModuleSyntax(eval, id);
-        try
-        {
-            SyntaxSexp moduleDeclaration = (SyntaxSexp) topLevel;
+            SyntaxSexp moduleDeclaration = (SyntaxSexp) firstTopLevel;
             if (moduleDeclaration.size() > 1)
             {
                 SyntaxSymbol moduleSym = (SyntaxSymbol)
@@ -145,8 +130,34 @@ final class LoadHandler
         catch (ClassCastException e) { /* fall through */ }
 
         String message = "Top-level form isn't (module ...)";
-        throw new SyntaxException("load handler", message, topLevel);
+        throw new SyntaxException("load handler", message, firstTopLevel);
     }
+
+
+    private SyntaxSexp readModuleDeclaration(Evaluator eval,
+                                             ModuleIdentity id,
+                                             ModuleLocation loc)
+        throws FusionException
+    {
+        try
+        {
+            IonReader reader = loc.read(eval);
+            try
+            {
+                SourceName sourceName = loc.sourceName();
+                return readModuleDeclaration(eval, id, sourceName, reader);
+            }
+            finally
+            {
+                reader.close();
+            }
+        }
+        catch (IOException e)
+        {
+            throw new FusionException(e);
+        }
+    }
+
 
     private SyntaxSexp
     wrapModuleIdentifierWithKernelBindings(Evaluator eval,
@@ -164,40 +175,55 @@ final class LoadHandler
         return moduleStx;
     }
 
+
     /**
      * Reads module source and declares it in the current namespace's registry.
      * The module is not instantiated.
      */
-    void loadModule(Evaluator eval, ModuleIdentity id)
+    private void evalModuleDeclaration(Evaluator eval,
+                                       ModuleLocation loc,
+                                       SyntaxSexp moduleDeclaration)
+        throws FusionException
+    {
+        moduleDeclaration =
+            wrapModuleIdentifierWithKernelBindings(eval, moduleDeclaration);
+
+        Evaluator bodyEval = eval;
+        String dirPath = loc.parentDirectory();
+        if (dirPath != null)
+        {
+            bodyEval =
+                eval.markedContinuation(myCurrentLoadRelativeDirectory,
+                                        makeString(eval, dirPath));
+        }
+
+        // TODO Do we need an Evaluator with no continuation marks?
+
+        callCurrentEval(bodyEval, moduleDeclaration);
+        // TODO TAIL
+    }
+
+
+    /**
+     * Reads module source and declares it in the current namespace's registry.
+     * The module is not instantiated.
+     */
+    void loadModule(Evaluator eval, ModuleIdentity id, ModuleLocation loc)
         throws FusionException
     {
         try
         {
-            SyntaxSexp moduleDeclaration = readModuleDeclaration(eval, id);
+            SyntaxSexp moduleDeclaration = readModuleDeclaration(eval, id, loc);
 
-            moduleDeclaration =
-                wrapModuleIdentifierWithKernelBindings(eval, moduleDeclaration);
-
-            Evaluator bodyEval = eval;
-            String dirPath = id.parentDirectory();
-            if (dirPath != null)
-            {
-                bodyEval =
-                    eval.markedContinuation(myCurrentLoadRelativeDirectory,
-                                            eval.newString(dirPath));
-            }
-
-            // TODO Do we need an Evaluator with no continuation marks?
-
-            callCurrentEval(bodyEval, moduleDeclaration);
-            // TODO TAIL
+            evalModuleDeclaration(eval, loc, moduleDeclaration);
         }
         catch (FusionException e)
         {
             String message =
-                "Failure loading module " + id.identify() +
+                "Failure loading module " + id.absolutePath() +
                 ": " + e.getMessage();
             throw new FusionException(message, e);
+
         }
     }
 }

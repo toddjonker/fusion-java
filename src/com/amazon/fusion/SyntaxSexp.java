@@ -35,48 +35,28 @@ final class SyntaxSexp
     /**
      * @param sexp must not be null.
      */
-    private SyntaxSexp(Evaluator eval, SourceLocation loc, BaseSexp sexp)
+    private SyntaxSexp(SourceLocation loc, BaseSexp sexp)
     {
-        super(loc, sexp.myAnnotations);
-        assert eval != null;
+        super(loc);
         mySexp = sexp;
     }
 
-    /**
-     * Instance will be {@link #isNullValue()} if children is null.
-     *
-     * @param anns must not be null.
-     * This method takes ownership of the array; the array and its elements
-     * must not be changed by calling code afterwards!
-     * @param children the children of the new sexp.
-     * This method takes ownership of the array; the array and its elements
-     * must not be changed by calling code afterwards!
-     */
-    private SyntaxSexp(Evaluator eval, SourceLocation loc, String[] anns,
-                       SyntaxValue[] children)
-    {
-        super(loc, anns);
-        assert eval != null;
-        mySexp = (children == null
-                      ? nullSexp(eval, anns)
-                      : immutableSexp(eval, anns, children));
-    }
 
     /** Copy constructor shares children and replaces unpushed wraps. */
     private SyntaxSexp(SyntaxSexp that, SyntaxWraps wraps)
     {
-        super(that.getAnnotations(), that.getLocation(), wraps);
+        super(that.getLocation(), wraps);
         mySexp = that.mySexp;
     }
 
 
     static SyntaxSexp make(Evaluator eval, SourceLocation loc, BaseSexp sexp)
     {
-        return new SyntaxSexp(eval, loc, sexp);
+        return new SyntaxSexp(loc, sexp);
     }
 
     /**
-     * Instance will be {@link #isNullValue()} if children is null.
+     * Instance will be {@link #isAnyNull()} if children is null.
      *
      * @param anns must not be null.
      * This method takes ownership of the array; the array and its elements
@@ -90,11 +70,14 @@ final class SyntaxSexp
                            String[] anns,
                            SyntaxValue[] children)
     {
-        return new SyntaxSexp(eval, loc, anns, children);
+        BaseSexp datum = (children == null
+                              ? nullSexp(eval, anns)
+                              : immutableSexp(eval, anns, children));
+        return new SyntaxSexp(loc, datum);
     }
 
     /**
-     * Instance will be {@link #isNullValue()} if children is null.
+     * Instance will be {@link #isAnyNull()} if children is null.
 
      * @param children the children of the new sexp.
      * This method takes ownership of the array; the array and its elements
@@ -102,11 +85,11 @@ final class SyntaxSexp
      */
     static SyntaxSexp make(Evaluator eval, SyntaxValue... children)
     {
-        return new SyntaxSexp(eval, null, EMPTY_STRING_ARRAY, children);
+        return make(eval, null, EMPTY_STRING_ARRAY, children);
     }
 
     /**
-     * Instance will be {@link #isNullValue()} if children is null.
+     * Instance will be {@link #isAnyNull()} if children is null.
 
      * @param children the children of the new sexp.
      * This method takes ownership of the array; the array and its elements
@@ -115,11 +98,11 @@ final class SyntaxSexp
     static SyntaxSexp make(Evaluator eval, SourceLocation loc,
                            SyntaxValue... children)
     {
-        return new SyntaxSexp(eval, loc, EMPTY_STRING_ARRAY, children);
+        return make(eval, loc, EMPTY_STRING_ARRAY, children);
     }
 
     /**
-     * Instance will be {@link #isNullValue()} if children is null.
+     * Instance will be {@link #isAnyNull()} if children is null.
 
      * @param children the children of the new sexp.
      * This method takes ownership of the array; the array and its elements
@@ -127,13 +110,13 @@ final class SyntaxSexp
      */
     static SyntaxSexp make(Expander expander, SyntaxValue... children)
     {
-        return new SyntaxSexp(expander.getEvaluator(), null,
-                              EMPTY_STRING_ARRAY, children);
+        return make(expander.getEvaluator(), null,
+                    EMPTY_STRING_ARRAY, children);
     }
 
 
     /**
-     * Instance will be {@link #isNullValue()} if children is null.
+     * Instance will be {@link #isAnyNull()} if children is null.
 
      * @param children the children of the new sexp.
      * This method takes ownership of the array; the array and its elements
@@ -142,8 +125,8 @@ final class SyntaxSexp
     static SyntaxSexp make(Expander expander, SourceLocation loc,
                            SyntaxValue... children)
     {
-        return new SyntaxSexp(expander.getEvaluator(), loc,
-                              EMPTY_STRING_ARRAY, children);
+        return make(expander.getEvaluator(), loc,
+                    EMPTY_STRING_ARRAY, children);
     }
 
 
@@ -278,7 +261,7 @@ final class SyntaxSexp
         if (hasNoChildren()) return this;  // No children, no marks, all okay!
 
         BaseSexp newSexp = stripWraps(eval, (ImmutablePair) mySexp);
-        return new SyntaxSexp(eval, getLocation(), newSexp);
+        return new SyntaxSexp(getLocation(), newSexp);
     }
 
 
@@ -292,14 +275,14 @@ final class SyntaxSexp
 
 
     @Override
-    Type getType()
+    String[] annotationsAsJavaStrings()
     {
-        return Type.SEXP;
+        return mySexp.annotationsAsJavaStrings();
     }
 
 
     @Override
-    boolean isNullValue()
+    boolean isAnyNull()
     {
         return mySexp.isAnyNull();
     }
@@ -343,22 +326,24 @@ final class SyntaxSexp
     // Helpers for quote, syntax_to_datum, and syntax_unwrap
 
 
-    private static Object unwrap(Evaluator eval, BaseSexp sexp)
+    private static Object syntaxToDatum(Evaluator eval, BaseSexp sexp)
         throws FusionException
     {
         if (isPair(eval, sexp))
         {
             Object head = unsafePairHead(eval, sexp);
-            head = ((SyntaxValue) head).unwrap(eval, true);
+            head = ((SyntaxValue) head).syntaxToDatum(eval);
 
             Object tail = unsafePairTail(eval, sexp);
             if (isSexp(eval, tail))
             {
-                tail = unwrap(eval, (BaseSexp) tail);
+                tail = syntaxToDatum(eval, (BaseSexp) tail);
             }
             else
             {
-                tail = ((SyntaxValue) tail).unwrap(eval, true);
+                // TODO this is different from Racket, where only the first
+                //  pair of a (proper) sexp is wrapped in a syntax object.
+                tail = ((SyntaxValue) tail).syntaxToDatum(eval);
             }
 
             sexp = pair(eval, sexp.myAnnotations, head, tail);
@@ -369,17 +354,20 @@ final class SyntaxSexp
 
 
     @Override
-    Object unwrap(Evaluator eval, boolean recurse)
+    Object unwrap(Evaluator eval)
         throws FusionException
     {
         pushWraps(eval);
-
-        if (recurse)
-        {
-            return unwrap(eval, mySexp);
-        }
-
         return mySexp;
+    }
+
+
+    @Override
+    Object syntaxToDatum(Evaluator eval)
+        throws FusionException
+    {
+        // Don't bother to push wraps; we'll just discard them anyway.
+        return syntaxToDatum(eval, mySexp);
     }
 
 
@@ -413,7 +401,7 @@ final class SyntaxSexp
     SyntaxSequence makeAppended(Evaluator eval, SyntaxSequence that)
         throws FusionException
     {
-        Object back = that.unwrap(eval, false);
+        Object back = that.unwrap(eval);
 
         BaseSexp backSexp;
         if (that instanceof SyntaxSexp)

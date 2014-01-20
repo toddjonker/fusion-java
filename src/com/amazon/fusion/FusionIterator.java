@@ -2,6 +2,8 @@
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionBool.boolToJavaBoolean;
+import static com.amazon.fusion.FusionBool.makeBool;
 import static com.amazon.fusion.FusionList.isList;
 import static com.amazon.fusion.FusionList.unsafeListIterator;
 import static com.amazon.fusion.FusionSexp.isSexp;
@@ -14,7 +16,7 @@ import java.util.Iterator;
 // TODO Add abstract class so subclasses don't have blank procs?
 
 class FusionIterator
-    extends FusionValue
+    extends BaseValue
 {
     static FusionIterator checkArg(Procedure who, int argNum, Object... args)
         throws ArgTypeFailure
@@ -127,7 +129,7 @@ class FusionIterator
         throws FusionException
     {
         Object o = eval.callNonTail(myHasNextProc);
-        if (FusionValue.asBoolean(o) == null)
+        if (boolToJavaBoolean(eval, o) == null)
         {
             throw new ResultFailure("iterator has_next_proc",
                                     "true or false", o);
@@ -138,7 +140,7 @@ class FusionIterator
     boolean hasNext(Evaluator eval) throws FusionException
     {
         Object  o = eval.callNonTail(myHasNextProc, EMPTY_OBJECT_ARRAY);
-        Boolean b = FusionValue.asBoolean(o);
+        Boolean b = boolToJavaBoolean(eval, o);
         if (b == null)
         {
             throw new ResultFailure("iterator has_next_proc", "true or false",
@@ -187,7 +189,7 @@ class FusionIterator
         Object doHasNextTail(Evaluator eval)
             throws FusionException
         {
-            return eval.newBool(hasNext(eval));
+            return makeBool(eval, hasNext(eval));
         }
 
         @Override
@@ -296,7 +298,7 @@ class FusionIterator
             throws FusionException
         {
             boolean b = (arg instanceof FusionIterator);
-            return eval.newBool(b);
+            return makeBool(eval, b);
         }
     }
 

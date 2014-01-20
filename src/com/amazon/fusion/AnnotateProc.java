@@ -1,10 +1,8 @@
-// Copyright (c) 2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2013-2014 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
-import static com.amazon.fusion.FusionCollection.isCollection;
-import static com.amazon.fusion.FusionCollection.unsafeCollectionAnnotate;
-import com.amazon.ion.IonValue;
+import static com.amazon.fusion.FusionText.checkNonEmptyTextArg;
 
 
 final class AnnotateProc
@@ -26,28 +24,18 @@ final class AnnotateProc
         String[] annotations = new String[arity - 1];
         for (int i = 0; i < arity - 1; i++)
         {
-            String a = checkTextArg(i+1, args);
-            if (a.isEmpty())
-            {
-                throw argFailure("valid annotation", i+1, args);
-            }
+            String a = checkNonEmptyTextArg(eval, this, i+1, args);
             annotations[i] = a;
         }
 
         Object target = args[0];
-        if (isCollection(eval, target))
+
+        if (target instanceof BaseValue)
         {
-            return unsafeCollectionAnnotate(eval, target, annotations);
+            Object r = ((BaseValue) target).annotate(eval, annotations);
+            if (r != null) return r;
         }
 
-        IonValue value = castToIonValueMaybe(target);
-        if (value == null)
-        {
-            throw argFailure("annotatable type", 0, args);
-        }
-
-        value = value.clone();
-        value.setTypeAnnotations(annotations);
-        return value;
+        throw argFailure("annotatable type", 0, args);
     }
 }

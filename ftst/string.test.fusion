@@ -1,7 +1,9 @@
-// Copyright (c) 2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2013-2014 Amazon.com, Inc.  All rights reserved.
 
 (require
   "/check"
+  "/fusion/experimental/equality"
+  "/fusion/experimental/string"
   "/fusion/string")
 
 
@@ -12,29 +14,64 @@
   ])
 
 
-(check = (string_append ""   "")  "")
-(check = (string_append "aB" "")  "aB")
-(check = (string_append "aB" "c") "aBc")
+//============================================================================
+// Comparisons
 
-(check = (string_append "aB" (quote c) "d") "aBcd")
-(check = (string_append (quote aB) "") "aB")
-(check = (string_append (quote aB) "c") "aBc")
-(check = (string_append (quote aB) "c" (quote d)) "aBcd")
+(define_check (check_comparisons msg lo hi)                 // msg is rest arg
+//  (check <  lo hi)  TODO FUSION-243 string ordering
+//  (check <= lo hi)
+  (check =  lo lo)
+  (check =  hi hi)
+//  (check >= hi lo)
+//  (check >  hi lo)
+)
+
+(check_comparisons ""  "a")
+(check_comparisons "a" "b")
+
+(check_comparisons (quote f::"" ) (quote e::"a"))
+(check_comparisons (quote f::"a") (quote e::"b"))
 
 
-(check = (string_to_lower "")    "")
-(check = (string_to_lower "AbC") "abc")
+//============================================================================
+// string_append
+
+(check === (string_append ""   "")  "")
+(check === (string_append "aB" "")  "aB")
+(check === (string_append "aB" "c") "aBc")
+
+(check === (string_append "aB" (quote c) "d") "aBcd")
+(check === (string_append (quote aB) "") "aB")
+(check === (string_append (quote aB) "c") "aBc")
+(check === (string_append (quote aB) "c" (quote d)) "aBcd")
 
 
-(check = (string_to_upper "")    "")
-(check = (string_to_upper "AbC") "ABC")
+(check === (string_to_lower "")    "")
+(check === (string_to_lower "AbC") "abc")
+
+
+(check === (string_to_upper "")    "")
+(check === (string_to_upper "AbC") "ABC")
+
+
+//============================================================================
+// string_size_utf8
+
+(check = 0  (string_size_utf8 null.string))
+(check = 0  (string_size_utf8 ""))
+(check = 1  (string_size_utf8 "a"))
+(check = 5  (string_size_utf8 "hello"))
+(check = 7  (string_size_utf8 "hello\x80"))
+(check = 9  (string_size_utf8 "hello\x80\u07ff"))
+(check = 12 (string_size_utf8 "hello\x80\u07ff\uffff"))
+(check = 16 (string_size_utf8 "hello\x80\u07ff\uffff\U000ffff1"))
 
 
 //============================================================================
 // string_to_symbol
 
-(check ion_equals (string_to_symbol null.string) (quote null.symbol))
-(check = (string_to_symbol "text") (quote text))
+(check === (string_to_symbol null.string) (quote null.symbol))
+(check === (string_to_symbol "text") (quote text))
 
 // TODO FUSION-204 support empty symbol
 (check_arg_exn (string_to_symbol ""))
@@ -43,7 +80,7 @@
 //============================================================================
 // symbol_to_string
 
-(check ion_equals (symbol_to_string (quote null.symbol)) null.string)
-(check = (symbol_to_string (quote text)) "text")
+(check === (symbol_to_string (quote null.symbol)) null.string)
+(check === (symbol_to_string (quote text)) "text")
 
 // TODO FUSION-204 support empty symbol

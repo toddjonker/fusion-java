@@ -357,18 +357,31 @@ abstract class Namespace
             throw new IllegalArgumentException(message);
         }
 
-        SyntaxSymbol identifier = SyntaxSymbol.make(name);
+        // WARNING: We pass null evaluator because we know its not used.
+        //          That is NOT SUPPORTED for user code!
+        SyntaxSymbol identifier = SyntaxSymbol.make(null, name);
+
         identifier = predefine(identifier, null);
         NsBinding binding = (NsBinding) identifier.getBinding();
         bind(binding, value);
     }
 
 
+    /**
+     * @param modulePath is an absolute or relative module path.
+     */
     void require(Evaluator eval, String modulePath)
         throws FusionException
     {
-        RequireForm requireForm = eval.getGlobalState().myRequireForm;
-        requireForm.require(eval, this, modulePath);
+        ModuleNameResolver resolver =
+            eval.getGlobalState().myModuleNameResolver;
+        ModuleIdentity id =
+            resolver.resolveModulePath(eval,
+                                       getModuleId(),
+                                       modulePath,
+                                       true /* load */,
+                                       null /* stxForErrors */);
+        require(eval, id);
     }
 
     void require(Evaluator eval, ModuleIdentity id)

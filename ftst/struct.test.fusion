@@ -1,7 +1,8 @@
-// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
 
 (require
   "/check"
+  "/fusion/experimental/equality"
   "/fusion/list"
   "/fusion/private/builtins"  // annotate
   "/fusion/struct")
@@ -36,20 +37,20 @@
     (let [(result (apply op s args))]
       (check_pred is_immutable_struct result
         "result of " op " should be immutable")
-      (check ion_equals result expect
+      (check === result expect
         "Unexpected result from " op " on immutable " s)
-      (check ion_equals s val                                 // s not mutated
+      (check === s val                                        // s not mutated
         "Immutable struct was mutated by " op)))
   (unless (is_null val)                             // There's no mutable null
     (let [(s (mutable_struct_copy val))]
       (let [(result (apply op s args))]
         (check_pred is_mutable_struct result
           "result of " op " should be mutable")
-        (check ion_equals result expect
+        (check === result expect
           "Unexpected result from " op " on mutable " s)
-        (check ion_equals s val)
+        (check === s val)
         // If the result === the input, it's probably the same instance
-        (unless (ion_equals result val)
+        (unless (=== result val)
           (put_m result "mod" "mod")
           (check_void (. s "mod")
             "Unexpected mutation of original"))))))
@@ -61,18 +62,18 @@
     (let [(result (apply op s args))]
       (check_pred is_immutable_struct result
         "result of " op " should be immutable")
-      (check ion_equals result expect
+      (check === result expect
         "Unexpected result from " op " on immutable " s)
-      (check ion_equals s val                                 // s not mutated
+      (check === s val                                        // s not mutated
         "Immutable struct was mutated by " op)))
   (unless (is_null val)                             // There's no mutable null
     (let [(s (mutable_struct_copy val))]
       (let [(result (apply op s args))]
         (check_pred is_mutable_struct result
           "result of " op " should be mutable")
-        (check ion_equals result expect
+        (check === result expect
           "Unexpected result from " op " on mutable " s)
-        (check ion_equals s expect)))))                        // s IS mutated
+        (check == s expect)))))                                // s IS mutated
 
 
 (define_check (check_mods msg op op_m val args expect)      // msg is rest arg
@@ -84,9 +85,9 @@
 //==========================================================================
 
 
-(check_equal (. (quote {f:[]}) "f") [] "[] in quoted struct")
+(check === (. (quote {f:[]}) "f") [])
 
-(check_equal (append_m (. {f:[]} "f") [1]) [1] "pulling list from struct")
+(check === (append_m (. {f:[]} "f") [1]) [1])
 
 
 (define test_predicates
@@ -229,6 +230,24 @@
 (check_put {a:1,f:2}     "f" 3 {a:1,f:3})
 (check_put {a:1,f:2,f:0} "f" 3 {a:1,f:3})  // replace repeated field
 
+(let [(s (mutable_struct))]
+  (check = 0 (size s))
+  (put_m s "f" 1)
+  (check = 1 (size s))
+  (put_m s "f" 2)
+  (check = 1 (size s))
+  (put_m s "g" 3)
+  (check = 2 (size s)))
+
+(let [(s (mutable_struct "f" 1 "f" 2))]
+  (check = 2 (size s))
+  (put_m s "g" 1)
+  (check = 3 (size s))
+  (put_m s "f" 3)
+  (check = 2 (size s))
+  (put_m s "g" 3)
+  (check = 2 (size s)))
+
 
 (check_arity_exn (put))
 (check_arity_exn (put   {}))
@@ -303,6 +322,21 @@
 (check_merge {a:0,b:2} {a:1,b:2,a:3,b:4} {a:0,b:2,a:1,b:2,a:3,b:4})
 
 
+(let [(s (mutable_struct))]
+  (struct_merge_m s {f:1,g:2,f:1})
+  (check = 3 (size s))
+  (struct_merge_m s {f:1,g:2})
+  (check = 5 (size s)))
+
+(let [(s (mutable_struct "f" 1 "f" 2 "g" 3))]
+  (struct_merge_m s {h:1})
+  (check = 4 (size s))
+  (struct_merge_m s {i:1,i:2})
+  (check = 6 (size s))
+  (struct_merge_m s {g:1})
+  (check = 7 (size s)))
+
+
 //==========================================================================
 // struct_merge1 and struct_merge1_m
 
@@ -368,15 +402,32 @@
 (check_merge1 {a:0,a:0} {a:1,b:3,a:1,b:3} {a:1,b:3})
 
 
+(let [(s (mutable_struct))]
+  (struct_merge1_m s {f:1,g:2,f:1})
+  (check = 2 (size s))
+  (struct_merge1_m s {f:1,g:2})
+  (check = 2 (size s))
+  (struct_merge1_m s {h:1,h:2})
+  (check = 3 (size s)))
+
+(let [(s (mutable_struct "f" 1 "f" 2 "g" 3))]
+  (struct_merge1_m s {h:1})
+  (check = 3 (size s))
+  (struct_merge1_m s {i:1,i:2})
+  (check = 4 (size s))
+  (struct_merge1_m s {g:1})
+  (check = 4 (size s)))
+
+
 //==========================================================================
 // struct_unzip
 
 (define_check (check_unzip msg struct keys vals)
   (let_values [((k v) (struct_unzip struct))]
-    (check_equal k keys "")
-    (check_equal v vals "")
+    (check === k keys)
+    (check === v vals)
     (unless (is_null struct)
-      (check ion_equals (struct_zip k v) struct))))
+      (check === (struct_zip k v) struct))))
 
 
 (check_unzip null.struct [] [])
@@ -394,10 +445,10 @@
 (define_check (check_zip msg keys values expect)
   (let [(v (struct_zip keys values))]
     (check_pred is_immutable_struct v)
-    (check ion_equals v expect))
+    (check === v expect))
   (let [(v (mutable_struct_zip keys values))]
     (check_pred is_mutable_struct v)
-    (check ion_equals v expect)))
+    (check === v expect)))
 
 (check_zip null.list [1] {})
 (check_zip ["f"] null.list {})
@@ -445,7 +496,7 @@
                       struct))]
         // TODO FUSION-88 (check eq result struct)
         (let [(zipped (struct_zip names values))]
-          (check ion_equals zipped struct))))))
+          (check === zipped struct))))))
 
 (rip_and_zip {})
 (rip_and_zip {a:1,b:[2,3],c:{d:(quote e)}})
@@ -482,6 +533,17 @@
 (check_remove_keys {f:1,g:2} ["f", (quote g)] {})
 
 
+(let [(s (mutable_struct))]
+  (remove_keys_m s "f" "g")
+  (check = 0 (size s)))
+
+(let [(s (mutable_struct "f" 1 "f" 2 "g" 3))]
+  (remove_keys_m s "g")
+  (check = 2 (size s))
+  (remove_keys_m s "f")
+  (check = 0 (size s)))
+
+
 //==========================================================================
 // retain_keys and retain_keys_m
 
@@ -508,6 +570,19 @@
 (check_retain_keys {a:1,b:3,c:2} [(quote a), "c"] {a:1,c:2})
 
 
+(let [(s (mutable_struct))]
+  (retain_keys_m s "f" "g")
+  (check = 0 (size s)))
+
+(let [(s (mutable_struct "f" 1 "f" 2 "g" 3))]
+  (retain_keys_m s "g" "f")
+  (check = 3 (size s))
+  (retain_keys_m s "f")
+  (check = 2 (size s))
+  (retain_keys_m s "g")
+  (check = 0 (size s)))
+
+
 //==========================================================================
 // any
 
@@ -519,13 +594,13 @@
 (check_true  (any (lambda (e) (= e "hi")) {f:"oh", g:"hi"}))
 (check_false (any (lambda (e) (= e "ho")) {f:"oh", g:"hi"}))
 
-(check =    (any (lambda (e) (when (= e "hi") e)) {f:"oh", g:"hi"}) "hi")
+(check ===   (any (lambda (e) (when (= e "hi") e)) {f:"oh", g:"hi"}) "hi")
 
 // Check that it returns the truthy predicate result, not the selected element
-(check = 408
+(check === 408
   (any (lambda (e) (when (= e 204) (* e 2)))
     {f:123, f:204, f:567}))
-(check = 1134
+(check === 1134
   (any (lambda (e) (when (= e 567) (* e 2)))
     {f:123, f:204, f:567}))
 
@@ -552,7 +627,7 @@
 (check_false (every (lambda (e) (= e "hi")) {f:"oh", g:"hi"}))
 (check_true  (every (lambda (e) (= e "hi")) {f:"hi", g:"hi"}))
 
-(check =    (every (lambda (e) (when (= e "hi") e)) {f:"hi", g:"hi"}) "hi")
+(check ===  (every (lambda (e) (when (= e "hi") e)) {f:"hi", g:"hi"}) "hi")
 
 // Check that it returns the untruthy predicate result
 (check_void
@@ -563,7 +638,7 @@
     {f:123, f:456, f:678}))
 
 // Check that `every` returns the last predicate result if all are truthy
-(check = 1134
+(check === 1134
   (every (lambda (e) (when (or (= e 123) (= e 567)) (* e 2)))
     {f:123, g:123, h:567}))
 
@@ -571,23 +646,22 @@
 //==========================================================================
 // do
 
-(check_equal (do (lambda (x) (+ 1 x)) {f:2, g:3})
-   (void) "do returns void")
+(check_void (do (lambda (x) (+ 1 x)) {f:2, g:3}))
 
 (let [(sum 0)]
   (do (lambda (x) (set sum (+ sum x))) {f:2, g:3})
-  (check = sum 5))
+  (check === sum 5))
 
 
 //==========================================================================
 // find
 
-(assert (is_void (find F null.struct)))
-(assert (is_void (find F {})))
-(assert (is_void (find F {f:1, g:2})))
-(check = (find T {f:1}) 1)
+(check_void (find F null.struct))
+(check_void (find F {}))
+(check_void (find F {f:1, g:2}))
+(check === (find T {f:1}) 1)
 
-(check = (find (lambda (e) (= e "hi")) {f:"oh", g:"hi"}) "hi")
+(check === (find (lambda (e) (= e "hi")) {f:"oh", g:"hi"}) "hi")
 
 
 //==========================================================================
@@ -606,7 +680,7 @@
             (let_values [((key value) (iterator_next iter))]
               (let [(actual   [key, value]),
                     (expected (. values i))]
-              (check_equal actual expected "iterator element")
+              (check === actual expected "iterator element")
               (loop (+ 1 i))))))))))
 
 (check_iter (struct_iterator null.struct) [])

@@ -2,14 +2,32 @@
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionBlob.makeBlob;
+import static com.amazon.fusion.FusionBool.makeBool;
+import static com.amazon.fusion.FusionClob.makeClob;
 import static com.amazon.fusion.FusionList.listFromIonSequence;
+import static com.amazon.fusion.FusionNull.makeNullNull;
+import static com.amazon.fusion.FusionNumber.makeDecimal;
+import static com.amazon.fusion.FusionNumber.makeFloat;
+import static com.amazon.fusion.FusionNumber.makeInt;
 import static com.amazon.fusion.FusionSexp.sexpFromIonSequence;
+import static com.amazon.fusion.FusionString.makeString;
 import static com.amazon.fusion.FusionStruct.structFromIonStruct;
+import static com.amazon.fusion.FusionSymbol.makeSymbol;
+import static com.amazon.fusion.FusionTimestamp.makeTimestamp;
 import static com.amazon.fusion.FusionVoid.voidValue;
+import com.amazon.ion.IonBool;
+import com.amazon.ion.IonDecimal;
+import com.amazon.ion.IonFloat;
+import com.amazon.ion.IonInt;
 import com.amazon.ion.IonList;
+import com.amazon.ion.IonLob;
 import com.amazon.ion.IonSexp;
+import com.amazon.ion.IonString;
 import com.amazon.ion.IonStruct;
+import com.amazon.ion.IonSymbol;
 import com.amazon.ion.IonSystem;
+import com.amazon.ion.IonTimestamp;
 import com.amazon.ion.IonValue;
 import com.amazon.ion.Timestamp;
 import java.math.BigDecimal;
@@ -68,6 +86,7 @@ final class Evaluator
 
     //========================================================================
 
+
     /**
      * Injects an Ion DOM into the equivalent Fusion runtime objects.
      * It is an error for modifications to be made to the argument instance
@@ -81,19 +100,81 @@ final class Evaluator
         {
             return voidValue(this);
         }
-        else if (value instanceof IonStruct)
+
+        // TODO this copied array is wasted for containers
+        String[] annotations = value.getTypeAnnotations();
+
+        switch (value.getType())
         {
-            return structFromIonStruct(this, (IonStruct) value);
-        }
-        else if (value instanceof IonList)
-        {
-            IonList list = (IonList) value;
-            return listFromIonSequence(this, list);
-        }
-        else if (value instanceof IonSexp)
-        {
-            IonSexp sexp = (IonSexp) value;
-            return sexpFromIonSequence(this, sexp);
+            case NULL:
+            {
+                return makeNullNull(this, annotations);
+            }
+            case BOOL:
+            {
+                Boolean b = (value.isNullValue()
+                                 ? null
+                                 : ((IonBool)value).booleanValue());
+                return makeBool(this, annotations, b);
+            }
+            case INT:
+            {
+                BigInteger big = ((IonInt)value).bigIntegerValue();
+                return makeInt(this, annotations, big);
+            }
+            case FLOAT:
+            {
+                if (value.isNullValue())
+                {
+                    return makeFloat(this, annotations, (Double) null);
+                }
+                double d = ((IonFloat)value).doubleValue();
+                return makeFloat(this, annotations, d);
+            }
+            case DECIMAL:
+            {
+                BigDecimal big = ((IonDecimal)value).decimalValue();
+                return makeDecimal(this, annotations, big);
+            }
+            case TIMESTAMP:
+            {
+                Timestamp t = ((IonTimestamp)value).timestampValue();
+                return makeTimestamp(this, annotations, t);
+            }
+            case SYMBOL:
+            {
+                String text = ((IonSymbol)value).stringValue();
+                return makeSymbol(this, annotations, text);
+            }
+            case STRING:
+            {
+                String text = ((IonString)value).stringValue();
+                return makeString(this, annotations, text);
+            }
+            case CLOB:
+            {
+                byte[] bytes = ((IonLob)value).getBytes();
+                return makeClob(this, annotations, bytes);
+            }
+            case BLOB:
+            {
+                byte[] bytes = ((IonLob)value).getBytes();
+                return makeBlob(this, annotations, bytes);
+            }
+            case LIST:
+            {
+                IonList list = (IonList) value;
+                return listFromIonSequence(this, list);
+            }
+            case SEXP:
+            {
+                IonSexp sexp = (IonSexp) value;
+                return sexpFromIonSequence(this, sexp);
+            }
+            case STRUCT:
+            {
+                return structFromIonStruct(this, (IonStruct) value);
+            }
         }
         return value;
     }
@@ -105,15 +186,19 @@ final class Evaluator
             || value instanceof Short
             || value instanceof Byte)
         {
-            return newInt(value.longValue());
+            return makeInt(this, value.longValue());
         }
         else if (value instanceof BigInteger)
         {
-            return newInt((BigInteger) value);
+            return makeInt(this, (BigInteger) value);
         }
         else if (value instanceof BigDecimal)
         {
-            return newDecimal((BigDecimal) value);
+            return makeDecimal(this, (BigDecimal) value);
+        }
+        else if (value instanceof Double)
+        {
+            return makeFloat(this, value.doubleValue());
         }
 
         // TODO this API forces us to use a non-null object for VOID!
@@ -137,7 +222,7 @@ final class Evaluator
         {
             return voidValue(this);
         }
-        else if (javaValue instanceof FusionValue)
+        else if (javaValue instanceof BaseValue)
         {
             return javaValue;
         }
@@ -147,7 +232,7 @@ final class Evaluator
         }
         else if (javaValue instanceof String)
         {
-            return newString((String) javaValue);
+            return makeString(this, (String) javaValue);
         }
         else if (javaValue instanceof Number)
         {
@@ -155,13 +240,17 @@ final class Evaluator
         }
         else if (javaValue instanceof Boolean)
         {
-            return newBool((Boolean) javaValue);
+            return makeBool(this, (Boolean) javaValue);
+        }
+        else if (javaValue instanceof byte[])
+        {
+            return makeBlob(this, (byte[]) javaValue);
         }
 
         // ******** Be sure to document types as they are added! ********
 
 
-        // TODO FUSION-206 should handle Double, Timestamp, Object[], ArrayList
+        // TODO FUSION-206 should handle Timestamp, Object[], ArrayList
 
         // TODO this API forces us to use a non-null object for VOID!
         return null;
@@ -171,159 +260,189 @@ final class Evaluator
     //========================================================================
 
 
-    Object newNull(String... annotations)
-    {
-        IonValue dom = mySystem.newNull();
-        if (annotations != null) dom.setTypeAnnotations(annotations);
-        return inject(dom);
-    }
-
-    Object newBool(boolean value)
-    {
-        IonValue dom = mySystem.newBool(value);
-        return inject(dom);
-    }
-
-    Object newBool(boolean value, String... annotations)
-    {
-        IonValue dom = mySystem.newBool(value);
-        if (annotations != null) dom.setTypeAnnotations(annotations);
-        return inject(dom);
-    }
-
-    Object newBool(Boolean value)
-    {
-        IonValue dom = mySystem.newBool(value);
-        return inject(dom);
-    }
-
-    Object newBool(Boolean value, String... annotations)
-    {
-        IonValue dom = mySystem.newBool(value);
-        if (annotations != null) dom.setTypeAnnotations(annotations);
-        return inject(dom);
-    }
-
-    Object newInt(long value, String... annotations)
-    {
-        IonValue dom = mySystem.newInt(value);
-        if (annotations != null) dom.setTypeAnnotations(annotations);
-        return inject(dom);
-    }
-
-    Object newInt(BigInteger value, String... annotations)
-    {
-        IonValue dom = mySystem.newInt(value);
-        if (annotations != null) dom.setTypeAnnotations(annotations);
-        return inject(dom);
-    }
-
-    Object newString(String value, String... annotations)
-    {
-        IonValue dom = mySystem.newString(value);
-        if (annotations != null) dom.setTypeAnnotations(annotations);
-        return inject(dom);
-    }
-
-    Object newSymbol(String value, String... annotations)
-    {
-        IonValue dom = mySystem.newSymbol(value);
-        if (annotations != null) dom.setTypeAnnotations(annotations);
-        return inject(dom);
-    }
-
-    Object newDecimal(BigDecimal value, String... annotations)
-    {
-        IonValue dom = mySystem.newDecimal(value);
-        if (annotations != null) dom.setTypeAnnotations(annotations);
-        return inject(dom);
-    }
-
-    Object newDecimal(double value, String... annotations)
-    {
-        IonValue dom = mySystem.newDecimal(value);
-        if (annotations != null) dom.setTypeAnnotations(annotations);
-        return inject(dom);
-    }
-
-    Object newFloat(double value)
-    {
-        IonValue dom = mySystem.newFloat(value);
-        return inject(dom);
-    }
-
-    Object newFloat(double value, String... annotations)
-    {
-        IonValue dom = mySystem.newFloat(value);
-        if (annotations != null) dom.setTypeAnnotations(annotations);
-        return inject(dom);
-    }
-
-    Object newFloat(Double value)
-    {
-        IonValue dom = (value == null
-                           ? mySystem.newNullFloat()
-                           : mySystem.newFloat(value));
-        return inject(dom);
-    }
-
-    Object newFloat(Double value, String... annotations)
-    {
-        IonValue dom = (value == null
-                           ? mySystem.newNullFloat()
-                           : mySystem.newFloat(value));
-        if (annotations != null) dom.setTypeAnnotations(annotations);
-        return inject(dom);
-    }
-
-    Object newTimestamp(Timestamp value, String... annotations)
-    {
-        IonValue dom = mySystem.newTimestamp(value);
-        if (annotations != null) dom.setTypeAnnotations(annotations);
-        return inject(dom);
-    }
-
-    Object newBlob(byte[] value, String... annotations)
-    {
-        IonValue dom = mySystem.newBlob(value);
-        if (annotations != null) dom.setTypeAnnotations(annotations);
-        return inject(dom);
-    }
-
-    Object newClob(byte[] value, String... annotations)
-    {
-        IonValue dom = mySystem.newClob(value);
-        if (annotations != null) dom.setTypeAnnotations(annotations);
-        return inject(dom);
-    }
-
-
-    //========================================================================
-
-
     /**
-     * Casts or copies as necessary.
-     * Returns null if value contains non-Ionizable data!
-     *
-     * @deprecated This is of questionable design, and should probably be
-     * removed. Please limit use carefully.
+     * @deprecated Use {@link FusionNull#makeNullNull(Evaluator)} or
+     * {@link FusionNull#makeNullNull(Evaluator, String[])}.
      */
     @Deprecated
-    IonValue convertToIonValueMaybe(Object value)
-        throws FusionException
+    Object newNull(String... annotations)
     {
-        if (value instanceof IonValue)
-        {
-            return (IonValue) value;
-        }
+        return makeNullNull(this, annotations);
+    }
 
-        if (value instanceof FusionValue)
-        {
-            FusionValue fv = (FusionValue) value;
-            return fv.copyToIonValue(mySystem, false);
-        }
+    /**
+     * @deprecated Use {@link FusionBool#makeBool(Evaluator,boolean)}.
+     */
+    @Deprecated
+    Object newBool(boolean value)
+    {
+        return makeBool(this, value);
+    }
 
-        return null;
+    /**
+     * @deprecated Use {@link FusionBool#makeBool(Evaluator,String[],boolean)}.
+     */
+    @Deprecated
+    Object newBool(boolean value, String... annotations)
+    {
+        return makeBool(this, annotations, value);
+    }
+
+    /**
+     * @deprecated Use {@link FusionBool#makeBool(Evaluator,Boolean)}.
+     */
+    @Deprecated
+    Object newBool(Boolean value)
+    {
+        return makeBool(this, value);
+    }
+
+    /**
+     * @deprecated Use {@link FusionBool#makeBool(Evaluator,String[],Boolean)}.
+     */
+    @Deprecated
+    Object newBool(Boolean value, String... annotations)
+    {
+        return makeBool(this, annotations, value);
+    }
+
+    /**
+     * @deprecated Use {@link FusionNumber#makeInt(Evaluator,long)}.
+     */
+    @Deprecated
+    Object newInt(long value)
+    {
+        return makeInt(this, value);
+    }
+
+    /**
+     * @deprecated Use {@link FusionNumber#makeInt(Evaluator,String[],long)}.
+     */
+    @Deprecated
+    Object newInt(long value, String... annotations)
+    {
+        return makeInt(this, annotations, value);
+    }
+
+    /**
+     * @deprecated Use {@link FusionNumber#makeInt(Evaluator,BigInteger)}.
+     */
+    @Deprecated
+    Object newInt(BigInteger value)
+    {
+        return makeInt(this, value);
+    }
+
+    /**
+     * @deprecated Use
+     * {@link FusionNumber#makeInt(Evaluator,String[],BigInteger)}.
+     */
+    @Deprecated
+    Object newInt(BigInteger value, String... annotations)
+    {
+        return makeInt(this, annotations, value);
+    }
+
+    /**
+     * @deprecated Use {@link FusionString#makeString(Evaluator, String)}.
+     */
+    @Deprecated
+    Object newString(String value)
+    {
+        return makeString(this, value);
+    }
+
+    /**
+     * @deprecated Use {@link FusionSymbol#makeSymbol(Evaluator, String)}.
+     */
+    @Deprecated
+    Object newSymbol(String value)
+    {
+        return makeSymbol(this, value);
+    }
+
+    /**
+     * @deprecated Use
+     * {@link FusionSymbol#makeSymbol(Evaluator, String[], String)}.
+     */
+    @Deprecated
+    Object newSymbol(String value, String... annotations)
+    {
+        return makeSymbol(this, annotations, value);
+    }
+
+    /**
+     * @deprecated Use helpers in {@link FusionNumber}.
+     */
+    @Deprecated
+    Object newDecimal(BigDecimal value)
+    {
+        return makeDecimal(this, value);
+    }
+
+    /**
+     * @deprecated Use helpers in {@link FusionNumber}.
+     */
+    @Deprecated
+    Object newDecimal(BigDecimal value, String... annotations)
+    {
+        return makeDecimal(this, annotations, value);
+    }
+
+    /**
+     * @deprecated Use helpers in {@link FusionNumber}.
+     */
+    @Deprecated
+    Object newFloat(double value)
+    {
+        return makeFloat(this, value);
+    }
+
+    /**
+     * @deprecated Use helpers in {@link FusionNumber}.
+     */
+    @Deprecated
+    Object newFloat(double value, String... annotations)
+    {
+        return makeFloat(this, annotations, value);
+    }
+
+    /**
+     * @deprecated Use helpers in {@link FusionNumber}.
+     */
+    @Deprecated
+    Object newFloat(Double value)
+    {
+        return makeFloat(this, value);
+    }
+
+    /**
+     * @deprecated Use helpers in {@link FusionNumber}.
+     */
+    @Deprecated
+    Object newFloat(Double value, String... annotations)
+    {
+        return makeFloat(this, annotations, value);
+    }
+
+    /**
+     * @deprecated Use
+     * {@link FusionTimestamp#makeTimestamp(Evaluator, Timestamp)}.
+     */
+    @Deprecated
+    Object newTimestamp(Timestamp value)
+    {
+        return makeTimestamp(this, value);
+    }
+
+    /**
+     * @deprecated Use
+     * {@link FusionTimestamp#makeTimestamp(Evaluator, String[], Timestamp)}.
+     */
+    @Deprecated
+    Object newTimestamp(Timestamp value, String... annotations)
+    {
+        return makeTimestamp(this, annotations, value);
     }
 
 

@@ -2,9 +2,9 @@
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionString.makeString;
 import static com.amazon.fusion.FusionValue.UNDEF;
 import com.amazon.ion.IonSystem;
-import com.amazon.ion.IonType;
 
 /**
  * The core set of objects from that are needed by other parts of the
@@ -16,7 +16,7 @@ final class GlobalState
 
     static final String KERNEL_MODULE_NAME = "/fusion/private/kernel";
     static final ModuleIdentity KERNEL_MODULE_IDENTITY =
-        ModuleIdentity.internBuiltinName(KERNEL_MODULE_NAME);
+        ModuleIdentity.forAbsolutePath(KERNEL_MODULE_NAME);
 
     static final String ALL_DEFINED_OUT = "all_defined_out";
     static final String BEGIN           = "begin";
@@ -33,7 +33,6 @@ final class GlobalState
     final ModuleInstance     myKernelModule;
     final ModuleNameResolver myModuleNameResolver;
     final LoadHandler        myLoadHandler;
-    final RequireForm        myRequireForm;
     final DynamicParameter   myCurrentNamespaceParam;
 
     final SyntaxSymbol       myKernelBeginIdentifier;
@@ -52,21 +51,22 @@ final class GlobalState
                         ModuleInstance     kernel,
                         ModuleNameResolver resolver,
                         LoadHandler        loadHandler,
-                        RequireForm        requireForm,
                         DynamicParameter   currentNamespaceParam)
     {
         myIonSystem             = ionSystem;
         myKernelModule          = kernel;
         myModuleNameResolver    = resolver;
         myLoadHandler           = loadHandler;
-        myRequireForm           = requireForm;
         myCurrentNamespaceParam = currentNamespaceParam;
 
         SyntaxWrap wrap = new ModuleRenameWrap(kernel);
-        myKernelBeginIdentifier  = SyntaxSymbol.make(BEGIN, wrap);
-        myKernelLambdaIdentifier = SyntaxSymbol.make(LAMBDA, wrap);
-        myKernelLetrecIdentifier = SyntaxSymbol.make(LETREC, wrap);
-        myKernelModuleIdentifier = SyntaxSymbol.make(MODULE, wrap);
+
+        // WARNING: We pass null evaluator because we know its not used.
+        //          That is NOT SUPPORTED for user code!
+        myKernelBeginIdentifier  = SyntaxSymbol.make(null, wrap, BEGIN);
+        myKernelLambdaIdentifier = SyntaxSymbol.make(null, wrap, LAMBDA);
+        myKernelLetrecIdentifier = SyntaxSymbol.make(null, wrap, LETREC);
+        myKernelModuleIdentifier = SyntaxSymbol.make(null, wrap, MODULE);
 
         myKernelAllDefinedOutBinding = kernelBinding(ALL_DEFINED_OUT);
         myKernelBeginBinding         = kernelBinding(BEGIN);
@@ -83,11 +83,11 @@ final class GlobalState
                                   Namespace initialCurrentNamespace)
         throws FusionException
     {
-        ModuleBuilderImpl ns =
-            new ModuleBuilderImpl(registry, KERNEL_MODULE_IDENTITY);
-
+        // WARNING: We pass null evaluator because we know its not used.
+        //          That is NOT SUPPORTED for user code!
         Object userDir =
-            FusionValue.forIonValue(system.newString(builder.getInitialCurrentDirectory().toString()));
+            makeString(null, builder.getInitialCurrentDirectory().toString());
+
         DynamicParameter currentDirectory =
             new DynamicParameter(userDir);
         DynamicParameter currentLoadRelativeDirectory =
@@ -105,7 +105,8 @@ final class GlobalState
                                    currentModuleDeclareName,
                                    builder.buildModuleRepositories());
 
-        RequireForm requireForm = new RequireForm(resolver);
+        ModuleBuilderImpl ns =
+            new ModuleBuilderImpl(resolver, registry, KERNEL_MODULE_IDENTITY);
 
         ns.define(ALL_DEFINED_OUT, new ProvideForm.AllDefinedOutForm());
         ns.define(BEGIN, new BeginForm());    // Needed by hard-coded macro
@@ -129,23 +130,11 @@ final class GlobalState
         ns.define(MODULE, new ModuleForm(resolver, currentModuleDeclareName));
         ns.define(PROVIDE, new ProvideForm());
         ns.define("quote_syntax", new QuoteSyntaxForm()); // For fusion/syntax
-        ns.define(REQUIRE, requireForm);
-
-        for (IonType t : IonType.values())
-        {
-            if (t != IonType.NULL &&
-                t != IonType.DATAGRAM &&
-                t != IonType.LIST &&
-                t != IonType.SEXP &&
-                t != IonType.STRUCT)
-            {
-                String name = "is_" + t.name().toLowerCase();
-                ns.define(name, new IonTypeCheckingProc(t));
-            }
-        }
+        ns.define(REQUIRE, new RequireForm(resolver));
 
         ns.define("is_list",   new FusionList.IsListProc());
         ns.define("is_sexp",   new FusionSexp.IsSexpProc());
+        ns.define("is_string", new FusionString.IsStringProc());
         ns.define("is_struct", new FusionStruct.IsStructProc());
 
         ns.define("=", new FusionCompare.EqualProc());
@@ -155,7 +144,7 @@ final class GlobalState
         ModuleInstance kernel = registry.lookup(KERNEL_MODULE_IDENTITY);
 
         GlobalState globals =
-            new GlobalState(system, kernel, resolver, loadHandler, requireForm,
+            new GlobalState(system, kernel, resolver, loadHandler,
                             currentNamespaceParam);
         return globals;
     }

@@ -75,7 +75,9 @@ class HtmlWriter
         myOut.append("<title>");
         escape(title);
         myOut.append("</title>\n");
-        myOut.append(style);
+        myOut.append("<link href='");
+        escape(style);
+        myOut.append("' rel='stylesheet' type='text/css'></link>\n");
         myOut.append("</head>\n");
     }
 
@@ -103,7 +105,7 @@ class HtmlWriter
     final void linkToModule(ModuleIdentity id, String escapedLinkText)
         throws IOException
     {
-        String escapedId = escapeString(id.internString());
+        String escapedId = escapeString(id.absolutePath());
 
         append("<a href='.");
         append(escapedId);     // starts with a slash
@@ -121,7 +123,7 @@ class HtmlWriter
                                    String escapedName)
         throws IOException
     {
-        String escapedId = escapeString(id.internString());
+        String escapedId = escapeString(id.absolutePath());
 
         append("<a href='.");
         append(escapedId);     // starts with a slash
@@ -141,7 +143,7 @@ class HtmlWriter
                                          String escapedName)
         throws IOException
     {
-        String escapedId = escapeString(id.internString());
+        String escapedId = escapeString(id.absolutePath());
 
         append("<a href='.");
         append(escapedId);     // starts with a slash

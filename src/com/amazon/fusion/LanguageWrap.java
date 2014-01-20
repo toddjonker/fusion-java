@@ -85,7 +85,7 @@ final class LanguageWrap
         @Override
         public String toString()
         {
-            return "{{{LanguageBinding " + myBinding.myModuleId.internString()
+            return "{{{LanguageBinding " + myBinding.myModuleId.absolutePath()
                  + ' ' + getName() + "}}}";
         }
     }
@@ -105,6 +105,7 @@ final class LanguageWrap
                     Iterator<SyntaxWrap> moreWraps,
                     Set<Integer> returnMarks)
     {
+        // TODO FUSION-166 This is not always true
         assert ! moreWraps.hasNext();
         // If that's not always true we must collect marks from moreWraps.
         // and perhaps look up name there too?
@@ -129,7 +130,7 @@ final class LanguageWrap
     @Override
     public String toString()
     {
-        String id = myModule.getIdentity().internString();
+        String id = myModule.getIdentity().absolutePath();
         return "{{{Language wrap for " + id + "}}}";
     }
 }

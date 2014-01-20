@@ -1,10 +1,10 @@
-// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionBool.makeBool;
 import static com.amazon.fusion.FusionVoid.voidValue;
 import com.amazon.ion.IonException;
-import com.amazon.ion.IonText;
 import com.amazon.ion.IonValue;
 import com.amazon.ion.IonWriter;
 import com.amazon.ion.system.IonTextWriterBuilder;
@@ -21,8 +21,8 @@ public final class FusionIo
 
 
     /** The singular {@code eof} value. */
-    private final static FusionValue EOF =
-        new FusionValue()
+    private final static BaseValue EOF =
+        new BaseValue()
         {
             @Override
             void write(Evaluator eval, Appendable out) throws IOException
@@ -59,7 +59,7 @@ public final class FusionIo
         @Override
         Object doApply(Evaluator eval, Object arg)
         {
-            return eval.newBool(arg == EOF);
+            return makeBool(eval, arg == EOF);
         }
     }
 
@@ -71,18 +71,19 @@ public final class FusionIo
     static void dispatchIonize(Evaluator eval, IonWriter out, Object value)
         throws IOException, FusionException, IonException
     {
-        if (value instanceof FusionValue)
+        // Optimized to avoid instanceof, we are going to fail anyway and that
+        // doesn't need to be fast.
+        BaseValue fv;
+        try
         {
-            ((FusionValue) value).ionize(eval, out);
+            fv = (BaseValue) value;
         }
-        else if (value instanceof IonValue)
-        {
-            ((IonValue)value).writeTo(out);
-        }
-        else
+        catch (ClassCastException e)
         {
             throw new IonizeFailure(value);
         }
+
+        fv.ionize(eval, out);
     }
 
 
@@ -94,13 +95,9 @@ public final class FusionIo
     static void dispatchWrite(Evaluator eval, Appendable out, Object value)
         throws IOException, FusionException
     {
-        if (value instanceof FusionValue)
+        if (value instanceof BaseValue)
         {
-            ((FusionValue) value).write(eval, out);
-        }
-        else if (value instanceof IonValue)
-        {
-            FusionUtils.writeIon(out, (IonValue) value);
+            ((BaseValue) value).write(eval, out);
         }
         else
         {
@@ -115,22 +112,9 @@ public final class FusionIo
     static void dispatchDisplay(Evaluator eval, Appendable out, Object value)
         throws IOException, FusionException
     {
-        if (value instanceof FusionValue)
+        if (value instanceof BaseValue)
         {
-            ((FusionValue) value).display(eval, out);
-        }
-        else if (value instanceof IonValue)
-        {
-            IonValue iv = (IonValue) value;
-            if (iv instanceof IonText)
-            {
-                String text = ((IonText) iv).stringValue();
-                out.append(text);
-            }
-            else
-            {
-                FusionUtils.writeIon(out, iv);
-            }
+            ((BaseValue) value).display(eval, out);
         }
         else
         {
@@ -179,7 +163,8 @@ public final class FusionIo
 
 
     /**
-     * <a href="{@docRoot}/../fusion/io.html#write">Writes</a> a text representation of a Fusion value, following Ion syntax
+     * <a href="{@docRoot}/../fusion/io.html#write">Writes</a> a text
+     * representation of a Fusion value, following Ion syntax
      * where possible, including for strings.
      * The result will be unreadable (by the Fusion and Ion readers) if the
      * value contains any non-Ionizable data (void, closures, etc.).
@@ -241,6 +226,7 @@ public final class FusionIo
 
     //========================================================================
 
+
     /**
      * Returns the output of {@link #write} as a
      * {@link String}.
@@ -256,7 +242,21 @@ public final class FusionIo
     }
 
 
+    /**
+     * Returns the output of {@link #write(Evaluator, Appendable, Object)}
+     * as a {@link String}.
+     *
+     * @return not null.
+     */
+    public static String writeToString(TopLevel top, Object value)
+        throws FusionException
+    {
+        return writeToString(((StandardTopLevel) top).getEvaluator(), value);
+    }
+
+
     //========================================================================
+
 
     /**
      * {@linkplain #write Writes}
@@ -420,8 +420,9 @@ public final class FusionIo
 
 
     /**
-     * Returns the output of {@link #write} as a {@link String}, handling any
-     * exceptions by writing their message into the output.
+     * Returns the output of {@link #write(TopLevel, Object, Appendable)} as a
+     * {@link String}, handling any exceptions by writing their message into
+     * the output.
      *
      * @return not null.
      */
@@ -430,6 +431,20 @@ public final class FusionIo
         StringBuilder out = new StringBuilder();
         safeWrite(eval, out, value);
         return out.toString();
+    }
+
+
+    /**
+     * Returns the output of {@link #write(TopLevel, Object, Appendable)} as a
+     * {@link String}, handling any exceptions by writing their message into
+     * the output.
+     *
+     * @return not null.
+     */
+    public static String safeWriteToString(TopLevel top, Object value)
+    {
+        return safeWriteToString(((StandardTopLevel) top).getEvaluator(),
+                                 value);
     }
 
 

@@ -1,6 +1,8 @@
-// Copyright (c) 2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2013-2014 Amazon.com, Inc.  All rights reserved.
 
-(require "/check")
+(require
+  "/check"
+  "/fusion/experimental/equality")
 
 
 // Here's the bindings we expect to be available:
@@ -11,26 +13,48 @@
   ])
 
 
-(check = (timestamp_to_epoch_millis 1970-01-01                )   0)
-(check = (timestamp_to_epoch_millis 1970-01-01T00:00:00.001Z  )   1)
-(check = (timestamp_to_epoch_millis 1970-01-01T00:00:00.00123Z)  1.23)
-(check = (timestamp_to_epoch_millis 1970-01-01T00:00:01Z      )  1000)
-(check = (timestamp_to_epoch_millis 1969-12-31T23:59:59Z      ) -1000)
+//============================================================================
+// Comparisons
 
-(check = (timestamp_to_epoch_millis 1970-01-01T00:00:00.00123+01:00)
+(define_check (check_comparisons msg lo hi)                 // msg is rest arg
+  (check <  lo hi)
+  (check <= lo hi)
+  (check =  lo lo)
+  (check =  hi hi)
+  (check >= hi lo)
+  (check >  hi lo))
+
+(check_comparisons 1980T 1981T)
+(check_comparisons 0001T 0001-02T)
+
+(check_comparisons (quote f::1980T   ) (quote e::1981T))
+(check_comparisons (quote f::1980-02T) (quote e::1980-03T))
+
+
+//============================================================================
+// timestamp_to_epoch_millis
+
+// Note that it always returns a decimal
+(check === (timestamp_to_epoch_millis 1970-01-01                )  0.)
+(check === (timestamp_to_epoch_millis 1970-01-01T00:00:00.001Z  )  1.)
+(check === (timestamp_to_epoch_millis 1970-01-01T00:00:00.00123Z)  1.23)
+(check === (timestamp_to_epoch_millis 1970-01-01T00:00:01Z      )  1000.)
+(check === (timestamp_to_epoch_millis 1969-12-31T23:59:59Z      ) -1000.)
+
+(check === (timestamp_to_epoch_millis 1970-01-01T00:00:00.00123+01:00)
          (- 1.23 (* 60 /*minutes*/ 60 /*seconds*/ 1000 /*millis*/)))
 
 
 //============================================================================
 // string_to_timestamp
 
-(check ion_equals (string_to_timestamp null.string) null.timestamp)
-(check ion_equals (timestamp_to_string null.timestamp) null.string)
+(check === (string_to_timestamp null.string) null.timestamp)
+(check === (timestamp_to_string null.timestamp) null.string)
 
 
 (define_check (check_conversion msg string time)
-  (check = (string_to_timestamp string) time)
-  (check = (timestamp_to_string time) string))
+  (check === (string_to_timestamp string) time)
+  (check === (timestamp_to_string time) string))
 
 (check_conversion "2013T"                       2013T)
 (check_conversion "2013-11T"                    2013-11T)

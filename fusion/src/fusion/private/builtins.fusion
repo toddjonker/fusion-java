@@ -8,8 +8,7 @@
   // Pass-through bindings from kernel
   (provide all_defined_out begin define if lambda letrec load module provide
     require)
-  (provide is_bool is_int is_float is_decimal is_timestamp is_symbol
-      is_string is_clob is_blob is_list is_sexp is_struct)
+  (provide is_string is_list is_sexp is_struct)
 
 
   (defpub_j_syntax let            "com.amazon.fusion.LetForm")
@@ -21,16 +20,20 @@
 
   (defpub_j apply                 "com.amazon.fusion.ApplyProc")
   (defpub_j exit                  "com.amazon.fusion.ExitProc")
+  (defpub_j is_blob               "com.amazon.fusion.FusionBlob$IsBlobProc")
+  (defpub_j is_bool               "com.amazon.fusion.FusionBool$IsBoolProc")
+  (defpub_j is_clob               "com.amazon.fusion.FusionClob$IsClobProc")
   (defpub_j is_null               "com.amazon.fusion.IsNullProc")
-  (defpub_j is_null_null          "com.amazon.fusion.IsNullNullProc")
+  (defpub_j is_null_null          "com.amazon.fusion.FusionNull$IsNullNullProc")
   (defpub_j is_procedure          "com.amazon.fusion.IsProcedureProc")
+  (defpub_j is_symbol             "com.amazon.fusion.FusionSymbol$IsSymbolProc")
   (defpub_j not                   "com.amazon.fusion.NotProc")
   (defpub_j values                "com.amazon.fusion.ValuesProc")
 
 
   (defpub_j annotate "com.amazon.fusion.AnnotateProc")
 
-  (defpub_j size "com.amazon.fusion.SizeProc")
+  (defpub_j size "com.amazon.fusion.FusionCollection$SizeProc")
 
   (defpub_j is_immutable_list
     "com.amazon.fusion.FusionList$IsImmutableListProc")

@@ -1,12 +1,18 @@
-// Copyright (c) 2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionBool.falseBool;
+import static com.amazon.fusion.FusionBool.makeBool;
+import static com.amazon.fusion.FusionBool.trueBool;
+import com.amazon.fusion.FusionBool.BaseBool;
 import java.io.IOException;
 
 
 /**
  * Utilities for working with Fusion's singular {@code void} value.
+ *
+ * @see FusionValue
  */
 public final class FusionVoid
 {
@@ -14,9 +20,30 @@ public final class FusionVoid
 
 
     /** The singular {@code void} value. */
-    private final static FusionValue VOID =
-        new FusionValue()
+    private final static BaseValue VOID =
+        new BaseValue()
         {
+            @Override
+            BaseBool isTruthy(Evaluator eval)
+            {
+                return falseBool(eval);
+            }
+
+            @Override
+            BaseBool not(Evaluator eval)
+            {
+                return trueBool(eval);
+            }
+
+            @Override
+            BaseBool looseEquals(Evaluator eval, Object right)
+                throws FusionException
+            {
+                // Object comparison has already been performed, so we know
+                // we've not been given void.
+                return falseBool(eval);
+            }
+
             @Override
             void write(Evaluator eval, Appendable out) throws IOException
             {
@@ -87,7 +114,7 @@ public final class FusionVoid
         @Override
         Object doApply(Evaluator eval, Object arg)
         {
-            return eval.newBool(arg == VOID);
+            return makeBool(eval, arg == VOID);
         }
     }
 }

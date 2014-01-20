@@ -3,8 +3,10 @@
 package com.amazon.fusion;
 
 import static com.amazon.fusion.GlobalState.FUSION_SOURCE_EXTENSION;
-import static com.amazon.fusion.ModuleIdentity.internFromFile;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 
 final class FileSystemModuleRepository
     extends ModuleRepository
@@ -29,18 +31,39 @@ final class FileSystemModuleRepository
 
 
     @Override
-    ModuleIdentity resolveLib(Evaluator eval, String absoluteModulePath)
+    ModuleLocation locateModule(Evaluator eval, final ModuleIdentity id)
         throws FusionException
     {
-        assert absoluteModulePath.startsWith("/");
+        String path = id.absolutePath();
+        String fileName = path.substring(1) + FUSION_SOURCE_EXTENSION;
 
-        // TODO ugly hard-coding
-        String fileName =
-            absoluteModulePath.substring(1) + FUSION_SOURCE_EXTENSION;
-        File libFile = new File(myRepoDir, fileName);
+        final File libFile = new File(myRepoDir, fileName);
         if (libFile.exists())
         {
-            return internFromFile(absoluteModulePath, libFile);
+            ModuleLocation loc = new InputStreamModuleLocation()
+            {
+                @Override
+                SourceName sourceName()
+                {
+                    String name = id + " (at file:" + libFile + ")";
+                    return SourceName.forDisplay(name);
+                }
+
+                @Override
+                InputStream open()
+                    throws IOException
+                {
+                    return new FileInputStream(libFile);
+                }
+
+                @Override
+                String parentDirectory()
+                {
+                    return libFile.getParentFile().getAbsolutePath();
+                }
+            };
+
+            return loc;
         }
 
         return null;

@@ -5,6 +5,7 @@ package com.amazon.fusion;
 import static com.amazon.fusion.BindingDoc.COLLECT_DOCS_MARK;
 import static com.amazon.fusion.FusionIo.safeWriteToString;
 import static com.amazon.fusion.FusionVoid.voidValue;
+import static com.amazon.fusion.ModuleIdentity.isValidAbsoluteModulePath;
 import static com.amazon.ion.util.IonTextUtils.printQuotedSymbol;
 import static java.lang.Boolean.TRUE;
 import com.amazon.ion.IonReader;
@@ -28,7 +29,7 @@ final class StandardTopLevel
                      boolean documenting)
         throws FusionException
     {
-        assert initialModulePath.startsWith("/");
+        assert ModuleIdentity.isValidAbsoluteModulePath(initialModulePath);
 
         Evaluator eval = new Evaluator(globalState);
         if (documenting)
@@ -118,6 +119,30 @@ final class StandardTopLevel
 
 
     @Override
+    public void loadModule(String     absoluteModulePath,
+                           IonReader  source,
+                           SourceName name)
+        throws FusionException
+    {
+        if (! isValidAbsoluteModulePath(absoluteModulePath))
+        {
+            String message =
+                "Invalid absolute module path: " + absoluteModulePath;
+            throw new IllegalArgumentException(message);
+        }
+
+        ModuleNameResolver resolver =
+            myEvaluator.getGlobalState().myModuleNameResolver;
+        ModuleIdentity id =
+            ModuleIdentity.forAbsolutePath(absoluteModulePath);
+        ModuleLocation loc =
+            new IonReaderModuleLocation(source, name);
+
+        resolver.loadModule(myEvaluator, id, loc, true /* reload it */);
+    }
+
+
+    @Override
     public void requireModule(String modulePath)
         throws FusionException
     {
@@ -146,7 +171,7 @@ final class StandardTopLevel
     private Procedure lookupProcedure(String procedureName)
         throws FusionException
     {
-        SyntaxSymbol id = SyntaxSymbol.make(procedureName);
+        SyntaxSymbol id = SyntaxSymbol.make(myEvaluator, procedureName);
 
         Object proc = FusionEval.eval(myEvaluator, id, myNamespace);
         if (proc instanceof Procedure)

@@ -4,7 +4,6 @@ package com.amazon.fusion;
 
 import com.amazon.ion.IonValue;
 import com.amazon.ion.IonWriter;
-import com.amazon.ion.system.IonTextWriterBuilder;
 import java.io.IOException;
 
 /**
@@ -13,38 +12,29 @@ import java.io.IOException;
  * DAG structure.
  */
 abstract class SyntaxValue
-    extends FusionValue
+    extends BaseValue
 {
-    enum Type {
-        NULL, BOOL, INT, DECIMAL, FLOAT, TIMESTAMP, BLOB, CLOB,
-        STRING, SYMBOL, LIST, SEXP, STRUCT, KEYWORD
-    }
-
     /** A zero-length array. */
     final static SyntaxValue[] EMPTY_ARRAY = new SyntaxValue[0];
 
-    private final String[] myAnnotations;
     private final SourceLocation mySrcLoc;
 
     /**
      *
-     * @param annotations the new instance assumes ownership of the array and
-     * it must not be modified later. Must not be null.
-     *
      * @param loc may be null;
      */
-    SyntaxValue(String[] annotations, SourceLocation loc)
+    SyntaxValue(SourceLocation loc)
     {
-        assert annotations != null : "annotations must not be null";
-        myAnnotations = annotations;
         mySrcLoc = loc;
     }
 
 
-    final String[] getAnnotations()
-    {
-        return myAnnotations;
-    }
+    /**
+     * Determines whether the wrapped datum is a null value.
+     */
+    @Override
+    abstract boolean isAnyNull();
+
 
     /**
      * Gets the location associated with this syntax node, if it exists.
@@ -54,8 +44,6 @@ abstract class SyntaxValue
     {
         return mySrcLoc;
     }
-
-    abstract Type getType();
 
 
     /**
@@ -108,68 +96,43 @@ abstract class SyntaxValue
 
 
     /** Don't call directly! Go through the evaluator. */
-    CompiledForm doCompile(Evaluator eval, Environment env)
-        throws FusionException
-    {
-        Object constant = doCompileIonConstant(eval, env);
-        IonValue iv = FusionValue.castToIonValueMaybe(constant);
-        assert iv != null;
-        return new CompiledIonConstant(iv);
-    }
-
-
-    Object doCompileIonConstant(Evaluator eval, Environment env)
-        throws FusionException
-    {
-        throw new IllegalStateException();
-    }
+    abstract CompiledForm doCompile(Evaluator eval, Environment env)
+        throws FusionException;
 
 
     /**
-     * Unwraps syntax, returning plain values.
-     * @param recurse if true, unwrapping is recursive (as per `quote` or
-     *  `synatax_to_datum`); otherwise only one layer is unwrapped.
+     * Unwraps syntax, returning plain values. Only one layer is unwrapped, so
+     * if this is a container, the result will contain syntax objects.
      */
-    abstract Object unwrap(Evaluator eval, boolean recurse)
+    abstract Object unwrap(Evaluator eval)
+        throws FusionException;
+
+
+    /**
+     * Unwraps syntax recursively, returning plain values.
+     * Used by `quote` and `synatax_to_datum`.
+     */
+    abstract Object syntaxToDatum(Evaluator eval)
         throws FusionException;
 
 
     @Override
-    void write(Evaluator eval, Appendable out)
+    SyntaxValue toStrippedSyntaxMaybe(Evaluator eval)
+        throws FusionException
+    {
+        // TODO FUSION-183 Should strip location and properties?
+        //      Well, probably not, that throws away existing
+        //      context when called from datum_to_syntax
+        return stripWraps(eval);
+    }
+
+
+    @Override
+    final void write(Evaluator eval, Appendable out)
         throws IOException, FusionException
     {
-        IonWriter writer = IonTextWriterBuilder.standard().build(out);
+        IonWriter writer = WRITER_BUILDER.build(out);
         ionize(eval, writer);
         writer.flush();
-    }
-
-    void ionizeAnnotations(IonWriter writer)
-    {
-        writer.setTypeAnnotations(myAnnotations);
-    }
-
-    abstract boolean isNullValue();
-
-
-    //========================================================================
-
-
-    static final class CompiledIonConstant
-        implements CompiledForm
-    {
-        private final IonValue myConstant;
-
-        CompiledIonConstant(IonValue constant)
-        {
-            constant.makeReadOnly();
-            myConstant = constant;
-        }
-
-        @Override
-        public Object doEval(Evaluator eval, Store store)
-            throws FusionException
-        {
-            return eval.inject(myConstant.clone());
-        }
     }
 }

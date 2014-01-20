@@ -2,56 +2,64 @@
 
 package com.amazon.fusion;
 
-import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
-import com.amazon.ion.IonWriter;
-import java.io.IOException;
+import static com.amazon.fusion.FusionString.makeString;
+import com.amazon.fusion.FusionString.BaseString;
 
 final class SyntaxString
     extends SyntaxText
 {
-    private SyntaxString(String value, String[] anns, SourceLocation loc)
+    /**
+     * @param datum must not be null.
+     */
+    private SyntaxString(Evaluator eval, SourceLocation loc, BaseString datum)
     {
-        super(value, anns, loc);
-    }
-
-    static SyntaxString make(String value, String[] anns, SourceLocation loc)
-    {
-        return new SyntaxString(value, anns, loc);
-    }
-
-    static SyntaxString make(String value)
-    {
-        return new SyntaxString(value, EMPTY_STRING_ARRAY, null);
+        super(loc, datum);
     }
 
 
-    @Override
-    Type getType()
+    /**
+     * @param datum must not be null.
+     */
+    static SyntaxString make(Evaluator eval,
+                             SourceLocation loc,
+                             BaseString datum)
     {
-        return Type.STRING;
+        return new SyntaxString(eval, loc, datum);
     }
 
 
-    @Override
-    Object unwrap(Evaluator eval, boolean recurse)
+    /**
+     * @param datum must be a Fusion string.
+     */
+    static SyntaxString make(Evaluator eval, SourceLocation loc, Object datum)
     {
-        return eval.newString(myText, getAnnotations());
+        BaseString string = (BaseString) datum;
+        return new SyntaxString(eval, loc, string);
     }
 
 
-    @Override
-    Object doCompileIonConstant(Evaluator eval, Environment env)
-        throws FusionException
+    /**
+     * @param annotations must not be null and must not contain elements
+     * that are null or empty. This method assumes ownership of the array
+     * and it must not be modified later.
+     * @param value may be null.
+     */
+    static SyntaxString make(Evaluator eval,
+                             SourceLocation loc,
+                             String[] annotations,
+                             String value)
     {
-        return eval.newString(myText);
+        BaseString datum = makeString(eval, annotations, value);
+        return new SyntaxString(eval, loc, datum);
     }
 
 
-    @Override
-    void ionize(Evaluator eval, IonWriter writer)
-        throws IOException
+    /**
+     * @param value may be null.
+     */
+    static SyntaxString make(Evaluator eval, String value)
     {
-        ionizeAnnotations(writer);
-        writer.writeString(myText);
+        BaseString datum = makeString(eval, value);
+        return new SyntaxString(eval, null, datum);
     }
 }

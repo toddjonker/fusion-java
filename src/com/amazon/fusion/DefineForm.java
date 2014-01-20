@@ -3,6 +3,8 @@
 package com.amazon.fusion;
 
 import static com.amazon.fusion.BindingDoc.COLLECT_DOCS_MARK;
+import static com.amazon.fusion.FusionSexp.isSexp;
+import static com.amazon.fusion.FusionString.isString;
 import static com.amazon.fusion.GlobalState.DEFINE;
 import com.amazon.fusion.Namespace.NsBinding;
 
@@ -45,7 +47,7 @@ final class DefineForm
         SyntaxValue[] children = defineStx.extract(eval);
 
         SyntaxValue first = children[1];
-        if (first.getType() == SyntaxValue.Type.SEXP)
+        if (isSexp(eval, first.unwrap(eval)))
         {
             SyntaxChecker sigCheck =
                 check.subformSeq("procedure signature", 1);
@@ -57,7 +59,7 @@ final class DefineForm
             sig[0] = ns.predefine(identifier, formForErrors);
             children[1] = SyntaxSexp.make(eval,
                                           first.getLocation(),
-                                          first.getAnnotations(),
+                                          first.annotationsAsJavaStrings(),
                                           sig);
         }
         else
@@ -66,7 +68,9 @@ final class DefineForm
             children[1] = ns.predefine(identifier, formForErrors);
         }
 
-        return SyntaxSexp.make(eval, defineStx.getLocation(), defineStx.getAnnotations(),
+        return SyntaxSexp.make(eval,
+                               defineStx.getLocation(),
+                               defineStx.annotationsAsJavaStrings(),
                                children);
     }
 
@@ -78,7 +82,7 @@ final class DefineForm
         int defineArity = defineChecker.arityAtLeast(3);
 
         Evaluator eval = expander.getEvaluator();
-        if (stx.get(eval, 1).getType() != SyntaxValue.Type.SEXP)
+        if (! isSexp(eval, stx.get(eval, 1).unwrap(eval)))
         {
             // No implicit lambda
             return stx;
@@ -100,7 +104,7 @@ final class DefineForm
         SyntaxValue[] origDefineElts = stx.extract(eval);
         boolean hasDoc =
             (defineArity > 3 &&
-             origDefineElts[2].getType() == SyntaxValue.Type.STRING);
+             isString(eval, origDefineElts[2].unwrap(eval)));
         int docOffset = (hasDoc ? 1 : 0);
 
         int bodyStart = 2 + docOffset;
@@ -157,7 +161,7 @@ final class DefineForm
 
         int bodyPos;
         SyntaxValue maybeDoc = children[2];
-        if (maybeDoc.getType() == SyntaxValue.Type.STRING && arity > 3)
+        if (isString(eval, maybeDoc.unwrap(eval)) && arity > 3)
         {
             bodyPos = 3;
         }

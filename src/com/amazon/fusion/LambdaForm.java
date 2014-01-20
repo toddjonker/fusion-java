@@ -1,8 +1,9 @@
-// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionSexp.immutableSexp;
+import static com.amazon.fusion.FusionString.isString;
 
 /**
  * The {@code lambda} syntactic form, which evaluates to a {@link Closure}.
@@ -20,10 +21,17 @@ final class LambdaForm
               "`body` may be one or more forms; the last form is in tail position and its\n" +
               "result is the result of the procedure invocation.\n" +
               "\n" +
+              "The Fusion runtime system may optimize procedure instantiation, so it is\n" +
+              "unspecified whether one or more `lambda` expressions will return distinct\n" +
+              "or identical objects for any evaluation.\n" +
+              "\n" +
               "    (lambda rest_id doc? body ...+)\n" +
               "\n" +
-              "This variant returns a procedure that accepts any number of arguments, which\n" +
-              "are collected into an immutable sexp and bound to `rest_id`.");
+              "This variant, which declares a single formal argument rather than a sequence\n" +
+              "of them, returns a procedure that accepts any number of values, which are\n" +
+              "collected into an immutable sexp and bound to the `rest_id`:\n" +
+              "\n" +
+              "    ((lambda args args) 8 9 10)   --> (8 9 10)\n");
     }
 
 
@@ -40,7 +48,7 @@ final class LambdaForm
 
         int bodyStart;
         SyntaxValue maybeDoc = children[2];
-        if (maybeDoc.getType() == SyntaxValue.Type.STRING && arity > 3)
+        if (isString(eval, maybeDoc.unwrap(eval)) && arity > 3)
         {
             bodyStart = 3;
         }
@@ -143,7 +151,7 @@ final class LambdaForm
 
         {
             SyntaxValue maybeDoc = stx.get(eval, 2);
-            if (maybeDoc.getType() == SyntaxValue.Type.STRING
+            if (isString(eval, maybeDoc.unwrap(eval))
                 && stx.size() > 3)
             {
                 doc = ((SyntaxString) maybeDoc).stringValue();

@@ -2,8 +2,10 @@
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionList.checkNullableListArg;
 import static com.amazon.fusion.FusionList.unsafeListSize;
 import static com.amazon.fusion.FusionList.unsafeListSubseq;
+import static com.amazon.fusion.FusionNumber.checkIntArgToJavaInt;
 
 final class IonSubseqProc
     extends Procedure
@@ -27,12 +29,12 @@ final class IonSubseqProc
     {
         checkArityExact(args);
 
-        Object list = checkListArg(eval, 0, args);
+        Object list = checkNullableListArg(eval, this, 0, args);
 
         int size = unsafeListSize(eval, list);
 
-        int from = checkIntArg(1, args);
-        int to   = checkIntArg(2, args);
+        int from = checkIntArgToJavaInt(eval, this, 1, args);
+        int to   = checkIntArgToJavaInt(eval, this, 2, args);
 
         if (to < from)
         {

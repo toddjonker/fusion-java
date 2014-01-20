@@ -4,11 +4,15 @@ package com.amazon.fusion;
 
 import static com.amazon.fusion.BindingDoc.COLLECT_DOCS_MARK;
 import static com.amazon.fusion.FusionEval.evalSyntax;
+import static com.amazon.fusion.FusionNumber.makeInt;
+import static com.amazon.fusion.FusionNumber.unsafeTruncateIntToJavaInt;
+import static com.amazon.fusion.FusionStruct.immutableStruct;
 import static com.amazon.fusion.FusionVoid.voidValue;
 import static com.amazon.fusion.GlobalState.DEFINE_SYNTAX;
 import static com.amazon.fusion.GlobalState.PROVIDE;
 import static com.amazon.fusion.GlobalState.REQUIRE;
 import static com.amazon.fusion.ModuleIdentity.isValidAbsoluteModulePath;
+import static com.amazon.fusion.SimpleSyntaxValue.makeSyntax;
 import com.amazon.fusion.ModuleNamespace.ModuleBinding;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -257,25 +261,26 @@ final class ModuleForm
 
         // FIXME a ludicrous hack to communicate this data to the compiler!
         {
-            SyntaxInt variableCount =
-                SyntaxInt.make(moduleNamespace.getBindings().size());
+            BaseValue datum =
+                makeInt(eval, moduleNamespace.getBindings().size());
+            SyntaxValue variableCount =
+                makeSyntax(eval, /*location*/ null, datum);
 
-            SyntaxString identity =
-                SyntaxString.make(id.internString());
+            SyntaxValue identity =
+                SyntaxString.make(eval, id.absolutePath());
 
-            SyntaxString languageIdentity =
-                SyntaxString.make(initialBindingsId.internString());
+            SyntaxValue languageIdentity =
+                SyntaxString.make(eval, initialBindingsId.absolutePath());
 
-            SyntaxStruct meta =
-                SyntaxStruct.make(new String[] { "variable_count",
-                                                 "identity",
-                                                 "language_identity" },
-                                  new SyntaxValue[] { variableCount,
-                                                      identity,
-                                                      languageIdentity },
-                                  new String[] { "InjectedMetadata" });
-
-            subforms[i++] = meta;
+            Object s =
+                immutableStruct(new String[] { "variable_count",
+                                               "identity",
+                                               "language_identity" },
+                                new SyntaxValue[] { variableCount,
+                                                    identity,
+                                                    languageIdentity },
+                                new String[] { "InjectedMetadata" });
+            subforms[i++] = SyntaxStruct.make(eval, null, s);
         }
 
         Iterator<Boolean> prepared = preparedFormFlags.iterator();
@@ -340,8 +345,8 @@ final class ModuleForm
         Namespace moduleNamespace;
         {
             SyntaxText form = (SyntaxText) meta.get(eval, "language_identity");
-            String identity = form.stringValue();
-            ModuleIdentity languageId = ModuleIdentity.reIntern(identity);
+            ModuleIdentity languageId =
+                ModuleIdentity.forAbsolutePath(form.stringValue());
 
             ModuleRegistry registry =
                 envOutsideModule.namespace().getRegistry();
@@ -352,8 +357,9 @@ final class ModuleForm
 
         int variableCount;
         {
-            SyntaxInt form = (SyntaxInt) meta.get(eval, "variable_count");
-            variableCount = form.bigIntegerValue().intValue();
+            SyntaxValue form = meta.get(eval, "variable_count");
+            Object i = form.syntaxToDatum(eval);
+            variableCount = unsafeTruncateIntToJavaInt(eval, i);
         }
 
         ArrayList<CompiledForm> otherForms = new ArrayList<>();
@@ -422,7 +428,7 @@ final class ModuleForm
             assert outsideNs == eval.findCurrentNamespace();
 
             String declaredName = moduleNameSymbol.stringValue();
-            id = ModuleIdentity.internLocalName(outsideNs, declaredName);
+            id = ModuleIdentity.forLocalName(outsideNs, declaredName);
         }
         return id;
     }
@@ -434,10 +440,10 @@ final class ModuleForm
     /**
      * @return [String[] names, ModuleBinding[] bindings]
      */
-    private Object[] providedSymbols(Evaluator eval,
-                                           Namespace ns,
-                                           SyntaxSexp moduleStx,
-                                           int firstProvidePos)
+    private Object[] providedSymbols(Evaluator  eval,
+                                     Namespace  ns,
+                                     SyntaxSexp moduleStx,
+                                     int        firstProvidePos)
         throws FusionException
     {
         Map<String,Binding>      bound    = new HashMap<>();
@@ -453,29 +459,29 @@ final class ModuleForm
             for (int i = 1; i < size; i++)
             {
                 SyntaxValue spec = form.get(eval, i);
-                switch (spec.getType())
+
+                SyntaxSymbol id;
+                try
                 {
-                    case SYMBOL:
-                    {
-                        SyntaxSymbol id = (SyntaxSymbol) spec;
-                        Binding binding = id.getBinding();
-                        Binding prior = bound.put(id.stringValue(), binding);
-                        if (prior != null && ! binding.sameTarget(prior))
-                        {
-                            String message =
-                                "identifier already provided with a different" +
-                                " binding";
-                            throw check.failure(message, id);
-                        }
-                        names.add(id.stringValue());
-                        bindings.add((ModuleBinding) binding.originalBinding());
-                        break;
-                    }
-                    default:
-                    {
-                        throw check.failure("invalid provide-spec");
-                    }
+                    id = (SyntaxSymbol) spec;
                 }
+                catch (ClassCastException e)
+                {
+                    throw check.failure("invalid provide-spec");
+                }
+
+                Binding binding = id.getBinding();
+                String name = id.stringValue();
+                Binding prior = bound.put(name, binding);
+                if (prior != null && ! binding.sameTarget(prior))
+                {
+                    String message =
+                        "identifier already provided with a different" +
+                        " binding";
+                    throw check.failure(message, id);
+                }
+                names.add(name);
+                bindings.add((ModuleBinding) binding.originalBinding());
             }
         }
 
@@ -527,6 +533,10 @@ final class ModuleForm
             ModuleRegistry registry =
                 eval.findCurrentNamespace().getRegistry();
             registry.declare(myId, this);
+
+            ModuleNameResolver resolver =
+                eval.getGlobalState().myModuleNameResolver;
+            resolver.registerDeclaredModule(registry, myId);
 
             return voidValue(eval);
         }

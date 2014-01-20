@@ -3,23 +3,20 @@
 package com.amazon.fusion;
 
 
+
 abstract class SyntaxSequence
     extends SyntaxContainer
 {
-    /**
-     * @param anns must not be null.
-     * This method takes ownership of the array; the array and its elements
-     * must not be changed by calling code afterwards!
-     */
-    SyntaxSequence(SourceLocation loc, String[] anns)
+    SyntaxSequence(SourceLocation loc)
     {
-        super(anns, loc, null);
+        super(loc);
     }
 
-    SyntaxSequence(String[] anns, SourceLocation loc, SyntaxWraps wraps)
+    SyntaxSequence(SourceLocation loc, SyntaxWraps wraps)
     {
-        super(anns, loc, wraps);
+        super(loc, wraps);
     }
+
 
     abstract int size()
         throws FusionException;
