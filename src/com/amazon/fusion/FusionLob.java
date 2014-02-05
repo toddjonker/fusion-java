@@ -33,6 +33,11 @@ public final class FusionLob
             return null;
         }
 
+        byte[] bytesCopy()
+        {
+            return null;
+        }
+
         static BaseBool actualLobEquals(Evaluator eval,
                                         byte[]    leftBytes,
                                         Object    rightLob)
@@ -63,6 +68,21 @@ public final class FusionLob
 
 
     //========================================================================
+    // Constructors
+
+
+    static Object unsafeLobAnnotate(TopLevel top,
+                                    Object fusionLob,
+                                    String[] annotations)
+        throws FusionException
+    {
+        BaseLob base = (BaseLob) fusionLob;
+        return base.annotate(((StandardTopLevel) top).getEvaluator(),
+                             annotations);
+    }
+
+
+    //========================================================================
     // Predicates
 
 
@@ -85,6 +105,45 @@ public final class FusionLob
 
     //========================================================================
     // Conversions
+
+
+    /** NOT FOR PUBLIC CONSUMPTION */
+    static byte[] unsafeLobBytesNoCopy(Evaluator eval, Object lob)
+    {
+        return ((BaseLob) lob).bytesNoCopy();
+    }
+
+
+    /**
+     * Returns the contents of a lob as a byte array, without making extra
+     * copies. <b>The caller must take great care not to modify the content of
+     * the array!</b> Any changes will violate the lob's immutability contract,
+     * which may cause terrible problems.
+     *
+     * @param lob must be a Fusion blob or clob.
+     *
+     * @return null if {@code lob} is {@code null.blob} or {@code null.clob},
+     * otherwise a byte array of the data within the lob.
+     */
+    public static byte[] unsafeLobBytesNoCopy(TopLevel top, Object lob)
+    {
+        return ((BaseLob) lob).bytesNoCopy();
+    }
+
+
+    /**
+     * Extracts the contents of a lob into a byte array. The bytes are copied
+     * from the lob to prevent modification to the value.
+     *
+     * @param lob must be a Fusion blob or clob.
+     *
+     * @return null if {@code lob} is {@code null.blob} or {@code null.clob},
+     * otherwise a fresh copy of the data within the lob.
+     */
+    public static byte[] unsafeLobBytesCopy(TopLevel top, Object lob)
+    {
+        return ((BaseLob) lob).bytesCopy();
+    }
 
 
     //========================================================================

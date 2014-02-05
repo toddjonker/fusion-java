@@ -12,11 +12,16 @@ import com.amazon.ion.IonValue;
 import com.amazon.ion.IonWriter;
 import com.amazon.ion.ValueFactory;
 import java.io.IOException;
+import java.util.Arrays;
 
 /**
+ * Utilities for working with Fusion {@code clob} values.
  *
+ * @see FusionLob
+ * @see FusionBlob
+ * @see FusionValue
  */
-final class FusionClob
+public final class FusionClob
 {
     private FusionClob() {}
 
@@ -103,6 +108,12 @@ final class FusionClob
         }
 
         @Override
+        byte[] bytesCopy()
+        {
+            return Arrays.copyOf(myContent, myContent.length);
+        }
+
+        @Override
         BaseBool tightEquals(Evaluator eval, Object right)
         {
             if (right instanceof BaseClob)
@@ -182,6 +193,12 @@ final class FusionClob
         }
 
         @Override
+        byte[] bytesCopy()
+        {
+            return myValue.bytesCopy();
+        }
+
+        @Override
         BaseBool tightEquals(Evaluator eval, Object right)
             throws FusionException
         {
@@ -232,15 +249,33 @@ final class FusionClob
 
 
     /**
-     * @param value may be null to make {@code null.clob}.
+     * Returns a clob with the given byte content.
      * This method assumes ownership of the array and it must not be modified
      * later.
      *
+     * @param value may be null to make {@code null.clob}.
+     *
      * @return not null.
      */
-    static BaseClob makeClob(Evaluator eval, byte[] value)
+    static BaseClob forBytesNoCopy(Evaluator eval, byte[] value)
     {
         return (value == null ? NULL_CLOB : new ActualClob(value));
+    }
+
+
+    /**
+     * Returns a clob with the given byte content.
+     * This method assumes ownership of the array and it must not be modified
+     * later.
+     *
+     * @param value may be null to make {@code null.clob}.
+     *
+     * @return not null.
+     */
+    public static Object forBytesNoCopy(TopLevel top, byte[] value)
+        throws FusionException
+    {
+        return forBytesNoCopy(((StandardTopLevel) top).getEvaluator(), value);
     }
 
 
@@ -265,11 +300,11 @@ final class FusionClob
      *
      * @return not null.
      */
-    static BaseClob makeClob(Evaluator eval,
-                             String[]  annotations,
-                             byte[]    value)
+    static BaseClob forBytesNoCopy(Evaluator eval,
+                                   String[]  annotations,
+                                   byte[]    value)
     {
-        BaseClob base = makeClob(eval, value);
+        BaseClob base = forBytesNoCopy(eval, value);
         return annotate(base, annotations);
     }
 
@@ -295,6 +330,9 @@ final class FusionClob
     // Predicates
 
 
+    /**
+     * Determines whether a given Fusion value is a clob.
+     */
     public static boolean isClob(TopLevel top, Object value)
         throws FusionException
     {

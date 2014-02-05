@@ -12,11 +12,16 @@ import com.amazon.ion.IonValue;
 import com.amazon.ion.IonWriter;
 import com.amazon.ion.ValueFactory;
 import java.io.IOException;
+import java.util.Arrays;
 
 /**
+ * Utilities for working with Fusion {@code blob} values.
  *
+ * @see FusionLob
+ * @see FusionClob
+ * @see FusionValue
  */
-final class FusionBlob
+public final class FusionBlob
 {
     private FusionBlob() {}
 
@@ -103,6 +108,12 @@ final class FusionBlob
         }
 
         @Override
+        byte[] bytesCopy()
+        {
+            return Arrays.copyOf(myContent, myContent.length);
+        }
+
+        @Override
         BaseBool tightEquals(Evaluator eval, Object right)
         {
             if (right instanceof BaseBlob)
@@ -182,6 +193,12 @@ final class FusionBlob
         }
 
         @Override
+        byte[] bytesCopy()
+        {
+            return myValue.bytesCopy();
+        }
+
+        @Override
         BaseBool tightEquals(Evaluator eval, Object right)
             throws FusionException
         {
@@ -232,15 +249,33 @@ final class FusionBlob
 
 
     /**
-     * @param value may be null to make {@code null.blob}.
+     * Returns a blob with the given byte content.
      * This method assumes ownership of the array and it must not be modified
      * later.
      *
+     * @param value may be null to make {@code null.blob}.
+     *
      * @return not null.
      */
-    static BaseBlob makeBlob(Evaluator eval, byte[] value)
+    static BaseBlob forBytesNoCopy(Evaluator eval, byte[] value)
     {
         return (value == null ? NULL_BLOB : new ActualBlob(value));
+    }
+
+
+    /**
+     * Returns a blob with the given byte content.
+     * This method assumes ownership of the array and it must not be modified
+     * later.
+     *
+     * @param value may be null to make {@code null.blob}.
+     *
+     * @return not null.
+     */
+    public static Object forBytesNoCopy(TopLevel top, byte[] value)
+        throws FusionException
+    {
+        return forBytesNoCopy(((StandardTopLevel) top).getEvaluator(), value);
     }
 
 
@@ -265,11 +300,11 @@ final class FusionBlob
      *
      * @return not null.
      */
-    static BaseBlob makeBlob(Evaluator eval,
-                             String[]  annotations,
-                             byte[]    value)
+    static BaseBlob forBytesNoCopy(Evaluator eval,
+                                   String[]  annotations,
+                                   byte[]    value)
     {
-        BaseBlob base = makeBlob(eval, value);
+        BaseBlob base = forBytesNoCopy(eval, value);
         return annotate(base, annotations);
     }
 
@@ -290,11 +325,24 @@ final class FusionBlob
         return base.annotate(eval, annotations);
     }
 
+    static BaseBlob unsafeBlobAnnotate(TopLevel top,
+                                       Object fusionBlob,
+                                       String[] annotations)
+        throws FusionException
+    {
+        return unsafeBlobAnnotate(((StandardTopLevel) top).getEvaluator(),
+                                  fusionBlob,
+                                  annotations);
+    }
+
 
     //========================================================================
     // Predicates
 
 
+    /**
+     * Determines whether a given Fusion value is a blob.
+     */
     public static boolean isBlob(TopLevel top, Object value)
         throws FusionException
     {
