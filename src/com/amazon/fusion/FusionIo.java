@@ -228,9 +228,9 @@ public final class FusionIo
 
 
     /**
-     * <a href="{@docRoot}/../fusion/io.html#ionize">Ionizes</a> a text
-     * representation of a Fusion value, throwing an exception when any part
-     * of the data is outside the Ion type system.
+     * <a href="{@docRoot}/../fusion/io.html#ionize">Ionizes</a> a Fusion
+     * value, throwing an exception when any part of the value is outside the
+     * Ion type system.
      *
      * @param top must not be null.
      * @param fusionValue must not be null.
@@ -468,19 +468,24 @@ public final class FusionIo
         {
             write(eval, out, value);
         }
-        catch (FusionException e)
+        catch (Exception e)
         {
             displayFailure(out, e);
         }
     }
 
 
-    static void displayFailure(Appendable out, FusionException e)
+    static void displayFailure(Appendable out, Exception e)
     {
         try
         {
             out.append("{{{ FAILURE: ");
-            out.append(e.getMessage());
+            String message = e.getMessage();
+            if (message == null)
+            {
+                message = e.getClass().getName();
+            }
+            out.append(message);
             out.append(" }}}");
         }
         catch (IOException ioe)
@@ -496,7 +501,7 @@ public final class FusionIo
         {
             display(eval, out, value);
         }
-        catch (FusionException e)
+        catch (Exception e)
         {
             displayFailure(out, e);
         }
@@ -505,8 +510,8 @@ public final class FusionIo
 
     /**
      * Returns the output of {@link #write(TopLevel, Object, Appendable)} as a
-     * {@link String}, handling any exceptions by writing their message into
-     * the output.
+     * {@link String}, handling any {@link Exception}s by writing their
+     * message into the output.
      *
      * @return not null.
      */
@@ -520,8 +525,8 @@ public final class FusionIo
 
     /**
      * Returns the output of {@link #write(TopLevel, Object, Appendable)} as a
-     * {@link String}, handling any exceptions by writing their message into
-     * the output.
+     * {@link String}, handling any {@link Exception}s by writing their
+     * message into the output.
      *
      * @return not null.
      */
@@ -540,7 +545,7 @@ public final class FusionIo
         {
             displayMany(eval, out, values, first);
         }
-        catch (FusionException e)
+        catch (Exception e)
         {
             displayFailure(out, e);
         }
