@@ -13,6 +13,7 @@ import static com.amazon.fusion.FusionString.makeString;
 import static com.amazon.fusion.FusionStruct.structFromIonStruct;
 import static com.amazon.fusion.FusionSymbol.makeSymbol;
 import static com.amazon.fusion.FusionTimestamp.makeTimestamp;
+import static com.amazon.fusion.FusionUtils.friendlyIndex;
 import static com.amazon.fusion.FusionVoid.voidValue;
 import com.amazon.ion.IonBool;
 import com.amazon.ion.IonDecimal;
@@ -592,6 +593,11 @@ final class Evaluator
 
             checkingResult: while (true)
             {
+                if (Thread.currentThread().isInterrupted())
+                {
+                    throw new FusionInterrupt();
+                }
+
                 if (result instanceof TailForm)
                 {
                     TailForm tail = (TailForm) result;
@@ -602,9 +608,18 @@ final class Evaluator
                 if (result instanceof TailCall)
                 {
                     TailCall tail = (TailCall) result;
-                    Object[] args = tail.myArgs;
-                    checkSingleArgResults(args);
-                    result = tail.myProc.doApply(this, args);
+                    try
+                    {
+                        Object[] args = tail.myArgs;
+                        checkSingleArgResults(args);
+                        result = tail.myProc.doApply(this, args);
+                    }
+                    catch (FusionException e)
+                    {
+                        e.addContext(tail.myLoc);
+                        throw e;
+                    }
+
                     continue checkingResult;
                 }
                 if (result == null)
@@ -613,6 +628,21 @@ final class Evaluator
                 }
                 return result;
             }
+        }
+    }
+
+
+    Object eval(Store store, CompiledForm form, SourceLocation loc)
+        throws FusionException
+    {
+        try
+        {
+            return eval(store, form);
+        }
+        catch (FusionException e)
+        {
+            e.addContext(loc);
+            throw e;
         }
     }
 
@@ -628,13 +658,29 @@ final class Evaluator
     Object callNonTail(Procedure proc, Object... args)
         throws FusionException
     {
+        SourceLocation callLocation = null;
+
         calling: while (true)
         {
-            checkSingleArgResults(args);
-            Object result = proc.doApply(this, args);
+            Object result;
+            try
+            {
+                checkSingleArgResults(args);
+                result = proc.doApply(this, args);
+            }
+            catch (FusionException e)
+            {
+                e.addContext(callLocation);
+                throw e;
+            }
 
             checkingResult: while (true)
             {
+                if (Thread.currentThread().isInterrupted())
+                {
+                    throw new FusionInterrupt();
+                }
+
                 if (result instanceof TailForm)
                 {
                     TailForm tail = (TailForm) result;
@@ -644,6 +690,7 @@ final class Evaluator
                 if (result instanceof TailCall)
                 {
                     TailCall tail = (TailCall) result;
+                    callLocation = tail.myLoc;
                     proc = tail.myProc;
                     args = tail.myArgs;
                     continue calling;
@@ -658,11 +705,18 @@ final class Evaluator
     }
 
 
-    final void checkSingleResult(Object values, String formIdentifier)
+    final void checkSingleResult(Object values,
+                                 long   index,
+                                 String formIdentifier)
         throws FusionException
     {
         if (values instanceof Object[])
         {
+            if (index >= 0)
+            {
+                formIdentifier = friendlyIndex(index) + ' ' + formIdentifier;
+            }
+
             Object[] valuesArray = (Object[]) values;
             String expectation =
                 "1 result but received " + valuesArray.length;
@@ -671,28 +725,25 @@ final class Evaluator
         }
     }
 
+    final void checkSingleResult(Object values, String formIdentifier)
+        throws FusionException
+    {
+        checkSingleResult(values, -1, formIdentifier);
+    }
+
 
     private final void checkSingleArgResults(Object[] args)
         throws FusionException
     {
-        for (Object o : args)
+        int len = args.length;
+        for (int i = 0; i < len; i++)
         {
-            checkSingleResult(o, "procedure argument");
+            checkSingleResult(args[i], i, "procedure argument");
         }
     }
 
 
     //========================================================================
-
-
-    /**
-     * Wraps an expression for evaluation in tail position.
-     * Must be returned back to this {@link Evaluator} for proper behavior.
-     */
-    Object bounceTailForm(Store store, CompiledForm form)
-    {
-        return new TailForm(store, form);
-    }
 
 
     /**
@@ -715,18 +766,14 @@ final class Evaluator
 
 
     /**
-     * Makes a procedure call from tail position.
-     * The result MUST be immediately returned to the evaluator,
-     * it's not a normal value!
-     *
-     * @return not null
+     * Wraps an expression for evaluation in tail position.
+     * Must be returned back to this {@link Evaluator} for proper behavior.
      */
-    Object bounceTailCall(Procedure proc, Object... args)
-        throws FusionException
+    Object bounceTailForm(Store store, CompiledForm form)
     {
-        return new TailCall(proc, args);
-
+        return new TailForm(store, form);
     }
+
 
     /**
      * Returned from evaluation of a form when evaluation needs to continue in
@@ -736,13 +783,43 @@ final class Evaluator
      */
     private static final class TailCall
     {
+        final SourceLocation myLoc;
         final Procedure myProc;
         final Object[]  myArgs;
 
-        TailCall(Procedure proc, Object... args)
+        TailCall(SourceLocation loc, Procedure proc, Object... args)
         {
+            myLoc  = loc;
             myProc = proc;
             myArgs = args;
         }
+    }
+
+
+    /**
+     * Makes a procedure call from tail position.
+     * The result MUST be immediately returned to the evaluator,
+     * it's not a normal value!
+     *
+     * @return not null
+     */
+    Object bounceTailCall(Procedure proc, Object... args)
+        throws FusionException
+    {
+        return new TailCall(null, proc, args);
+    }
+
+
+    /**
+     * Makes a procedure call from tail position.
+     * The result MUST be immediately returned to the evaluator,
+     * it's not a normal value!
+     *
+     * @return not null
+     */
+    Object bounceTailCall(SourceLocation loc, Procedure proc, Object... args)
+        throws FusionException
+    {
+        return new TailCall(loc, proc, args);
     }
 }

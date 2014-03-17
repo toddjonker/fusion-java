@@ -2,7 +2,7 @@
 
 (require
   "/check"
-  "/fusion/experimental/equality")
+)
 
 
 (check_void (begin))
@@ -16,6 +16,9 @@
 
 (check_true  (if true  true false))
 (check_false (if false true false))
+
+(check_true  (if (quote a::true)  true false))
+(check_false (if (quote a::false) true false))
 
 // Using exit ensure we don't evaluate the other branch
 

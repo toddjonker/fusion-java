@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -15,13 +15,17 @@ final class StandardRuntime
 {
     private final GlobalState      myGlobalState;
     private final ModuleRegistry   myRegistry;
+    private final String           myDefaultLanguage;
     private final StandardTopLevel myTopLevel;
 
 
     StandardRuntime(FusionRuntimeBuilder builder)
+        throws FusionInterrupt
     {
         IonSystem ionSystem = IonSystemBuilder.standard().build();
         myRegistry = new ModuleRegistry();
+
+        myDefaultLanguage = builder.getDefaultLanguage();
 
         try
         {
@@ -34,8 +38,7 @@ final class StandardRuntime
                 GlobalState.initialize(ionSystem, builder, myRegistry, topNs);
 
             myTopLevel =
-                new StandardTopLevel(myGlobalState, topNs,
-                                     getDefaultLanguage(),
+                new StandardTopLevel(myGlobalState, topNs, myDefaultLanguage,
                                      builder.isDocumenting());
         }
         catch (FusionException e)
@@ -57,9 +60,10 @@ final class StandardRuntime
         return myRegistry;
     }
 
-    String getDefaultLanguage()
+    @Override
+    public String getDefaultLanguage()
     {
-        return "/fusion";
+        return myDefaultLanguage;
     }
 
 
@@ -85,8 +89,15 @@ final class StandardRuntime
             throw new IllegalArgumentException(message);
         }
 
-        return new StandardTopLevel(myGlobalState, myRegistry,
-                                    initialModulePath);
+        try
+        {
+            return new StandardTopLevel(myGlobalState, myRegistry,
+                                        initialModulePath);
+        }
+        catch (FusionInterrupt e)
+        {
+            throw new FusionInterruptedException(e);
+        }
     }
 
 

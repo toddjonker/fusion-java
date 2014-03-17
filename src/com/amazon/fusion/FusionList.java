@@ -285,6 +285,10 @@ final class FusionList
     static BaseList unsafeListSubseq(Evaluator eval, Object list,
                                      int srcPos, int length)
     {
+        BaseList lst = (BaseList) list;
+
+        if (srcPos == 0 && length == lst.size()) return lst;
+
         Object[] copy;
         if (length == 0)
         {
@@ -296,7 +300,7 @@ final class FusionList
             unsafeListCopy(eval, list, srcPos, copy, 0, length);
         }
 
-        return ((BaseList) list).makeSimilar(EMPTY_STRING_ARRAY, copy);
+        return lst.makeSimilar(EMPTY_STRING_ARRAY, copy);
     }
 
 
@@ -1078,9 +1082,18 @@ final class FusionList
         void write(Evaluator eval, Appendable out)
             throws IOException, FusionException
         {
-            // Must inject elements since IonValue writes out with type
-            // annotation.
-            injectElements(eval);
+            synchronized (this)
+            {
+                if (myValues[0] instanceof IonValue)
+                {
+                    // TODO WORKAROUND ION-398
+                    // TODO FUSION-247 Write output without building an IonWriter.
+                    IonWriter iw = WRITER_BUILDER.build(out);
+                    ionize(eval, iw);
+                    return;
+                }
+            }
+            // else our elements have already been injected, ionize as normal.
             super.write(eval, out);
         }
 
@@ -1145,7 +1158,7 @@ final class FusionList
 
 
     /**
-     * @return the Fusion list, not null.
+     * @return the Fusion list, not null (but maybe {@code null.list}).
      */
     static Object checkNullableListArg(Evaluator eval,
                                        Procedure who,
@@ -1155,6 +1168,25 @@ final class FusionList
     {
         String expectation = "nullable list";
         return checkListArg(eval, who, expectation, argNum, args);
+    }
+
+
+    /**
+     * @return not null or {@code null.list}.
+     */
+    static Object checkActualListArg(Evaluator eval,
+                                     Procedure who,
+                                     int       argNum,
+                                     Object... args)
+        throws FusionException, ArgTypeFailure
+    {
+        String expectation = "non-null list";
+        Object result = checkListArg(eval, who, expectation, argNum, args);
+        if (result == null)
+        {
+            throw who.argFailure(expectation, argNum, args);
+        }
+        return result;
     }
 
 
@@ -1337,6 +1369,34 @@ final class FusionList
             int pos = unsafeTruncateIntToJavaInt(eval, args[1]);
 
             return unsafeListRef(eval, args[0], pos);
+        }
+    }
+
+
+    static final class UnsafeListSubseqProc
+        extends Procedure
+    {
+        UnsafeListSubseqProc()
+        {
+            //    "                                                                               |
+            super("Returns a list holding the elements from `list` between positions\n" +
+                  "`from` and `to`.  The following precondition applies:\n" +
+                  "\n" +
+                  "    0 <= from <= to <= (size list)\n" +
+                  "\n" +
+                  "The result may share structure with `list`.",
+                  "list", "from", "to");
+        }
+
+        @Override
+        Object doApply(Evaluator eval, Object[] args)
+            throws FusionException
+        {
+            int from = unsafeTruncateIntToJavaInt(eval, args[1]);
+            int to   = unsafeTruncateIntToJavaInt(eval, args[2]);
+            int len  = to - from;
+
+            return unsafeListSubseq(eval, args[0], from, len);
         }
     }
 

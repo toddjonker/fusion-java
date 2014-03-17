@@ -1,11 +1,11 @@
-// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
 
 (module list '/fusion/base'
 
   '''
 Operations for lists (_a.k.a._ arrays).
 
-A _list_ is a [sequence](fusion/sequence.html) of values with zero-based
+A _list_ is a [sequence][] of values with zero-based
 integer keys and constant-time lookup of elements.  Lists come in three
 concrete types: immutable, mutable, or stretchy; a stretchy list IS-A mutable
 list.  Non-stretchy lists are comparable to Java arrays, while stretchy lists
@@ -101,6 +101,44 @@ The semantics of `add` and `add_m` are described a bit oddly here because they
 are polymorphic operations applicable to other Fusion container types.  The
 `'_m'` suffix is Fusion's spelling of the traditional `'!'` suffix in Scheme
 languages, highlighting potential mutation of an argument.
+
+## Traversing Lists
+
+Lists support the many traversal operators defined over [sequences][sequence]
+and [collections][collection], such as `map`, `choose`, `find`, and
+`fold_left`, and generally you should use those when applicable.
+
+To directly traverse a list, you can write a loop that increments a position
+variable. For example, here's a (list-only) version of `choose`:
+
+    (define (choose pred lst)
+      (let loop [(i 0),
+                 (result (stretchy_list))]
+        (if (= i (size lst))
+          result
+          (let [(e (element lst i))]
+            (loop
+              (+ 1 i)
+              (if (pred e)
+                (add_m result e)
+                result))))))
+
+This loop uses two variables: `i` is the current position in the list, and
+`result` contains the chosen elements. When the loop is called, it receives
+the incremented position, along with either the extended result (if the
+current element `e` satisfies the predicate) or the earlier result as-is.
+
+Bonus tip: the code above would still work if the use of a `strechy_list`
+was replaced with a normal immutable `list`. In that case, `add_m` would
+return a new immutable list, which would then be passed as the new result.
+
+Other alternative traversal forms include [iterators][] and [comprehensions][].
+
+
+  [collection]:     fusion/collection.html
+  [comprehensions]: fusion/for.html
+  [iterators]:      fusion/iterator.html
+  [sequence]:       fusion/sequence.html
   '''
 
 
@@ -122,62 +160,59 @@ languages, highlighting potential mutation of an argument.
 
   // Pass-through bindings from /fusion/sequence
   (provide . add any choose do element elt every find first fold_left has_key
-    is_empty last map size)
+    is_collection is_empty is_sequence last map size subseq)
 
   (defpub_j append_m        "com.amazon.fusion.AppendMProc")
-  (defpub_j subseq          "com.amazon.fusion.IonSubseqProc")
+//  (defpub_j subseq          "com.amazon.fusion.IonSubseqProc")
 
 
   //==========================================================================
   // Basic element access
 
-  (defpub list_element
-    (lambda (list pos)
-      '''
+  (defpub (list_element list pos)
+    '''
 Returns the element of `list` at (zero-based) position `pos`.  An exception is
 thrown if the position is out of bounds.
-      '''
-      (unless (is_list list)
-        (raise_argument_error "list_element" "list" 0 list pos))
-      (unless (and (is_int pos) (not (is_null pos)))
-        (raise_argument_error "list_element" "non-null int" 1 list pos))
-      (when (or (< pos 0) (<= (unsafe_list_size list) pos))
-        (raise_argument_error "list_element" "valid position" 1 list pos))
-      (unsafe_list_element list pos)))
+    '''
+    (unless (is_list list)
+      (raise_argument_error "list_element" "list" 0 list pos))
+    (unless (and (is_int pos) (not (is_null pos)))
+      (raise_argument_error "list_element" "non-null int" 1 list pos))
+    (when (or (< pos 0) (<= (unsafe_list_size list) pos))
+      (raise_argument_error "list_element" "valid position" 1 list pos))
+    (unsafe_list_element list pos))
 
   (defpub list_ref
-      '''
+    '''
 DEPRECATED. Renamed to `list_element`.
 
 **This binding was deprecated in R8 (October 2013) and will be removed in**
 **Q2 2014.**
 Comment on [FUSION-232](issue:FUSION-232) if you
 cannot migrate in time.
-      '''
-      list_element)
+    '''
+    list_element)
 
 
-  (defpub list_set
-    (lambda (list pos value)
-      '''
+  (defpub (list_set list pos value)
+    '''
 Changes the slot of a mutable `list` at (zero-based) position `pos` so it
 holds `value`.  An exception is thrown if the position is out of bounds.
-      '''
-      (unless (is_mutable_list list)
-        (raise_argument_error "list_set" "mutable list" 0 list pos value))
-      (unless (and (is_int pos) (not (is_null pos)))
-        (raise_argument_error "list_set" "non-null int" 1 list pos value))
-      (when (or (< pos 0) (<= (unsafe_list_size list) pos))
-        (raise_argument_error "list_set" "valid position" 1 list pos value))
-      (unsafe_list_set list pos value)))
+    '''
+    (unless (is_mutable_list list)
+      (raise_argument_error "list_set" "mutable list" 0 list pos value))
+    (unless (and (is_int pos) (not (is_null pos)))
+      (raise_argument_error "list_set" "non-null int" 1 list pos value))
+    (when (or (< pos 0) (<= (unsafe_list_size list) pos))
+      (raise_argument_error "list_set" "valid position" 1 list pos value))
+    (unsafe_list_set list pos value))
 
 
   //==========================================================================
   // Modification
 
-  (defpub add_m
-    (lambda (list element)
-      '''
+  (defpub (add_m list element)
+    '''
 Returns a sequence with all the elements of `list` and the `element`.  The
 result sequence is similar to the input, its size is one greater, and it may
 share structure with other sequences.  The input sequence may be mutated.
@@ -187,33 +222,31 @@ particular sequence types may do so.
 
 * For stretchy lists, the `element` is added to the end of the input sequence,
   which is then returned.
-      '''
-      (if (is_list list)
-        (unsafe_list_add_m list element)
-        (raise_argument_error "add_m" "list" 0 list element))))
+    '''
+    (if (is_list list)
+      (unsafe_list_add_m list element)
+      (raise_argument_error "add_m" "list" 0 list element)))
 
 
   //==========================================================================
   // Iteration
 
-  (defpub list_iterator
-    (lambda (list)
-      "Returns an iterator over the content of `list`."
-      (unless (is_list list)
-        (raise_argument_error "list_iterator" "list" 0 list))
-      (unsafe_list_iterator list)))
+  (defpub (list_iterator list)
+    "Returns an iterator over the content of `list`."
+    (unless (is_list list)
+      (raise_argument_error "list_iterator" "list" 0 list))
+    (unsafe_list_iterator list))
 
 
-  (defpub list_from_iterator
-    (lambda (iterator)
-      '''
+  (defpub (list_from_iterator iterator)
+    '''
 Creates a stretchy list with the elements of `iterator`, in the same order.
-      '''
-      (unless (is_iterator iterator)
-        (raise_argument_error "list_from_iterator" "iterator" 0 iterator))
-      (let loop ((result (stretchy_list)))
-        (if (iterator_has_next iterator)
-          (loop (unsafe_list_add_m result (iterator_next iterator)))
-          result))))
+    '''
+    (unless (is_iterator iterator)
+      (raise_argument_error "list_from_iterator" "iterator" 0 iterator))
+    (let loop ((result (stretchy_list)))
+      (if (iterator_has_next iterator)
+        (loop (unsafe_list_add_m result (iterator_next iterator)))
+        result)))
 
 ) // end module
