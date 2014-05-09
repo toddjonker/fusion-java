@@ -2,6 +2,8 @@
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionUtils.safeEquals;
+import static com.amazon.fusion.FusionUtils.safeHashCode;
 import com.amazon.ion.IonReader;
 import com.amazon.ion.TextSpan;
 import com.amazon.ion.util.Spans;
@@ -24,21 +26,21 @@ class SourceLocation
 
 
     /**
-     * Gets the zero-based line number.
-     * @return -1 if the line is unknown.
+     * Gets the one-based line number.
+     * @return zero if the line is unknown.
      */
     long getLine()
     {
-        return -1;
+        return 0;
     }
 
     /**
-     * Gets the zero-based column number.
-     * @return -1 if the column is unknown.
+     * Gets the one-based column number.
+     * @return zero if the column is unknown.
      */
     long getColumn()
     {
-        return -1;
+        return 0;
     }
 
 
@@ -124,6 +126,45 @@ class SourceLocation
 
 
     /**
+     * @param line one-based
+     * @param column one-based
+     */
+    static SourceLocation forLineColumn(SourceName name, long line, long column)
+    {
+        if (line < 1 && column < 1)
+        {
+            if (name == null) return null;
+
+            // TODO Can this allocation be eliminated?
+            //      We'll probably be creating lots of identical instances.
+            return new SourceLocation(name);
+        }
+
+        if (line <= Short.MAX_VALUE && column <= Short.MAX_VALUE)
+        {
+            return new Shorts(name, (short) line, (short) column);
+        }
+
+        if (line <= Integer.MAX_VALUE && column <= Integer.MAX_VALUE)
+        {
+            return new Ints(name, (int) line, (int) column);
+        }
+
+        return new Longs(name, line, column);
+    }
+
+
+    /**
+     * @param line one-based
+     * @param column one-based
+     */
+    static SourceLocation forLineColumn(long line, long column)
+    {
+        return forLineColumn(null, line, column);
+    }
+
+
+    /**
      * Returns an instance that represents the current span of the reader.
      * This currently only supports Ion text sources, and only captures the
      * start position.
@@ -138,9 +179,8 @@ class SourceLocation
         TextSpan ts = Spans.currentSpan(TextSpan.class, source);
         if (ts != null)
         {
-            // Convert from one-based to zero-based.
-            long line   = ts.getStartLine  () - 1;
-            long column = ts.getStartColumn() - 1;
+            long line   = ts.getStartLine  ();
+            long column = ts.getStartColumn();
 
             if (line <= Short.MAX_VALUE && column <= Short.MAX_VALUE)
             {
@@ -169,13 +209,13 @@ class SourceLocation
     private void displayOrdinal(Appendable out, long ord)
         throws IOException
     {
-        if (ord < 0)
+        if (ord < 1)
         {
             out.append("???");
         }
         else
         {
-            FusionUtils.writeFriendlyIndex(out, ord);
+            FusionUtils.writeFriendlyOrdinal(out, ord);
         }
     }
 
@@ -186,7 +226,7 @@ class SourceLocation
         long line   = getLine();
         long column = getColumn();
 
-        if (line < 0)
+        if (line < 1)
         {
             out.append("unknown location in ");
             out.append(myName.display());
@@ -216,5 +256,36 @@ class SourceLocation
         }
         catch (IOException e) { /* shouldn't happen */ }
         return out.toString();
+    }
+
+
+    public boolean equals(SourceLocation that)
+    {
+        return (that != null
+                && safeEquals(this.myName, that.myName)
+                && this.getLine() == that.getLine()
+                && this.getColumn() == that.getColumn());
+    }
+
+    @Override
+    public boolean equals(Object that)
+    {
+        return that instanceof SourceLocation && equals((SourceLocation) that);
+    }
+
+
+    private static final int HASH_SEED = SourceLocation.class.hashCode();
+
+    @Override
+    public int hashCode()
+    {
+        final int prime = 8191;
+        int result = HASH_SEED + safeHashCode(myName);
+        result ^= (result << 29) ^ (result >> 3);
+        result = prime * result + (int) getLine();
+        result ^= (result << 29) ^ (result >> 3);
+        result = prime * result + (int) getColumn();
+        result ^= (result << 29) ^ (result >> 3);
+        return result;
     }
 }

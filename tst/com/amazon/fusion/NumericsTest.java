@@ -1,7 +1,8 @@
-// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionNumber.checkIntArgToJavaLong;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import org.junit.Before;
@@ -71,7 +72,7 @@ public class NumericsTest
     public void testSumArgType()
         throws Exception
     {
-        expectArgTypeFailure("(+ 10 10e-2)",1);
+        expectArgumentExn("(+ 10 10e-2)",1);
     }
 
     @Test
@@ -118,7 +119,7 @@ public class NumericsTest
     public void testProductArgType()
         throws Exception
     {
-        expectArgTypeFailure("(* 10 10e-2)",1);
+        expectArgumentExn("(* 10 10e-2)",1);
     }
 
     @Test
@@ -161,13 +162,44 @@ public class NumericsTest
     public void testDifferenceNoArgs()
         throws Exception
     {
-        expectArityFailure("(-)");
+        expectArityExn("(-)");
     }
 
     @Test
     public void testDifferenceArgType()
         throws Exception
     {
-        expectArgTypeFailure("(- 10 10e-2)",1);
+        expectArgumentExn("(- 10 10e-2)",1);
+    }
+
+
+    //=========================================================================
+
+    private static final class IsMaxLongProc
+        extends Procedure
+    {
+        IsMaxLongProc()
+        {
+            super("doc");
+        }
+
+        @Override
+        Object doApply(Evaluator eval, Object[] args) throws FusionException
+        {
+            long l = checkIntArgToJavaLong(eval, this, 0, args);
+            return FusionBool.makeBool(eval, l == Long.MAX_VALUE);
+        }
+    }
+
+    /**
+     * FUSION-319 longs were getting truncated by
+     * {@link FusionNumber#checkIntArgToJavaLong(Evaluator, Procedure, int, Object...)}.
+     */
+    @Test
+    public void testArgToLong()
+        throws Exception
+    {
+        topLevel().define("is_max_long", new IsMaxLongProc());
+        assertEval(true, "(is_max_long " + Long.MAX_VALUE + ")");
     }
 }

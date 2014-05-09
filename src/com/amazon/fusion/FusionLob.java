@@ -60,9 +60,9 @@ public final class FusionLob
         }
 
         @Override
-        SyntaxValue toStrippedSyntaxMaybe(Evaluator eval)
+        SyntaxValue datumToSyntaxMaybe(Evaluator eval, SourceLocation loc)
         {
-            return makeSyntax(eval, /*location*/ null, this);
+            return makeSyntax(eval, loc, this);
         }
     }
 

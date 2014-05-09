@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -88,9 +88,9 @@ public final class _Private_ModuleDocumenter
         File outputFile = new File(outputDir, doc.baseName() + ".html");
 
         try (ModuleWriter writer =
-                 new ModuleWriter(filter, outputFile, baseUrl))
+                 new ModuleWriter(filter, outputFile, baseUrl, doc))
         {
-            writer.renderModule(doc);
+            writer.renderModule();
         }
     }
 
@@ -196,55 +196,89 @@ public final class _Private_ModuleDocumenter
     private static final class ModuleWriter
         extends HtmlWriter
     {
-        private final Filter myFilter;
-        private final String myBaseUrl;
+        private final Filter            myFilter;
+        private final String            myBaseUrl;
+        private final ModuleDoc         myDoc;
+        private final ModuleIdentity    myModuleId;
         private final MarkdownProcessor myMarkdown = new MarkdownProcessor();
 
-        public ModuleWriter(Filter filter, File outputFile, String baseUrl)
+        public ModuleWriter(Filter    filter,
+                            File      outputFile,
+                            String    baseUrl,
+                            ModuleDoc doc)
             throws IOException
         {
             super(outputFile);
             myFilter  = filter;
             myBaseUrl = baseUrl;
+            myDoc = doc;
+            myModuleId = doc.myModuleId;
         }
 
-        void renderModule(ModuleDoc doc)
+        void renderModule()
             throws IOException
         {
-            String modulePath = doc.myModuleId.absolutePath();
+            String modulePath = myModuleId.absolutePath();
             renderHead(modulePath, myBaseUrl, "module.css");
 
+            renderHeader();
+            renderModuleIntro();
+            renderSubmoduleLinks();
+            renderBindings();
+        }
+
+
+        private void renderModulePathWithLinks(ModuleIdentity id)
+            throws IOException
+        {
+            ModuleIdentity parent = id.parent();
+            if (parent != null)
+            {
+                renderModulePathWithLinks(parent);
+            }
+
+            append('/');
+
+            String baseName = id.baseName();
+
+            if (id == myModuleId)
+            {
+                // Don't link to ourselves, that's silly.
+                append(baseName);
+            }
+            else
+            {
+                linkToModule(id, baseName);
+            }
+        }
+
+        private void renderHeader()
+            throws IOException
+        {
             append("<div class='indexlink'>" +
                    "<a href='index.html'>Top</a> " +
                    "<a href='binding-index.html'>Binding Index</a> " +
                    "(<a href='permuted-index.html'>Permuted</a>)" +
                    "</div>\n");
 
-            renderHeader1("Module " + modulePath);
-
-            renderModuleIntro(doc);
-
-            renderSubmoduleLinks(doc);
-
-            String[] names = doc.sortedExportedNames();
-
-            renderBindings(doc, names);
+            append("<h1>Module ");
+            renderModulePathWithLinks(myModuleId);
+            append("</h1>");
         }
 
-
-        private void renderModuleIntro(ModuleDoc doc)
+        private void renderModuleIntro()
             throws IOException
         {
-            if (doc.myIntroDocs != null)
+            if (myDoc.myIntroDocs != null)
             {
-                markdown(doc.myIntroDocs);
+                markdown(myDoc.myIntroDocs);
             }
         }
 
-        private void renderSubmoduleLinks(ModuleDoc doc)
+        private void renderSubmoduleLinks()
             throws IOException
         {
-            Map<String, ModuleDoc> submodules = doc.submoduleMap();
+            Map<String, ModuleDoc> submodules = myDoc.submoduleMap();
             if (submodules == null) return;
 
             renderHeader2("Submodules");
@@ -274,7 +308,7 @@ public final class _Private_ModuleDocumenter
         }
 
 
-        private void renderBindingIndex(ModuleDoc doc, String[] names)
+        private void renderBindingIndex(String[] names)
             throws IOException
         {
             if (names.length == 0) return;
@@ -283,28 +317,30 @@ public final class _Private_ModuleDocumenter
             for (String name : names)
             {
                 String escapedName = escapeString(name);
-                linkToBindingAsName(doc.myModuleId, escapedName);
+                linkToBindingAsName(myModuleId, escapedName);
                 append("&nbsp;&nbsp;\n");
             }
             append("</div>\n");
         }
 
 
-        private void renderBindings(ModuleDoc doc, String[] names)
+        private void renderBindings()
             throws IOException
         {
-            Map<String, BindingDoc> bindings = doc.bindingMap();
+            Map<String, BindingDoc> bindings = myDoc.bindingMap();
             if (bindings == null) return;
 
             renderHeader2("Exported Bindings");
 
-            renderBindingIndex(doc, names);
+            String[] names = myDoc.sortedExportedNames();
+
+            renderBindingIndex(names);
 
             for (String name : names)
             {
                 // May be null:
                 BindingDoc binding = bindings.get(name);
-                renderBinding(doc, name, binding);
+                renderBinding(name, binding);
             }
         }
 
@@ -319,8 +355,7 @@ public final class _Private_ModuleDocumenter
          *      body
          *      also
          */
-        private void renderBinding(ModuleDoc moduleDoc,
-                                   String name, BindingDoc doc)
+        private void renderBinding(String name, BindingDoc doc)
             throws IOException
         {
             String escapedName = escapeString(name);
@@ -385,7 +420,7 @@ public final class _Private_ModuleDocumenter
                 boolean printedOne = false;
                 for (ModuleIdentity id : ids)
                 {
-                    if (id != moduleDoc.myModuleId && myFilter.accept(id))
+                    if (id != myModuleId && myFilter.accept(id))
                     {
                         if (printedOne)
                         {

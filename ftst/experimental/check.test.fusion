@@ -1,0 +1,269 @@
+// Copyright (c) 2014 Amazon.com, Inc.  All rights reserved.
+
+(require
+  "/fusion/exception"
+  "/fusion/experimental/check"
+)
+
+(define (bad_argument)
+  (head 1))
+
+(define (bad_arity)
+  (pair 1))
+
+(define (bad_result)
+  (let_values [((x y) 1)] true))
+
+
+
+(check = 1 1)
+(check_pred is_truthy 12)
+
+
+//==========================================================================
+// check_true, check_false
+
+(check_true true)
+(check_true (quote a::true))
+
+(expect_check_exn (check_true false))
+(expect_check_exn (check_true 1))      // truthy but not true
+
+(check_false false)
+(check_false (quote a::false))
+
+(expect_check_exn (check_false true))
+(expect_check_exn (check_false null))      // untruthy but not false
+
+
+//==========================================================================
+// check_null
+
+(check_null null)
+(check_null null.int)
+(check_null null.int "msg")
+
+(expect_check_exn (check_null (void)))
+(expect_check_exn (check_null (void) "msg"))
+
+
+//==========================================================================
+// check_void
+
+(check_void (void))
+(check_void (void) "msg")
+
+(expect_check_exn (check_void null))
+(expect_check_exn (check_void null "msg"))
+
+
+//==========================================================================
+// check_same
+
+(check_same 1 1)
+(check_same 1 1 "message")
+
+(expect_check_exn (check_same 1 2))
+(expect_check_exn (check_same 1 2 "msg"))
+
+
+// Malformed uses
+(expect_syntax_exn (check_same))
+(expect_syntax_exn (check_same 1))
+(expect_syntax_exn (check_same 1 2 "msg" "extra"))
+
+
+//==========================================================================
+// check_annotations
+
+(check_annotations [] null)
+(check_annotations (sexp) null)
+
+(check_annotations ["a"] (quote a::null))
+
+(check_annotations ["a", "b"]    (quote a::b::c))
+(check_annotations (quote (a b)) (quote a::b::null))
+
+(expect_check_exn
+  (check_annotations ["b", "a"] (quote a::b::null)))
+
+
+// Malformed uses
+(expect_syntax_exn (check_annotations 2))
+
+
+//==========================================================================
+// define_check
+
+(define_check (check_foo0) 1)
+(check_foo0)
+(check_foo0 "message")
+(expect_syntax_exn (check_foo0 "message" "extra"))
+
+(define_check (check_foo1 arg) 1)
+(check_foo1 1)
+(check_foo1 1 "message")
+(expect_syntax_exn (check_foo1))
+(expect_syntax_exn (check_foo1 1 "message" "extra"))
+
+
+(define_check (check_doc) "documentation" true)
+(check_doc)
+
+
+// Unsupported recursive use of a check form.
+(define_check (recur n) (if (== n 0) true (recur (- n 1))))
+(expect_any_exn (recur 2))
+
+
+// Malformed uses
+(expect_syntax_exn (define_check))
+(expect_syntax_exn (define_check () 1))
+(expect_syntax_exn (define_check [check_foo] 1))
+(expect_syntax_exn (define_check ("check_foo") 1))
+(expect_syntax_exn (define_check ((check_foo)) 1))
+(expect_syntax_exn (define_check (check_foo "arg") 1))
+(expect_syntax_exn (define_check (check_foo "arg" arg) 1))
+(expect_syntax_exn (define_check (check_foo arg "arg" arg) 1))
+
+
+//==========================================================================
+// define_simple_check
+
+(define_simple_check (ok) false true)
+(ok)
+
+
+// Malformed uses
+(expect_syntax_exn (define_simple_check))
+(expect_syntax_exn (define_simple_check () 1))
+(expect_syntax_exn (define_simple_check [check_foo] 1))
+(expect_syntax_exn (define_simple_check ("check_foo") 1))
+(expect_syntax_exn (define_simple_check ((check_foo)) 1))
+(expect_syntax_exn (define_simple_check (check_foo "arg") 1))
+(expect_syntax_exn (define_simple_check (check_foo "arg" arg) 1))
+(expect_syntax_exn (define_simple_check (check_foo arg "arg" arg) 1))
+
+
+//==========================================================================
+// define_binary_check
+
+(define_binary_check (?== e a) (== e a))
+(?== 1 1)
+(expect_check_exn (?== 1 2))
+
+
+// Malformed uses
+(expect_syntax_exn (define_binary_check))
+(expect_syntax_exn (define_binary_check () 1))
+(expect_syntax_exn (define_binary_check [check_foo] 1))
+(expect_syntax_exn (define_binary_check ("check_foo") 1))
+(expect_syntax_exn (define_binary_check ((check_foo)) 1))
+(expect_syntax_exn (define_binary_check (check_foo "arg") 1))
+(expect_syntax_exn (define_binary_check (check_foo "arg" arg) 1))
+(expect_syntax_exn (define_binary_check (check_foo arg "arg" arg) 1))
+
+(expect_syntax_exn (define_binary_check expected) 1)
+(expect_syntax_exn (define_binary_check expected actual extra) 1)
+
+
+//==========================================================================
+// expect_check_exn
+
+(expect_check_exn (fail))
+(expect_check_exn (fail "message"))
+(expect_check_exn (fail_check))
+(expect_check_exn (check = 1 2))
+(expect_check_exn (expect_check_exn (check = 1 1)))
+
+
+// Malformed uses
+(expect_syntax_exn (expect_check_exn))
+(expect_syntax_exn (expect_check_exn true "message" "extra"))
+
+
+//==========================================================================
+// expect_argument_exn
+
+(expect_argument_exn
+  (raise_argument_error "here" "truth and beauty" -1 "ugliness"))
+
+(expect_argument_exn (bad_argument))
+
+
+// Malformed uses
+(expect_syntax_exn (expect_argument_exn))
+(expect_syntax_exn (expect_argument_exn true "message" "extra"))
+
+
+//==========================================================================
+// expect_arity_exn
+
+(expect_arity_exn (raise_arity_error "foo" 1))
+
+(expect_arity_exn (bad_arity))
+
+
+// Malformed uses
+(expect_syntax_exn (expect_arity_exn))
+(expect_syntax_exn (expect_arity_exn true "message" "extra"))
+
+
+//==========================================================================
+// expect_result_exn
+
+(expect_result_exn (raise_result_error "here" "int" "string"))
+
+(expect_result_exn (bad_result))
+
+
+// Malformed uses
+(expect_syntax_exn (expect_result_exn))
+(expect_syntax_exn (expect_result_exn true "message" "extra"))
+
+
+//==========================================================================
+// expect_contract_exn
+
+(expect_contract_exn (raise_contract_error "proc" "something went wrong"))
+
+(expect_contract_exn (bad_argument))  // Argument exn IS-A contract exn
+(expect_contract_exn (bad_arity))     // Arity    exn IS-A contract exn
+(expect_contract_exn (bad_result))    // Result   exn IS-A contract exn
+
+
+// Malformed uses
+(expect_syntax_exn (expect_contract_exn))
+(expect_syntax_exn (expect_contract_exn true "message" "extra"))
+
+
+//==========================================================================
+// expect_syntax_exn
+
+(expect_syntax_exn (wrong_syntax (quote_syntax foo) "you are wrong"))
+
+(expect_syntax_exn (lambda))
+
+
+// Malformed uses
+(expect_syntax_exn (expect_syntax_exn))
+(expect_syntax_exn (expect_syntax_exn true "message" "extra"))
+
+
+//==========================================================================
+// expect_any_exn
+
+(expect_any_exn (/ 1. 0.))
+
+// Check subtypes
+(expect_any_exn (bad_argument))
+(expect_any_exn (bad_arity))
+(expect_any_exn (bad_result))
+(expect_any_exn (fail))
+(expect_any_exn (raise_contract_error "proc" "oops"))
+(expect_any_exn (wrong_syntax (quote_syntax here) "oops"))
+
+
+// Malformed uses
+(expect_syntax_exn (expect_any_exn))
+(expect_syntax_exn (expect_any_exn true "message" "extra"))

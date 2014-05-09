@@ -19,6 +19,11 @@ public class ContractException
         super(message);
     }
 
+    ContractException(String message, Throwable cause)
+    {
+        super(message, cause);
+    }
+
     /**
      * @param location may be null.
      */
@@ -26,5 +31,25 @@ public class ContractException
     {
         super(message);
         addContext(location);
+    }
+
+    /**
+     * @param location may be null.
+     */
+    ContractException(String message, SourceLocation location,
+                      Throwable cause)
+    {
+        super(message, cause);
+        addContext(location);
+    }
+
+    /**
+     * Returns the formatted message as provided by the application.
+     *
+     * @return may be null if no message values were provided.
+     */
+    public String getUserMessage()
+    {
+        return getBaseMessage();
     }
 }

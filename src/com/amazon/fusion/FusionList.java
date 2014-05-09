@@ -15,7 +15,6 @@ import static com.amazon.fusion.FusionNumber.unsafeTruncateIntToJavaInt;
 import static com.amazon.fusion.FusionUtils.EMPTY_OBJECT_ARRAY;
 import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
 import static com.amazon.fusion.FusionVoid.voidValue;
-import static com.amazon.fusion.Syntax.datumToStrippedSyntaxMaybe;
 import com.amazon.fusion.FusionBool.BaseBool;
 import com.amazon.fusion.FusionCompare.EqualityTier;
 import com.amazon.fusion.FusionSequence.BaseSequence;
@@ -217,14 +216,24 @@ final class FusionList
     }
 
 
-    static Object unsafeListRef(Evaluator eval, Object list, int pos)
+    static Object unsafeListElement(Evaluator eval, Object list, int pos)
     {
         return ((BaseList) list).unsafeRef(eval, pos);
     }
 
+    /**
+     * @deprecated
+     * Renamed to {@link #unsafeListElement(Evaluator, Object, int)}.
+     */
+    @Deprecated
+    static Object unsafeListRef(Evaluator eval, Object list, int pos)
+    {
+        return unsafeListElement(eval, list, pos);
+    }
+
 
     static void unsafeListSet(Evaluator eval, Object list,
-                                int pos, Object value)
+                              int pos, Object value)
     {
         ((MutableList) list).unsafeSet(pos, value);
     }
@@ -547,31 +556,44 @@ final class FusionList
          * @return null if an element can't be converted into syntax.
          */
         @Override
-        SyntaxValue toStrippedSyntaxMaybe(Evaluator eval)
+        SyntaxValue datumToSyntaxMaybe(Evaluator      eval,
+                                       SyntaxSymbol   context,
+                                       SourceLocation loc)
             throws FusionException
         {
+            SyntaxList stx;
+
             int size = size();
             if (size == 0 && (this instanceof ImmutableList))
             {
-                return SyntaxList.make(eval, null, this);
+                stx = SyntaxList.make(eval, null, this);
             }
-
-            Object[] children = new Object[size];
-            for (int i = 0; i < size; i++)
+            else
             {
-                Object rawChild = unsafeRef(eval, i);
-                Object child = datumToStrippedSyntaxMaybe(eval, rawChild);
-                if (child == null)
+                Object[] children = new Object[size];
+                for (int i = 0; i < size; i++)
                 {
-                    // Hit something that's not syntax-able
-                    return null;
+                    Object rawChild = unsafeRef(eval, i);
+                    Object child =
+                        Syntax.datumToSyntaxMaybe(eval, rawChild, context, loc);
+                    if (child == null)
+                    {
+                        // Hit something that's not syntax-able
+                        return null;
+                    }
+                    children[i] = child;
                 }
-                children[i] = child;
+
+                String[] anns = annotationsAsJavaStrings();
+                Object list = immutableList(eval, anns, children);
+                stx = SyntaxList.make(eval, loc, list);
             }
 
-            String[] anns = annotationsAsJavaStrings();
-            Object list = immutableList(eval, anns, children);
-            return SyntaxList.make(eval, null, list);
+            // TODO FUSION-329 This should retain context, but not push it
+            //      down to the current children (which already have it).
+            //return Syntax.applyContext(eval, context, stx);
+
+            return stx;
         }
 
 
@@ -1145,7 +1167,7 @@ final class FusionList
                                String    expectation,
                                int       argNum,
                                Object... args)
-        throws FusionException, ArgTypeFailure
+        throws FusionException, ArgumentException
     {
         Object arg = args[argNum];
         if (arg instanceof BaseList)
@@ -1164,7 +1186,7 @@ final class FusionList
                                        Procedure who,
                                        int       argNum,
                                        Object... args)
-        throws FusionException, ArgTypeFailure
+        throws FusionException, ArgumentException
     {
         String expectation = "nullable list";
         return checkListArg(eval, who, expectation, argNum, args);
@@ -1178,7 +1200,7 @@ final class FusionList
                                      Procedure who,
                                      int       argNum,
                                      Object... args)
-        throws FusionException, ArgTypeFailure
+        throws FusionException, ArgumentException
     {
         String expectation = "non-null list";
         Object result = checkListArg(eval, who, expectation, argNum, args);
@@ -1368,7 +1390,7 @@ final class FusionList
         {
             int pos = unsafeTruncateIntToJavaInt(eval, args[1]);
 
-            return unsafeListRef(eval, args[0], pos);
+            return unsafeListElement(eval, args[0], pos);
         }
     }
 

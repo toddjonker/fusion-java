@@ -1,0 +1,63 @@
+// Copyright (c) 2014 Amazon.com, Inc.  All rights reserved.
+
+(require
+  "/fusion/eval"
+  "/fusion/experimental/check"
+  "/fusion/experimental/syntax"
+)
+
+(define ctx (quote_syntax ctx))
+
+(define_check (check_loc expected actual)
+  (check === (syntax_line     expected) (syntax_line     actual))
+  (check === (syntax_column   expected) (syntax_column   actual))
+//(check === (syntax-position expected) (syntax-position actual))
+  )
+
+// When given a location, datum->syntax uses it for all new syntax objects
+// created, not just the outermost one.
+
+(let [(s (datum_to_syntax
+           (quote (a (b)))
+           ctx
+           ctx))]
+  (check_loc ctx s)
+  (check_loc ctx (. (syntax_unwrap s) 0))  // a
+  (check_loc ctx (. (syntax_unwrap s) 1))  // (b)
+  (check_loc ctx (. (syntax_unwrap (. (syntax_unwrap s) 1)) 0)))  // b
+
+// Exiting syntax objects keep their locations.
+
+(define inner1 (quote_syntax inner1))
+(define inner2 (datum_to_syntax (quote inner2) ctx)) // no location
+
+(let [(s (datum_to_syntax
+           (sexp inner1 (sexp inner2))  // TODO use quasiquote
+           ctx
+           ctx))]
+  (check_loc ctx    s)
+  (check_loc inner1 (. (syntax_unwrap s) 0))                        // inner1
+  (check_loc ctx    (. (syntax_unwrap s) 1))                        // (inner)
+  (check_loc inner2 (. (syntax_unwrap (. (syntax_unwrap s) 1)) 0))) // inner2
+
+
+(define val "outside_M")
+
+(module M "/fusion"
+  (require "/fusion/experimental/syntax")
+  (define val "inside_M")
+  (define inside_id (quote_syntax inside_id))
+  (provide inside_id))
+(require M)
+
+(check === "outside_M"
+  (eval (datum_to_syntax (quote_syntax val) inside_id)))
+
+(let ((val (quote_syntax val)))
+  (check same (datum_to_syntax val inside_id) val))
+
+
+// Context must be copied eagerly, without replacing existing syntax objects.
+(let ((val (quote_syntax val)))
+  (check same val
+    (syntax_get (datum_to_syntax (sexp 1 val) inside_id) 1)))

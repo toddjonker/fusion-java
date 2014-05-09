@@ -27,12 +27,16 @@ final class StandardTopLevel
     StandardTopLevel(GlobalState globalState,
                      Namespace namespace,
                      String initialModulePath,
+                     _Private_CoverageCollector collector,
                      boolean documenting)
         throws FusionInterrupt, FusionException
     {
         assert ModuleIdentity.isValidAbsoluteModulePath(initialModulePath);
 
-        Evaluator eval = new Evaluator(globalState);
+        Evaluator eval = (collector == null
+                            ? new Evaluator(globalState)
+                            : new CoverageEvaluator(globalState, collector));
+
         if (documenting)
         {
             eval = eval.markedContinuation(COLLECT_DOCS_MARK, TRUE);
@@ -53,6 +57,7 @@ final class StandardTopLevel
         throws FusionInterrupt, FusionException
     {
         this(globalState, new TopLevelNamespace(registry), initialModulePath,
+             null /* coverage collector */,
              false);
     }
 
@@ -201,8 +206,8 @@ final class StandardTopLevel
                 String expected =
                     "injectable Java type but received " +
                         value.getClass().getName();
-                throw new ArgTypeFailure("TopLevel.define", expected,
-                                         -1, value);
+                throw new ArgumentException("TopLevel.define", expected,
+                                            -1, value);
             }
 
             myNamespace.bind(name, fv);
@@ -274,9 +279,9 @@ final class StandardTopLevel
                     String expected =
                         "injectable Java type but received " +
                             arg.getClass().getName();
-                    throw new ArgTypeFailure("TopLevel.call",
-                                             expected,
-                                             i, arguments);
+                    throw new ArgumentException("TopLevel.call",
+                                                expected,
+                                                i, arguments);
                 }
                 arguments[i] = fv;
             }

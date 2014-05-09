@@ -4,6 +4,7 @@ package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionSexp.isSexp;
 import static com.amazon.fusion.FusionSymbol.isSymbol;
+import static com.amazon.fusion.FusionSymbol.makeSymbol;
 import static com.amazon.fusion.Syntax.datumToSyntax;
 import static com.amazon.ion.util.IonTextUtils.printQuotedSymbol;
 import com.amazon.fusion.Namespace.NsBinding;
@@ -137,14 +138,15 @@ final class ProvideForm
             // at the same time.
             for (NsBinding binding : moduleNamespace.getBindings())
             {
-                // TODO the datum->syntax context should be the whole sexp
+                // TODO FUSION-329 the datum->syntax context should be the sexp
                 // form `(all_defined_out)` not just `all_defined_out` but
                 // we don't currently retain context on SyntaxSexp after
                 // it has been pushed down to children.
                 SyntaxSymbol localized = (SyntaxSymbol)
                     datumToSyntax(eval,
-                                  SyntaxSymbol.make(eval, binding.getName()),
-                                  tag);
+                                  makeSymbol(eval, binding.getName()),
+                                  tag,
+                                  null);
                 localized = localized.copyAndResolveTop();
                 Binding localBinding = moduleNamespace.localResolve(localized);
                 if (localBinding != null && binding.sameTarget(localBinding))

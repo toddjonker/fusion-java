@@ -1,7 +1,8 @@
 // Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
 
 (require
-  "/check"
+  "/fusion/experimental/check"
+  "/testutils"
 )
 
 
@@ -16,3 +17,5 @@
 (check_false (is_void false))
 
 (check_false (is_void UNDEF))
+
+(check_void (void))

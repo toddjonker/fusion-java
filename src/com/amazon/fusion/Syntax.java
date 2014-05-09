@@ -25,9 +25,9 @@ final class Syntax
     /**
      * @param context may be null, in which case nothing happens.
      */
-    private static SyntaxValue applyContext(Evaluator eval,
-                                            SyntaxSymbol context,
-                                            SyntaxValue datum)
+    static SyntaxValue applyContext(Evaluator    eval,
+                                    SyntaxSymbol context,
+                                    SyntaxValue  datum)
         throws FusionException
     {
         if (context != null)
@@ -39,16 +39,21 @@ final class Syntax
 
 
     /**
-     * TODO FUSION-242 This needs to do cycle detection.
+     * @param context may be null, in which case no lexical information is
+     * applied to converted objects.
      *
      * @return null if something in the datum can't be converted into syntax.
      */
-    static SyntaxValue datumToStrippedSyntaxMaybe(Evaluator eval, Object datum)
+    static SyntaxValue datumToSyntaxMaybe(Evaluator      eval,
+                                          Object         datum,
+                                          SyntaxSymbol   context,
+                                          SourceLocation location)
         throws FusionException
     {
         if (datum instanceof BaseValue)
         {
-            return ((BaseValue) datum).toStrippedSyntaxMaybe(eval);
+            return ((BaseValue) datum).datumToSyntaxMaybe(eval, context,
+                                                          location);
         }
 
         return null;
@@ -57,47 +62,27 @@ final class Syntax
 
     /**
      * @param context may be null, in which case no lexical information is
-     * applied (and any existing is stripped).
-     *
-     * @return null if something in the datum can't be converted into syntax.
-     */
-    static SyntaxValue datumToSyntaxMaybe(Evaluator eval,
-                                          Object datum,
-                                          SyntaxSymbol context)
-        throws FusionException
-    {
-        if (isSyntax(eval, datum))
-        {
-            return datumToSyntax(eval, (SyntaxValue) datum, context);
-        }
-
-        SyntaxValue stx = datumToStrippedSyntaxMaybe(eval, datum);
-        if (stx == null) return null;
-
-        return applyContext(eval, context, stx);
-    }
-
-
-    /**
-     * @param context may be null, in which case no lexical information is
-     * applied (and any existing is stripped).
+     * applied to converted objects.
      * @param whosCalling The form to name for error messages; may be null.
      *
      * @return not null.
      */
-    static SyntaxValue datumToSyntax(Evaluator eval,
-                                     Object datum,
-                                     SyntaxSymbol context,
-                                     String whosCalling)
+    static SyntaxValue datumToSyntax(Evaluator      eval,
+                                     Object         datum,
+                                     SyntaxSymbol   context,
+                                     SourceLocation location,
+                                     String         whosCalling)
         throws FusionException
     {
-        SyntaxValue stx = datumToSyntaxMaybe(eval, datum, context);
+        SyntaxValue stx = datumToSyntaxMaybe(eval, datum, context, location);
         if (stx == null)
         {
-            String message =
-                (whosCalling == null ? "datum_to_syntax" : whosCalling) +
-                " expects syntax object or ionizable data, given " + datum;
-            throw new ContractException(message);
+            if (whosCalling == null) whosCalling = "datum_to_syntax";
+
+            throw new ArgumentException(whosCalling,
+                                        "syntax object or ionizable data",
+                                        -1,
+                                        datum);
         }
 
         return stx;
@@ -105,30 +90,16 @@ final class Syntax
 
     /**
      * @param context may be null, in which case no lexical information is
-     * applied (and any existing is stripped).
+     * applied to converted objects.
      *
      * @return not null.
      */
-    static SyntaxValue datumToSyntax(Evaluator eval,
-                                     Object datum,
-                                     SyntaxSymbol context)
+    static SyntaxValue datumToSyntax(Evaluator      eval,
+                                     Object         datum,
+                                     SyntaxSymbol   context,
+                                     SourceLocation location)
         throws FusionException
     {
-        return datumToSyntax(eval, datum, context, null);
-    }
-
-
-    /**
-     * @param context may be null, in which case no lexical information is
-     * applied (and any existing is stripped).
-     */
-    static SyntaxValue datumToSyntax(Evaluator eval,
-                                     SyntaxValue datum,
-                                     SyntaxSymbol context)
-        throws FusionException
-    {
-        // TODO FUSION-183 Strip location and properties?
-        datum = datum.stripWraps(eval);
-        return applyContext(eval, context, datum);
+        return datumToSyntax(eval, datum, context, location, null);
     }
 }

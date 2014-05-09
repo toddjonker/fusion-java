@@ -105,6 +105,9 @@ public class FusionRuntimeBuilder
     private File    myBootstrapRepository;
     private File[]  myRepositoryDirectories;
     private String  myDefaultLanguage = STANDARD_DEFAULT_LANGUAGE;
+
+    private _Private_CoverageCollector myCollector;
+
     private boolean myDocumenting;
 
 
@@ -116,6 +119,7 @@ public class FusionRuntimeBuilder
         this.myBootstrapRepository   = that.myBootstrapRepository;
         this.myRepositoryDirectories = that.myRepositoryDirectories;
         this.myDefaultLanguage       = that.myDefaultLanguage;
+        this.myCollector             = that.myCollector;
         this.myDocumenting           = that.myDocumenting;
     }
 
@@ -410,7 +414,7 @@ public class FusionRuntimeBuilder
     //=========================================================================
 
 
-    private boolean isValidBootstrapRepo(File repo)
+    private static boolean isValidBootstrapRepo(File repo)
     {
         File src = new File(repo, "src");
         File fusionModule = new File(new File(src, "fusion"), "base.fusion");
@@ -527,6 +531,11 @@ public class FusionRuntimeBuilder
             directory = directory.getAbsoluteFile();
         }
 
+        if (! directory.isDirectory())
+        {
+           String message = "Repository is not a directory: " + directory;
+           throw new IllegalArgumentException(message);
+        }
 
         File src = new File(directory, "src");
         if (! src.isDirectory())
@@ -587,13 +596,29 @@ public class FusionRuntimeBuilder
     }
 
 
+    /** NOT FOR APPLICATION USE */
+    _Private_CoverageCollector getCoverageCollector()
+    {
+        return myCollector;
+    }
+
+    /** NOT FOR APPLICATION USE */
+    void setCoverageCollector(_Private_CoverageCollector collector)
+    {
+        mutationCheck();
+        myCollector = collector;
+    }
+
+
     //=========================================================================
 
 
     private FusionRuntimeBuilder fillDefaults()
     {
-        FusionRuntimeBuilder b = this;
-        if (b.myCurrentDirectory == null)
+        // Ensure that we don't modify the user's builder.
+        FusionRuntimeBuilder b = copy();
+
+        if (b.getInitialCurrentDirectory() == null)
         {
             String userDir = System.getProperty("user.dir", "");
             if (userDir.isEmpty())
@@ -605,10 +630,10 @@ public class FusionRuntimeBuilder
             }
 
             // Don't change the caller's instance
-            b = b.withInitialCurrentDirectory(new File(userDir));
+            b.setInitialCurrentDirectory(new File(userDir));
         }
 
-        if (b.myBootstrapRepository == null)
+        if (b.getBootstrapRepository() == null)
         {
             String property = PROPERTY_BOOTSTRAP_REPOSITORY;
             String bootstrap = System.getProperty(property);
@@ -628,7 +653,7 @@ public class FusionRuntimeBuilder
                     throw new IllegalArgumentException(message);
                 }
 
-                b = b.withBootstrapRepository(file);
+                b.setBootstrapRepository(file);
             }
         }
 

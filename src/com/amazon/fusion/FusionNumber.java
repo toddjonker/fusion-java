@@ -99,9 +99,9 @@ final class FusionNumber
         }
 
         @Override
-        SyntaxValue toStrippedSyntaxMaybe(Evaluator eval)
+        SyntaxValue datumToSyntaxMaybe(Evaluator eval, SourceLocation loc)
         {
-            return makeSyntax(eval, /*location*/ null, this);
+            return makeSyntax(eval, loc, this);
         }
     }
 
@@ -945,12 +945,6 @@ final class FusionNumber
         {
             return FusionNumber.annotate(this, annotations);
         }
-
-        @Override
-        SyntaxValue toStrippedSyntaxMaybe(Evaluator eval)
-        {
-            return makeSyntax(eval, /*location*/ null, this);
-        }
     }
 
 
@@ -1785,7 +1779,7 @@ final class FusionNumber
                                     Procedure who,
                                     int       argNum,
                                     Object... args)
-        throws FusionException, ArgTypeFailure
+        throws FusionException, ArgumentException
     {
         Object arg = args[argNum];
         if (arg instanceof LongInt)
@@ -1809,16 +1803,12 @@ final class FusionNumber
                                       Procedure who,
                                       int       argNum,
                                       Object... args)
-        throws FusionException, ArgTypeFailure
+        throws FusionException, ArgumentException
     {
         Object arg = args[argNum];
         if (arg instanceof LongInt)
         {
-            long i = ((LongInt) arg).myContent;
-            if (Long.MIN_VALUE <= i && i <= Long.MAX_VALUE)
-            {
-                return (int) i;
-            }
+            return ((LongInt) arg).myContent;
         }
 
         throw who.argFailure("64-bit int", argNum, args);
@@ -1834,7 +1824,7 @@ final class FusionNumber
                                   String    expectation,
                                   int       argNum,
                                   Object... args)
-        throws FusionException, ArgTypeFailure
+        throws FusionException, ArgumentException
     {
         Object arg = args[argNum];
         if (arg instanceof BaseInt)
@@ -1853,7 +1843,7 @@ final class FusionNumber
                                           Procedure who,
                                           int argNum,
                                           Object... args)
-        throws FusionException, ArgTypeFailure
+        throws FusionException, ArgumentException
     {
         String expectation = "nullable int";
         return checkIntArg(eval, who, expectation, argNum, args);
@@ -1867,7 +1857,7 @@ final class FusionNumber
                                           Procedure who,
                                           int       argNum,
                                           Object... args)
-        throws FusionException, ArgTypeFailure
+        throws FusionException, ArgumentException
     {
         String expectation = "non-null int";
         BigInteger result = checkIntArg(eval, who, expectation, argNum, args);
@@ -1892,7 +1882,7 @@ final class FusionNumber
                                       String    expectation,
                                       int       argNum,
                                       Object... args)
-        throws FusionException, ArgTypeFailure
+        throws FusionException, ArgumentException
     {
         Object arg = args[argNum];
         if (arg instanceof BaseDecimal)
@@ -1903,6 +1893,17 @@ final class FusionNumber
         throw who.argFailure(expectation, argNum, args);
     }
 
+    static BigDecimal checkNullableDecimalArg(Evaluator eval,
+                                              Procedure who,
+                                              int       argNum,
+                                              Object... args)
+        throws FusionException, ArgumentException
+    {
+        String expectation = "nullable decimal";
+        BigDecimal result = checkDecimalArg(eval, who, expectation, argNum, args);
+        return result;
+    }
+
 
     /**
      * @return not null
@@ -1911,7 +1912,7 @@ final class FusionNumber
                                               Procedure who,
                                               int       argNum,
                                               Object... args)
-        throws FusionException, ArgTypeFailure
+        throws FusionException, ArgumentException
     {
         String expectation = "non-null decimal";
         BigDecimal result =
@@ -1937,7 +1938,7 @@ final class FusionNumber
                                    String    expectation,
                                    int       argNum,
                                    Object... args)
-        throws FusionException, ArgTypeFailure
+        throws FusionException, ArgumentException
     {
         Object arg = args[argNum];
         if (arg instanceof BaseFloat)
@@ -1953,7 +1954,7 @@ final class FusionNumber
                                         Procedure who,
                                         int       argNum,
                                         Object... args)
-        throws FusionException, ArgTypeFailure
+        throws FusionException, ArgumentException
     {
         String expectation = "nullable float";
         BaseFloat f = checkFloatArg(eval, who, expectation, argNum, args);
@@ -1968,7 +1969,7 @@ final class FusionNumber
                                         Procedure who,
                                         int       argNum,
                                         Object... args)
-        throws FusionException, ArgTypeFailure
+        throws FusionException, ArgumentException
     {
         String expectation = "non-null float";
 
@@ -2226,10 +2227,10 @@ final class FusionNumber
             catch (ArithmeticException e)
             {
                 String message =
-                    getInferredName() + ": result of division isn't exact.\n" +
-                        "Arguments were:\n  " + safeWriteToString(eval, args[0]) +
-                        "\n  " + safeWriteToString(eval, args[1]);
-                throw new ContractException(message);
+                    "Result of division isn't exact.\n" +
+                    "Arguments were:\n  " + safeWriteToString(eval, args[0]) +
+                    "\n  " + safeWriteToString(eval, args[1]);
+                throw contractFailure(message, e);
             }
         }
 
@@ -2293,7 +2294,7 @@ final class FusionNumber
                 }
             }
 
-            throw new ArgTypeFailure(this, "non-null int or decimal", 0, arg0);
+            throw new ArgumentException(this, "non-null int or decimal", 0, arg0);
         }
     }
 
@@ -2329,7 +2330,7 @@ final class FusionNumber
                 }
             }
 
-            throw new ArgTypeFailure(this, "non-null int or decimal", 0, arg0);
+            throw new ArgumentException(this, "non-null int or decimal", 0, arg0);
         }
     }
 }

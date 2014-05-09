@@ -19,7 +19,6 @@ import static com.amazon.fusion.FusionText.textToJavaString;
 import static com.amazon.fusion.FusionText.unsafeTextToJavaString;
 import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
 import static com.amazon.fusion.FusionVoid.voidValue;
-import static com.amazon.fusion.Syntax.datumToStrippedSyntaxMaybe;
 import static com.amazon.ion.util.IonTextUtils.printSymbol;
 import static java.util.Collections.EMPTY_MAP;
 import com.amazon.fusion.FusionBool.BaseBool;
@@ -39,6 +38,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 
 final class FusionStruct
@@ -356,6 +356,20 @@ final class FusionStruct
     }
 
 
+    static Set<String> unsafeStructKeys(Evaluator eval, Object struct)
+        throws FusionException
+    {
+        return ((BaseStruct) struct).keys(eval);
+    }
+
+
+    static boolean unsafeStructHasKey(Evaluator eval, Object struct, String key)
+        throws FusionException
+    {
+        return ((BaseStruct) struct).hasKey(eval, key);
+    }
+
+
     static void unsafeStructFieldVisit(Evaluator eval, Object struct,
                                        StructFieldVisitor visitor)
         throws FusionException
@@ -366,8 +380,26 @@ final class FusionStruct
     /**
      * @param struct must be a {@link BaseStruct}.
      * @return void if the position is out of bounds.
+     *
+     * @deprecated
+     * Renamed to {@link #unsafeStructElt(Evaluator, Object, String)}.
      */
+    @Deprecated
     static Object unsafeStructDot(Evaluator eval, Object struct, String field)
+        throws FusionException
+    {
+        return ((BaseStruct) struct).elt(eval, field);
+    }
+
+    /**
+     * Equivalent to {@code (elt struct field)}.
+     *
+     * @param struct must be a struct; it may be {@code null.struct} or empty.
+     *
+     * @return void if the struct is null or if the field name doesn't
+     * exist in the struct.
+     */
+    static Object unsafeStructElt(Evaluator eval, Object struct, String field)
         throws FusionException
     {
         return ((BaseStruct) struct).elt(eval, field);
@@ -467,6 +499,9 @@ final class FusionStruct
 
     static interface StructFieldVisitor
     {
+        /**
+         * @return null means continue visiting, non-null means abort visiting.
+         */
         Object visit(String name, Object value)
             throws FusionException;
     }
@@ -483,6 +518,8 @@ final class FusionStruct
             throws IOException, FusionException;
 
         int size(); // Doesn't throw
+
+        Set<String> keys(Evaluator eval);
 
         /**
          * Visits each field in the struct, stopping as soon as the visitation
@@ -574,16 +611,31 @@ final class FusionStruct
         }
 
         @Override
-        SyntaxValue toStrippedSyntaxMaybe(Evaluator eval)
+        SyntaxValue datumToSyntaxMaybe(Evaluator      eval,
+                                       SyntaxSymbol   context,
+                                       SourceLocation loc)
             throws FusionException
         {
-            return SyntaxStruct.make(eval, /*location*/ null, this);
+            SyntaxValue stx = SyntaxStruct.make(eval, loc, this);
+
+            // TODO FUSION-329 This should retain context, but not push it
+            //      down to the current children (which already have it).
+            //return Syntax.applyContext(eval, context, stx);
+
+            return stx;
         }
+
 
         @Override
         public int size()
         {
             return 0;
+        }
+
+        @Override
+        public Set<String> keys(Evaluator eval)
+        {
+            return Collections.emptySet();
         }
 
         @Override
@@ -832,6 +884,12 @@ final class FusionStruct
         }
 
         @Override
+        public Set<String> keys(Evaluator eval)
+        {
+            return Collections.unmodifiableSet(getMap(eval).keySet());
+        }
+
+        @Override
         public void visitFields(Evaluator eval, StructFieldVisitor visitor)
             throws FusionException
         {
@@ -937,7 +995,9 @@ final class FusionStruct
          * @return null if an element can't be converted into syntax.
          */
         @Override
-        SyntaxValue toStrippedSyntaxMaybe(final Evaluator eval)
+        SyntaxValue datumToSyntaxMaybe(final Evaluator      eval,
+                                       final SyntaxSymbol   context,
+                                       final SourceLocation loc)
             throws FusionException
         {
             StructFieldVisitor visitor = new StructFieldVisitor()
@@ -947,7 +1007,7 @@ final class FusionStruct
                     throws FusionException
                 {
                     SyntaxValue stripped =
-                        datumToStrippedSyntaxMaybe(eval, value);
+                        Syntax.datumToSyntaxMaybe(eval, value, context, loc);
                     if (stripped == null)
                     {
                         // Hit something that's not syntax-able
@@ -960,7 +1020,8 @@ final class FusionStruct
             try
             {
                 Object datum = transformFields(eval, visitor);
-                return SyntaxStruct.make(eval, /*location*/ null, datum);
+                SyntaxValue stx = SyntaxStruct.make(eval, loc, datum);
+                return Syntax.applyContext(eval, context, stx);
             }
             catch (StripFailure e)  // This is crazy.
             {
@@ -1586,7 +1647,7 @@ final class FusionStruct
                                  String    expectation,
                                  int       argNum,
                                  Object... args)
-        throws FusionException, ArgTypeFailure
+        throws FusionException, ArgumentException
     {
         Object arg = args[argNum];
         if (arg instanceof BaseStruct)
@@ -1605,7 +1666,7 @@ final class FusionStruct
                                          Procedure who,
                                          int       argNum,
                                          Object... args)
-        throws FusionException, ArgTypeFailure
+        throws FusionException, ArgumentException
     {
         String expectation = "nullable struct";
         return checkStructArg(eval, who, expectation, argNum, args);
@@ -2076,7 +2137,7 @@ final class FusionStruct
                 {
                     String expectation =
                         "sequence of non-empty strings or symbols";
-                    throw new ArgTypeFailure(identify(), expectation, 0, args);
+                    throw new ArgumentException(this, expectation, 0, args);
                 }
 
                 Object valueObj = valueIterator.next();

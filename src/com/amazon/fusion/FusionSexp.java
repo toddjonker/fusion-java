@@ -11,7 +11,6 @@ import static com.amazon.fusion.FusionCompare.EqualityTier.TIGHT_EQUAL;
 import static com.amazon.fusion.FusionIo.dispatchIonize;
 import static com.amazon.fusion.FusionIo.dispatchWrite;
 import static com.amazon.fusion.FusionVoid.voidValue;
-import static com.amazon.fusion.Syntax.datumToStrippedSyntaxMaybe;
 import com.amazon.fusion.FusionBool.BaseBool;
 import com.amazon.fusion.FusionCompare.EqualityTier;
 import com.amazon.fusion.FusionIterator.AbstractIterator;
@@ -331,10 +330,15 @@ final class FusionSexp
         }
 
         @Override
-        SyntaxValue toStrippedSyntaxMaybe(Evaluator eval)
+        SyntaxValue datumToSyntaxMaybe(Evaluator      eval,
+                                       SyntaxSymbol   context,
+                                       SourceLocation loc)
             throws FusionException
         {
-            return SyntaxSexp.make(eval, null, this);
+            assert size() == 0;
+
+            SyntaxValue stx = SyntaxSexp.make(eval, loc, this);
+            return Syntax.applyContext(eval, context, stx);
         }
 
         @Override
@@ -535,7 +539,7 @@ final class FusionSexp
                 return size;
             }
 
-            throw new ArgTypeFailure("size", "proper sexp", 0, this);
+            throw new ArgumentException("size", "proper sexp", 0, this);
         }
 
         @Override
@@ -670,20 +674,25 @@ final class FusionSexp
         /**
          * Converts this pair to a normal pair of syntax objects.
          */
-        private BaseSexp toPairOfStrippedSyntaxMaybe(Evaluator eval)
+        private BaseSexp toPairOfSyntaxMaybe(Evaluator eval,
+                                             SyntaxSymbol   context,
+                                             SourceLocation loc)
             throws FusionException
         {
-            SyntaxValue head = datumToStrippedSyntaxMaybe(eval, myHead);
+            SyntaxValue head =
+                Syntax.datumToSyntaxMaybe(eval, myHead, context, loc);
             if (head == null) return null;
 
             Object tail = myTail;
             if (isPair(eval, tail))
             {
-                tail = ((ImmutablePair)tail).toPairOfStrippedSyntaxMaybe(eval);
+                tail = ((ImmutablePair)tail).toPairOfSyntaxMaybe(eval,
+                                                                 context,
+                                                                 loc);
             }
             else if (! isEmptySexp(eval, tail))
             {
-                tail = datumToStrippedSyntaxMaybe(eval, tail);
+                tail = Syntax.datumToSyntaxMaybe(eval, tail, context, loc);
             }
             if (tail == null) return null;
 
@@ -696,13 +705,22 @@ final class FusionSexp
          * @return null if an element can't be converted into syntax.
          */
         @Override
-        SyntaxValue toStrippedSyntaxMaybe(Evaluator eval)
+        SyntaxValue datumToSyntaxMaybe(Evaluator      eval,
+                                       SyntaxSymbol   context,
+                                       SourceLocation loc)
             throws FusionException
         {
-            BaseSexp newPair = toPairOfStrippedSyntaxMaybe(eval);
-            return SyntaxSexp.make(eval, null, newPair);
-        }
+            BaseSexp newPair = toPairOfSyntaxMaybe(eval, context, loc);
+            if (newPair == null) return null;
 
+            SyntaxValue stx = SyntaxSexp.make(eval, loc, newPair);
+
+            // TODO FUSION-329 This should retain context, but not push it
+            //      down to the current children (which already have it).
+            //return Syntax.applyContext(eval, context, stx);
+
+            return stx;
+        }
 
         @Override
         IonSexp copyToIonValue(ValueFactory factory,
@@ -954,8 +972,8 @@ final class FusionSexp
             }
             catch (ClassCastException e)
             {
-                throw new ArgTypeFailure("iterator_next", "proper sexp",
-                                         0, this);
+                throw new ArgumentException("iterator_next", "proper sexp",
+                                            0, this);
             }
         }
     }

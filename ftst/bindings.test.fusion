@@ -1,28 +1,29 @@
 // Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
 
 (require
-  "/check"
+  "/fusion/experimental/check"
+  "/testutils"
 )
 
 
 (define rester
   (lambda rest
-    (assert (is_sexp rest))
+    (check_pred is_sexp rest)
     rest))
 
-(check === (rester)       (sexp))
-(check === (rester 1)     (sexp 1))
-(check === (rester 1 2 3) (sexp 1 2 3))
+(check === (sexp)       (rester))
+(check === (sexp 1)     (rester 1))
+(check === (sexp 1 2 3) (rester 1 2 3))
 
-(check === (apply rester [])         (sexp))
-(check === (apply rester [1])        (sexp 1))
-(check === (apply rester 1 2 [3, 4]) (sexp 1 2 3 4))
+(check === (sexp)         (apply rester []))
+(check === (sexp 1)       (apply rester [1]))
+(check === (sexp 1 2 3 4) (apply rester 1 2 [3, 4]))
 
 
 // Duplicate bound names
-(check_compile_exn
+(expect_syntax_exn
   (lambda (x x) true))
-(check_compile_exn
+(expect_syntax_exn
   (lambda (x a b c x) true))
 
 
@@ -35,7 +36,8 @@
 //==========================================================================
 // set
 
-(check === ((lambda (x) (set x (+ x 1)) x) 0) 1)
+(check === 1
+  ((lambda (x) (set x (+ x 1)) x) 0))
 
 (define counter
   (let ((c 0))
@@ -43,110 +45,105 @@
       (set c (+ 1 c))
       c)))
 
-(check === (counter) 1)
-(check === (counter) 2)
-(check === (counter) 3)
+(check === 1 (counter))
+(check === 2 (counter))
+(check === 3 (counter))
 
 
 //==========================================================================
 // let
 
 // Duplicate bound names
-(check_compile_exn
+(expect_syntax_exn
   (let [(x 1), (b 2), (x 3)] true))
 
 
 //==========================================================================
 // let_values
 
-(check = (let_values [] 1) 1)
+(check === 1
+  (let_values [] 1))
 
-(check = (let_values [((x) 1)] x) 1)
+(check === 1
+  (let_values [((x) 1)] x))
 
-(check ===
+(check === 3
   (let_values
     [((x) 1),
      ((y) (values 2))]
-    (+ x y))
-  3)
+    (+ x y)))
 
-(check ===
+(check === 6
   (let_values
     [((x) 1),
      ((y) 2),
      ((z) 3)]
-    (+ x y z))
-  6)
+    (+ x y z)))
 
-(check ===
+(check === 11
   // The dummy var ensures that the x vars have different offsets
   (let [(dummy -1), (x 1)]
     (let_values
       [((x) (+ x 2)),
        ((y) (+ x 10))]
-      y))
-  11)
+      y)))
 
-(check =
-  (let_values [(() (values))] 303)
-  303)
-(check ===
+(check === 303
+  (let_values [(() (values))] 303))
+(check === 112
   (let [(dummy -1), (x 1)]
     (let_values [((x y) (values 10 x)),
                  ((z p) (values x 100))]
-      (+ x y z p)))
-  112)
+      (+ x y z p))))
 
 
 // Duplicate bound names
-(check_compile_exn
+(expect_syntax_exn
   (let_values [((x) 1), ((x) 2)] 3))
-(check_compile_exn
+(expect_syntax_exn
   (let_values [((x x) (values 1 2))] 3))
 
-// Arity mismatch
-(check_contract_exn
+// Result arity mismatch
+(expect_result_exn
   (let_values [(() 1)] 3))
-(check_contract_exn
+(expect_result_exn
   (let_values [((x) (values))] 3))
-(check_contract_exn
+(expect_result_exn
   (let_values [((x) (values 1 2 3))] 3))
-(check_contract_exn
+(expect_result_exn
   (let_values [((x y) (values 1))] 3))
-(check_contract_exn
+(expect_result_exn
   (let_values [((x y) (values 1 2 3))] 3))
-(check_contract_exn
+(expect_result_exn
   (let_values [((x) 1), ((y z) (values 1 2 3))] 3))
 
 
 //==========================================================================
 // letrec
 
-(check = (letrec [] 1) 1)
+(check = 1 (letrec [] 1))
 
 (check ident UNDEF
   (letrec [(a b), (c 3), (b a)] a))
 
 
 // Duplicate bound names
-(check_compile_exn
+(expect_syntax_exn
   (letrec [(x 1), (b 2), (x 3)] true))
 
 
 //==========================================================================
 // lets
 
-(check = (lets [] 225) 225)
-(check = (lets [(x 226)] x) 226)
+(check === 225 (lets [] 225))
+(check === 226 (lets [(x 226)] x))
 
-(check ===
+(check === (+ 19 222)
   (let [(x 5)]
-    (lets [(x 19), (y (+ x 222))] y))
-  (+ 19 222))
+    (lets [(x 19), (y (+ x 222))] y)))
 
-(check ===
-  (lets [(x 19), (y (+ x 222))] y)
-  (+ 19 222))
+(check === (+ 19 222)
+  (lets [(x 19), (y (+ x 222))] y))
 
 
 //==========================================================================

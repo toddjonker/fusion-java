@@ -90,9 +90,28 @@ abstract class BaseValue
 
 
     /**
+     * Contained {@link SyntaxValue}s must be left unchanged, so the context
+     * is pushed eagerly.
+     * <p>
+     * TODO FUSION-242 This needs to do cycle detection.
+     *
+     * @return null if something in this datum can't be converted into syntax.
+     */
+    SyntaxValue datumToSyntaxMaybe(Evaluator      eval,
+                                   SyntaxSymbol   context,
+                                   SourceLocation loc)
+        throws FusionException
+    {
+        SyntaxValue stx = datumToSyntaxMaybe(eval, loc);
+        if (stx == null) return null;
+
+        return Syntax.applyContext(eval, context, stx);
+    }
+
+    /**
      * @return null if something in the datum can't be converted into syntax.
      */
-    SyntaxValue toStrippedSyntaxMaybe(Evaluator eval)
+    SyntaxValue datumToSyntaxMaybe(Evaluator eval, SourceLocation loc)
         throws FusionException
     {
         return null;
