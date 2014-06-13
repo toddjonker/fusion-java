@@ -25,8 +25,8 @@ public class StackTraceTest
         if (locations.isEmpty())
         {
             // This is probably a parsing error, since the evaluator will
-            // otherwise ensure a topmost locations.
-            throw e;
+            // otherwise ensure there's a location.
+            throw new AssertionError("No source locations in exception", e);
         }
         myStack = locations.iterator();
     }

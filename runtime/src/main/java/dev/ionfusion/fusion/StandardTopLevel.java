@@ -120,6 +120,10 @@ final class StandardTopLevel
 
             return result;
         }
+        catch (FusionException e)
+        {
+            throw rewriteStackTrace(e);
+        }
         catch (FusionInterrupt e)
         {
             throw new FusionInterruptedException(e);
@@ -147,6 +151,10 @@ final class StandardTopLevel
             return load.loadTopLevel(myEvaluator,
                                      myNamespace,
                                      source.toString());
+        }
+        catch (FusionException e)
+        {
+            throw rewriteStackTrace(e);
         }
         catch (FusionInterrupt e)
         {
@@ -182,6 +190,10 @@ final class StandardTopLevel
                 ModuleLocation.forIonReader(source, name);
 
             resolver.loadModule(eval, id, loc, true /* reload it */);
+        }
+        catch (FusionException e)
+        {
+            throw rewriteStackTrace(e);
         }
         catch (FusionInterrupt e)
         {
@@ -240,6 +252,10 @@ final class StandardTopLevel
         {
             myNamespace.require(myEvaluator, modulePath);
         }
+        catch (FusionException e)
+        {
+            throw rewriteStackTrace(e);
+        }
         catch (FusionInterrupt e)
         {
             throw new FusionInterruptedException(e);
@@ -264,6 +280,10 @@ final class StandardTopLevel
         {
 
             myNamespace.bind(name, fv);
+        }
+        catch (FusionException e)
+        {
+            throw rewriteStackTrace(e);
         }
         catch (FusionInterrupt e)
         {
@@ -310,6 +330,10 @@ final class StandardTopLevel
                                       " is not a procedure: " +
                                       safeWriteToString(myEvaluator, proc));
         }
+        catch (FusionException e)
+        {
+            throw rewriteStackTrace(e);
+        }
         catch (FusionInterrupt e)
         {
             throw new FusionInterruptedException(e);
@@ -340,6 +364,10 @@ final class StandardTopLevel
             // TODO Should this set current_namespace?
             return myEvaluator.callNonTail(proc, arguments);
         }
+        catch (FusionException e)
+        {
+            throw rewriteStackTrace(e);
+        }
         catch (FusionInterrupt e)
         {
             throw new FusionInterruptedException(e);
@@ -367,5 +395,12 @@ final class StandardTopLevel
         }
 
         return call((Procedure) procedure, arguments);
+    }
+
+
+    private FusionException rewriteStackTrace(FusionException e)
+    {
+        e.rewriteStackTrace();
+        return e;
     }
 }

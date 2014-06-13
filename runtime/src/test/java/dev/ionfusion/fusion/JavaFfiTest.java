@@ -4,6 +4,7 @@
 package dev.ionfusion.fusion;
 
 import static com.amazon.ion.util.IonTextUtils.printString;
+
 import dev.ionfusion.fusion.FusionNumber.SumProc;
 import dev.ionfusion.runtime.base.FusionException;
 import org.junit.jupiter.api.BeforeEach;
@@ -63,6 +64,16 @@ public class JavaFfiTest
         }
     }
 
+    public static class Unappliable extends Procedure
+    {
+        @Override
+        Object doApply(Evaluator eval, Object[] args)
+            throws FusionException
+        {
+            throw new RuntimeException("boom");
+        }
+    }
+
 
     private String name(Class<?> c)
     {
@@ -91,5 +102,14 @@ public class JavaFfiTest
         expectContractExn("(define foo (java_new " + name(Abstract.class) + "))");
         expectContractExn("(define foo (java_new " + name(Uninstantiable.class) + "))");
         expectContractExn("(define foo (java_new " + name(Uninstantiable.class) + " null))");
-   }
+    }
+
+    @Test
+    public void testCrashingProc()
+        throws Exception
+    {
+        topLevel().define("p", new Unappliable());
+        //topLevel().call("p");
+        topLevel().eval("(map p [1, 2])");
+    }
 }
