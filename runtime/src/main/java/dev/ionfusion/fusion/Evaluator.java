@@ -467,17 +467,10 @@ class Evaluator
                         checkSingleArgResults(args);
                         result = tail.myProc.doApply(this, args);
                     }
-                    catch (FusionException e)
+                    catch (Throwable e)
                     {
-                        e.addContext(tail.myLoc);
-                        throw e;
+                        throw FusionException.withContext(e, tail.myLoc);
                     }
-//                    catch (Throwable e)
-//                    {
-//                        FusionException fe = new FusionException(e);
-//                        fe.addContext(tail.myLoc);
-//                        throw fe;
-//                    }
 
                     continue checkingResult;
                 }
@@ -498,10 +491,9 @@ class Evaluator
         {
             return eval(store, form);
         }
-        catch (FusionException e)
+        catch (Throwable e)
         {
-            e.addContext(loc);
-            throw e;
+            throw FusionException.withContext(e, loc);
         }
     }
 
@@ -527,17 +519,10 @@ class Evaluator
                 checkSingleArgResults(args);
                 result = proc.doApply(this, args);
             }
-            catch (FusionException e)
+            catch (Throwable e)
             {
-                e.addContext(callLocation);
-                throw e;
+                throw FusionException.withContext(e, callLocation);
             }
-//            catch (Throwable e)
-//            {
-//                FusionException fe = new FusionException(e);
-//                fe.addContext(callLocation);
-//                throw fe;
-//            }
 
             checkingResult: while (true)
             {

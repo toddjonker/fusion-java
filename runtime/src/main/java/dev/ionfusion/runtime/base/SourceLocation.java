@@ -9,6 +9,7 @@ import com.amazon.ion.IonReader;
 import com.amazon.ion.OffsetSpan;
 import com.amazon.ion.TextSpan;
 import com.amazon.ion.util.Spans;
+import java.io.File;
 import java.io.IOException;
 import java.util.Objects;
 
@@ -397,6 +398,57 @@ public class SourceLocation
         catch (IOException e) { /* shouldn't happen */ }
         return out.toString();
     }
+
+
+    @SuppressWarnings("unused")
+    StackTraceElement toStackTraceElement()
+    {
+        String declaringClass = "Unknown Fusion Source";
+        String methodName     = "";                        // Cannot be null.
+        String fileName       = null;
+        int    lineNumber     = -1;
+
+        SourceName name = getSourceName();
+        if (name != null)
+        {
+            File f = name.getFile();
+            if (f != null) fileName = f.getPath();
+
+            ModuleIdentity id = name.getModuleIdentity();
+            if (id != null)
+            {
+                declaringClass = id.absolutePath();
+            }
+            else if (f != null)
+            {
+                declaringClass = f.getName();
+            }
+        }
+
+        long longLine = getLine();
+        if (longLine > 0)
+        {
+            methodName = " L" + longLine;
+
+            long longCol  = getColumn();
+            if (longCol > 0)
+            {
+                methodName += ", C" + longCol;
+            }
+
+            methodName += ' ';
+
+            // We've got line/col already, this is redundant.
+            if (false && longLine <= Integer.MAX_VALUE)
+            {
+                lineNumber = (int) longLine;
+            }
+        }
+
+        return new StackTraceElement(declaringClass, methodName,
+                                     fileName, lineNumber);
+    }
+
 
     /**
      * Returns a view of this object suitable for debugging.

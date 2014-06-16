@@ -20,7 +20,7 @@ import dev.ionfusion.runtime.base.FusionException;
  * {@link FusionInterruptedException}.
  */
 @SuppressWarnings("serial")
-final class FusionInterrupt
+public final class FusionInterrupt
     extends Error
 {
     FusionInterrupt()

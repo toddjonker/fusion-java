@@ -139,10 +139,9 @@ final class FusionEval
 
             return result;
         }
-        catch (FusionException e)
+        catch (Throwable e)
         {
-            e.addContext(topLocation);
-            throw e;
+            throw FusionException.withContext(e, topLocation);
         }
     }
 

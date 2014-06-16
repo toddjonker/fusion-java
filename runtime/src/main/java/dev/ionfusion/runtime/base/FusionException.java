@@ -6,7 +6,8 @@ package dev.ionfusion.runtime.base;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.unmodifiableList;
 
-import java.io.File;
+import dev.ionfusion.fusion.FusionInterrupt;
+import dev.ionfusion.fusion.StackRewriteException;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,6 +34,16 @@ import java.util.Objects;
 public class FusionException
     extends Exception
 {
+    static {
+        // Force the SRE class to be loaded and initialized.  Otherwise we may
+        // fail to do so in dire circumstances like stack overflow.
+        StackRewriteException.initClass(); // XXX deadlock warning
+
+        // These alternatives did not work in the stack overflow case:
+        //   Class c = StackRewriteException.class;
+        //   StackRewriteException.class.getName();
+    }
+
     /**
      * The Fusion stack trace, aggregated by {@code catch} clauses in the
      * interpreter as the Java stack unwinds.
@@ -53,6 +64,31 @@ public class FusionException
     public FusionException(Throwable cause)
     {
         super(cause.getMessage(), cause);
+    }
+
+
+
+    /**
+     * See {@link StandardTopLevel#exceptionForExit(Throwable)}
+     * for parallel code.
+     */
+    public static FusionException withContext(Throwable e, SourceLocation location)
+    {
+        FusionException fe;
+        if (e instanceof FusionException)
+        {
+            fe = ((FusionException) e);
+        }
+        else if (e instanceof FusionInterrupt)
+        {
+            throw (FusionInterrupt) e;
+        }
+        else
+        {
+            fe = new StackRewriteException(e, location);
+        }
+        fe.addContext(location);
+        return fe;
     }
 
 
@@ -181,72 +217,38 @@ public class FusionException
 
     // TODO Override toString() to not print the Java class?
 
-    public void rewriteStackTrace()
+    protected List<StackTraceElement> translateContinuation()
     {
-        if (myContext == null) return;
+        if (myContext == null) return emptyList();
 
         ArrayList<StackTraceElement> elts =
             new ArrayList<>(myContext.size());
-
 
         for (SourceLocation loc : myContext)
         {
             if (loc != null)
             {
-                String declaringClass = "Unknown Fusion Source";
-                String methodName     = "";                 // Cannot be null.
-                String fileName       = null;
-                int    lineNumber     = -1;
-
-                SourceName name = loc.getSourceName();
-                if (name != null)
-                {
-                    File f = name.getFile();
-                    if (f != null) fileName = f.getPath();
-
-                    ModuleIdentity id = name.getModuleIdentity();
-                    if (id != null)
-                    {
-                        declaringClass = id.absolutePath();
-                    }
-                    else if (f != null)
-                    {
-                        declaringClass = f.getName();
-                    }
-                }
-
-                long longLine = loc.getLine();
-                if (longLine > 0)
-                {
-                    methodName = "L" + longLine;
-
-                    long longCol  = loc.getColumn();
-                    if (longCol > 0)
-                    {
-                        methodName += ",C" + longCol;
-                    }
-
-                    if (longLine <= Integer.MAX_VALUE)
-                    {
-                        lineNumber = (int) longLine;
-                    }
-                }
-
-                StackTraceElement e =
-                    new StackTraceElement(declaringClass, methodName,
-                                          fileName, lineNumber);
+                StackTraceElement e = loc.toStackTraceElement();
                 elts.add(e);
             }
         }
 
+        return elts;
+    }
+
+
+    public FusionException rewriteStackTrace(int framesToDrop)
+    {
+        if (myContext == null) return this;
+
+        List<StackTraceElement> elts = translateContinuation();
+
         int size = elts.size();
         if (size != 0)
         {
-            int dropFrames = 2;
-
-            // Determine how many frames are below the rewrite point.
+            // Determine how many frames are below the rewrite zone.
             StackTraceElement[] oldTrace = new Exception().getStackTrace();
-            int oldLen = oldTrace.length - dropFrames;
+            int oldLen = oldTrace.length - framesToDrop;
 
             // Now get the "real" trace.
             oldTrace = getStackTrace();
@@ -258,9 +260,10 @@ public class FusionException
 
             setStackTrace(trace);
 
-            // TODO Consider releasing this; tests depend on it.
-//          myContext = null;
+            myContext = null;
         }
+
+        return this;
     }
 
 }
