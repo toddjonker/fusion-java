@@ -1,0 +1,241 @@
+// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+
+(require
+  "/fusion/experimental/check"
+  "/testutils"
+)
+
+
+//==========================================================================
+// let
+
+(check === 1 (let ((x 1)) x))
+(check === 3 (let ((x 1) (y 2))
+               (+ x y)))
+(check === 11 (let ((x 1) (y 2))
+                (let [(x 10), (y x)]
+                  (+ x y))))
+(check === 1 (let ((u (void))) (if (is_void u) 1 2)))
+
+
+// No bindings
+(check === 2 (let () 2))
+
+// Multiple body forms
+(check === 2 (let ((x 1))
+               x
+               (+ x x)))
+
+
+(check === 3628800 (let fac ((n 10))
+                     (if (= 0 n)
+                         1
+                         (* n (fac (- n 1))))))
+
+
+(expect_syntax_exn
+  (let))
+(expect_syntax_exn
+  (let ((x 1))))
+(expect_syntax_exn
+  (let 12 13))
+(expect_syntax_exn
+  (let null.sexp 13))
+
+// Bound name not an identifier
+(expect_syntax_exn (let ((1 1)         ) true))
+(expect_syntax_exn (let ((name 1) (1 1)) true))
+
+// Bad loop name
+(expect_syntax_exn (let null.symbol []      true))
+(expect_syntax_exn (let null.symbol ((n 1)) true))
+
+(expect_syntax_exn
+  (let (12) 13))
+(expect_syntax_exn
+  (let (1 2) 13))
+(expect_syntax_exn
+  (let (()) 13))
+(expect_syntax_exn
+  (let ((n 1 2)) 13))
+(expect_syntax_exn
+  (let ((12)) 13))
+(expect_syntax_exn
+  (let ((1 2)) 13))
+(expect_syntax_exn
+  (let ((name)) 13))
+(expect_syntax_exn
+  (let ((name 1) ()) 13))
+(expect_syntax_exn
+  (let ((name 1) (name2)) 13))
+
+// Duplicate bound names
+(expect_syntax_exn
+  (let [(x 1), (b 2), (x 3)] true))
+
+
+//==========================================================================
+// let_values
+
+(check === 1
+  (let_values [] 1))
+
+(check === 1
+  (let_values [((x) 1)] x))
+
+(check === 3
+  (let_values
+    [((x) 1),
+     ((y) (values 2))]
+    (+ x y)))
+
+(check === 6
+  (let_values
+    [((x) 1),
+     ((y) 2),
+     ((z) 3)]
+    (+ x y z)))
+
+(check === 11
+  // The dummy var ensures that the x vars have different offsets
+  (let [(dummy -1), (x 1)]
+    (let_values
+      [((x) (+ x 2)),
+       ((y) (+ x 10))]
+      y)))
+
+(check === 303
+  (let_values [(() (values))] 303))
+(check === 112
+  (let [(dummy -1), (x 1)]
+    (let_values [((x y) (values 10 x)),
+                 ((z p) (values x 100))]
+      (+ x y z p))))
+
+
+// Duplicate bound names
+(expect_syntax_exn
+  (let_values [((x) 1), ((x) 2)] 3))
+(expect_syntax_exn
+  (let_values [((x x) (values 1 2))] 3))
+
+// Result arity mismatch
+(expect_result_exn
+  (let_values [(() 1)] 3))
+(expect_result_exn
+  (let_values [((x) (values))] 3))
+(expect_result_exn
+  (let_values [((x) (values 1 2 3))] 3))
+(expect_result_exn
+  (let_values [((x y) (values 1))] 3))
+(expect_result_exn
+  (let_values [((x y) (values 1 2 3))] 3))
+(expect_result_exn
+  (let_values [((x) 1), ((y z) (values 1 2 3))] 3))
+
+
+//==========================================================================
+// letrec
+
+(check === 1 (letrec [] 1))
+
+(check === 5 (letrec ((v 5)) v))
+
+(check ident UNDEF
+  (letrec [(a b), (c 3), (b a)] a))
+
+(check_true
+  (letrec ((is_even (lambda (n)
+                      (or (= 0 n)
+                          (is_odd (- n 1)))))
+           (is_odd (lambda (n)
+                     (and (not (= 0 n))
+                          (is_even (- n 1))))))
+    (is_odd 11)))
+
+// Bound name not an identifier
+(expect_syntax_exn (letrec ((1 1)         ) true))
+(expect_syntax_exn (letrec ((name 1) (1 1)) true))
+
+// Duplicate bound names
+(expect_syntax_exn
+  (letrec [(x 1), (b 2), (x 3)] true))
+
+
+(expect_syntax_exn (letrec))
+(expect_syntax_exn (letrec ((x 1))))
+(expect_syntax_exn (letrec 12 13))
+(expect_syntax_exn (letrec null.sexp 13))
+(expect_syntax_exn (letrec (12) 13))
+(expect_syntax_exn (letrec (1 2) 13))
+(expect_syntax_exn (letrec (()) 13))
+(expect_syntax_exn (letrec ((12)) 13))
+(expect_syntax_exn (letrec ((name)) 13))
+(expect_syntax_exn (letrec ((name 1 2)) 13))
+(expect_syntax_exn (letrec ((name 1) ()) 13))
+(expect_syntax_exn (letrec ((name 1) (name2)) 13))
+
+
+//==========================================================================
+// lets
+
+(check === 225 (lets [] 225))
+(check === 226 (lets [(x 226)] x))
+
+(check === (+ 19 222)
+  (let [(x 5)]
+    (lets [(x 19), (y (+ x 222))] y)))
+
+(check === (+ 19 222)
+  (lets [(x 19), (y (+ x 222))] y))
+
+
+(expect_syntax_exn
+  (lets))
+(expect_syntax_exn
+  (lets ((x 1))))
+(expect_syntax_exn
+  (lets ((1 1)) true))            // Bound name not an identifier
+(expect_syntax_exn
+  (lets ((name 1) (1 1)) true))   // Bound name not an identifier
+(expect_syntax_exn
+  (lets 12 13))
+(expect_syntax_exn
+  (lets null.sexp 13))
+(expect_syntax_exn
+  (lets null.symbol [] true))  // Bad loop name
+(expect_syntax_exn
+  (lets (12) 13))
+(expect_syntax_exn
+  (lets (1 2) 13))
+(expect_syntax_exn
+  (lets (()) 13))
+(expect_syntax_exn
+  (lets ((n 1 2)) 13))
+(expect_syntax_exn
+  (lets ((12)) 13))
+(expect_syntax_exn
+  (lets ((1 2)) 13))
+(expect_syntax_exn
+  (lets ((name)) 13))
+(expect_syntax_exn
+  (lets ((name 1) ()) 13))
+(expect_syntax_exn
+  (lets ((name 1) (name2)) 13))
+
+
+//==========================================================================
+// is_undef
+//   ... tested here because undef should only come out of letrec
+
+(define (is_undef v)
+  (ident UNDEF v))
+
+(check_true  (is_undef UNDEF))
+(check_false (is_undef (void)))
+(check_false (is_undef null))
+(check_false (is_undef true))
+(check_false (is_undef false))
+(check_false (is_undef 0))
+(check_false (is_undef ""))
+

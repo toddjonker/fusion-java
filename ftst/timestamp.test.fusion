@@ -8,6 +8,8 @@
 // Here's the bindings we expect to be available:
 (module check_bindings '/fusion/timestamp'
   [ '<', '<=', '=', '>=', '>',
+    adjust_year, adjust_month, adjust_day,
+    adjust_hour, adjust_minute, adjust_second,
     epoch_millis_to_timestamp, is_timestamp, string_to_timestamp,
     timestamp_now, timestamp_to_epoch_millis, timestamp_to_string
   ])
@@ -32,6 +34,64 @@
 
 
 //============================================================================
+
+(require "/fusion/timestamp")
+
+
+(define_check (check_adjust_args proc)
+  (expect_arity_exn (proc))
+  (expect_arity_exn (proc 2012T))
+  (expect_arity_exn (proc 2012T 1 2))
+
+  (expect_argument_exn (proc 1 1))
+  (expect_argument_exn (proc 1234T 1.)
+
+  (expect_argument_exn (proc 2014T 2147483648))))  // Bigger than Java MAX_INT
+
+(check_adjust_args adjust_year)
+(check_adjust_args adjust_month)
+(check_adjust_args adjust_day)
+(check_adjust_args adjust_hour)
+(check_adjust_args adjust_minute)
+
+
+
+(check === 2011T      (adjust_year 2012T      -1))
+(check === 2012T      (adjust_year 2012T       0))
+(check === 2013T      (adjust_year 2012T       1))
+(check === 2007-02-28 (adjust_year 2012-02-29 -5))
+(check === 2008-02-29 (adjust_year 2012-02-29 -4))
+(check === 2016-02-29 (adjust_year 2012-02-29  4))
+(check === 2017-02-28 (adjust_year 2012-02-29  5))
+
+
+(check === 2013T       (adjust_month 2012T    12))
+(check === 2011-12T    (adjust_month 2012-04T -4))
+(check === 2012-03T    (adjust_month 2012-04T -1))
+(check === 2012-05T    (adjust_month 2012-04T  1))
+(check === 2013-01T    (adjust_month 2012-04T  9))
+(check === 2011-12-23T (adjust_month 2012-04-23T -4))
+(check === 2012-03-23T (adjust_month 2012-04-23T -1))
+(check === 2012-05-23T (adjust_month 2012-04-23T  1))
+(check === 2013-01-23T (adjust_month 2012-04-23T  9))
+
+(check === 2013-01-23T19:03:23.45678+12:34
+  (adjust_month 2012-04-23T19:03:23.45678+12:34  9))
+
+(check === 2012-03-01T19:03:23.45678+12:34
+  (adjust_day 2012-01-31T19:03:23.45678+12:34  30))
+
+(check === 2012-02-29T03:03:23.45678+12:34
+  (adjust_hour 2012-02-28T02:03:23.45678+12:34 25))
+
+(check === 2012-02-29T03:03:23.45678+12:34
+  (adjust_minute 2012-02-28T02:03:23.45678+12:34 (* 25 60)))
+
+(check === 2012-02-29T03:03:23.45678+12:34
+  (adjust_second 2012-02-28T02:03:23.45678+12:34 (* 25 60 60)))
+
+
+//============================================================================
 // timestamp_to_epoch_millis, epoch_millis_to_timestamp
 
 // Note that it always returns a decimal
@@ -47,8 +107,7 @@
 
 (check === 1969-12-31T23:59:59.9990Z   (epoch_millis_to_timestamp -1.0))
 (check === 1970-01-01T00:00:00.000Z    (epoch_millis_to_timestamp -0.))
-// TODO FUSION-305 Checks not working due to IONJAVA-400
-//(check === 1970-01-01T00:00:00Z        (epoch_millis_to_timestamp 0d3))
+(check === 1970-01-01T00:00:00Z        (epoch_millis_to_timestamp 0d3))
 (check === 1970-01-01T00:00:00.000Z    (epoch_millis_to_timestamp 0.))
 (check === 1970-01-01T00:00:00.0000Z   (epoch_millis_to_timestamp 0.0))
 (check === 1970-01-01T00:00:00.000Z    (epoch_millis_to_timestamp 0.))
@@ -57,7 +116,7 @@
 
 (check === 1969-12-31T23:59:59.999Z    (epoch_millis_to_timestamp -1))
 (check === 1970-01-01T00:00:00.000Z    (epoch_millis_to_timestamp 0))
-//(check === 1970-01-01T00:00:01Z        (epoch_millis_to_timestamp 1d3))
+(check === 1970-01-01T00:00:01Z        (epoch_millis_to_timestamp 1d3))
 (check === 1970-01-01T00:00:01.000Z    (epoch_millis_to_timestamp 1000))
 (check === 1970-01-01T00:00:01.001Z    (epoch_millis_to_timestamp 1001))
 

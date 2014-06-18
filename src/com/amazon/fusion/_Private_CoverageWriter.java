@@ -9,11 +9,14 @@ import com.amazon.ion.IonType;
 import com.amazon.ion.OffsetSpan;
 import com.amazon.ion.Span;
 import com.amazon.ion.SpanProvider;
+import com.amazon.ion.Timestamp;
 import com.amazon.ion.system.IonSystemBuilder;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 /**
  *
@@ -32,10 +35,12 @@ public final class _Private_CoverageWriter
     private final int BUFFER_SIZE = 2048;
     private final byte[] myCopyBuffer = new byte[BUFFER_SIZE];
 
-    private InputStream myIonBytes;
     private long myIonBytesRead;
     private HtmlWriter myHtml;
     private boolean coverageState;
+
+    private long myCoveredExpressions;
+    private long myUncoveredExpressions;
 
 
     public _Private_CoverageWriter(_Private_CoverageCollectorImpl collector,
@@ -46,7 +51,7 @@ public final class _Private_CoverageWriter
     }
 
 
-    private void copySourceThroughOffset(long offset)
+    private void copySourceThroughOffset(InputStream source, long offset)
         throws IOException
     {
         long bytesToCopy = offset - myIonBytesRead;
@@ -56,7 +61,7 @@ public final class _Private_CoverageWriter
         {
             int toRead = (int) Math.min(bytesToCopy - bytesCopied, BUFFER_SIZE);
 
-            int bytesRead = myIonBytes.read(myCopyBuffer, 0, toRead);
+            int bytesRead = source.read(myCopyBuffer, 0, toRead);
 
             if (bytesRead < 0) break; // EOF
 
@@ -68,22 +73,25 @@ public final class _Private_CoverageWriter
     }
 
 
-    private void copySourceThroughCurrentOffset(SpanProvider spanProvider)
+    private void copySourceThroughCurrentOffset(InputStream source,
+                                                SpanProvider spanProvider)
         throws IOException
     {
         Span span = spanProvider.currentSpan();
         OffsetSpan offsetSpan = span.asFacet(OffsetSpan.class);
         long offset = offsetSpan.getStartOffset();
-        copySourceThroughOffset(offset);
+        copySourceThroughOffset(source, offset);
     }
 
 
-    private void setCoverageState(SpanProvider spanProvider, boolean covered)
+    private void setCoverageState(InputStream source,
+                                  SpanProvider spanProvider,
+                                  boolean covered)
         throws IOException
     {
         if (covered != coverageState)
         {
-            copySourceThroughCurrentOffset(spanProvider);
+            copySourceThroughCurrentOffset(source, spanProvider);
 
             myHtml.append("</span><span class='");
             if (! covered)
@@ -111,70 +119,90 @@ public final class _Private_CoverageWriter
 
         myHtml.append("<pre>");
 
-        myIonBytes = new FileInputStream(name.getFile());
-        myIonBytesRead = 0;
-
-        IonReader ionReader =
-            mySystem.newReader(new FileInputStream(name.getFile()));
-        SpanProvider spanProvider =
-            ionReader.asFacet(SpanProvider.class);
-
-        // We always start with a span so we can always end with one,
-        // regardless of the data in between.
-        coverageState = false;
-        myHtml.append("<span class='uncovered'>");
-
-        for (IonType t = ionReader.next(); t != null; )
+        try (InputStream myIonBytes = new FileInputStream(name.getFile()))
         {
-            // Determine whether this value has been covered.
-            SourceLocation currentLoc =
-                SourceLocation.forCurrentSpan(ionReader, null);
+            myIonBytesRead = 0;
 
-            SourceLocation coverageLoc = locations[locationIndex];
-
-            // We shouldn't skip past a known location.
-            assert SRCLOC_COMPARE.compare(currentLoc, coverageLoc) <= 0;
-
-            if (SRCLOC_COMPARE.compare(currentLoc, coverageLoc) == 0)
+            try (IonReader ionReader =
+                    mySystem.newReader(new FileInputStream(name.getFile())))
             {
-                boolean covered = myCollector.locationCovered(coverageLoc);
-                setCoverageState(spanProvider, covered);
-                locationIndex++;
+                SpanProvider spanProvider =
+                    ionReader.asFacet(SpanProvider.class);
 
-                if (locationIndex == locations.length) break;
-            }
+                // We always start with a span so we can always end with one,
+                // regardless of the data in between.
+                coverageState = false;
+                myHtml.append("<span class='uncovered'>");
 
-            switch (t)
-            {
-                case LIST: case SEXP: case STRUCT:
+                for (IonType t = ionReader.next(); t != null; )
                 {
-                    ionReader.stepIn();
-                }
-            }
+                    // Determine whether this value has been covered.
+                    SourceLocation currentLoc =
+                        SourceLocation.forCurrentSpan(ionReader, null);
 
-            while ((t = ionReader.next()) == null && ionReader.getDepth() != 0)
-            {
-                ionReader.stepOut();
+                    SourceLocation coverageLoc = locations[locationIndex];
+
+                    // We shouldn't skip past a known location.
+                    assert SRCLOC_COMPARE.compare(currentLoc, coverageLoc) <= 0;
+
+                    if (SRCLOC_COMPARE.compare(currentLoc, coverageLoc) == 0)
+                    {
+                        boolean covered =
+                            myCollector.locationCovered(coverageLoc);
+                        setCoverageState(myIonBytes, spanProvider, covered);
+                        locationIndex++;
+
+                        if (covered)
+                        {
+                            myCoveredExpressions++;
+                        }
+                        else
+                        {
+                            myUncoveredExpressions++;
+                        }
+
+                        if (locationIndex == locations.length) break;
+                    }
+
+                    if (IonType.isContainer(t))
+                    {
+                        ionReader.stepIn();
+                    }
+
+                    while ((t = ionReader.next()) == null
+                           && ionReader.getDepth() != 0)
+                    {
+                        ionReader.stepOut();
+                    }
+                }
+
+                // Copy the rest of the Ion source.
+                copySourceThroughOffset(myIonBytes, Long.MAX_VALUE);
             }
         }
-
-        // Copy the rest of the Ion source.
-        copySourceThroughOffset(Long.MAX_VALUE);
 
         myHtml.append("</span>\n");
         myHtml.append("</pre>\n");
     }
 
 
-    public void renderMarkedUpSource()
+    public void renderMarkedUpSource(File where)
         throws IOException
     {
-        myHtml = new HtmlWriter(new File("coverage.html"));
+        myHtml = new HtmlWriter(where);
 
         myHtml.renderHeadWithInlineCss("Fusion Code Coverage", CSS);
 
-        SourceName mainSourceName = SourceName.forFile(mySourceFile);
-        renderSource(mainSourceName);
+        myHtml.append("<p>Report generated at ");
+        myHtml.append(Timestamp.now().toString());
+        myHtml.append("</p>\n");
+
+        SourceName mainSourceName = null;
+        if (mySourceFile != null)
+        {
+            mainSourceName = SourceName.forFile(mySourceFile);
+            renderSource(mainSourceName);
+        }
 
         for (SourceName name : myCollector.sortedNames())
         {
@@ -185,5 +213,17 @@ public final class _Private_CoverageWriter
                 renderSource(name);
             }
         }
+
+        myHtml.append("<hr/>");
+
+        long total = myCoveredExpressions + myUncoveredExpressions;
+        BigDecimal percentCovered =
+            new BigDecimal(myCoveredExpressions * 100).divide(new BigDecimal(total),
+                                                             2,
+                                                             RoundingMode.HALF_EVEN);
+        myHtml.append(myCoveredExpressions + " expressions observed<br/>");
+        myHtml.append(percentCovered + "% expression coverage");
+
+        myHtml.close();
     }
 }

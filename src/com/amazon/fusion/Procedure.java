@@ -33,6 +33,7 @@ abstract class Procedure
     /**
      * @param argNames are used purely for documentation
      */
+    @Deprecated
     Procedure(String doc, String... argNames)
     {
         assert doc == null || ! doc.endsWith("\n");
@@ -49,11 +50,16 @@ abstract class Procedure
         myDocs = new BindingDoc(null, Kind.PROCEDURE, usage, doc);
     }
 
+    Procedure()
+    {
+        myDocs = null;
+        myArity = -1;
+    }
 
     @Override
     final void nameInferred(String name)
     {
-        myDocs.setName(name);
+        if (myDocs != null) myDocs.setName(name);
     }
 
 
@@ -75,7 +81,7 @@ abstract class Procedure
 
 
     @Override
-    BindingDoc document()
+    final BindingDoc document()
     {
         return myDocs;
     }
@@ -95,7 +101,7 @@ abstract class Procedure
     // Type-checking helpers
 
 
-    void checkArityExact(int arity, Object[] args)
+    final void checkArityExact(int arity, Object[] args)
         throws ArityFailure
     {
         if (args.length != arity)
@@ -107,15 +113,19 @@ abstract class Procedure
 
     /**
      * Checks arity against the documented argument names.
+     *
+     * @deprecated
+     * Use {@link #checkArityExact(int, Object[])} instead.
      */
-    void checkArityExact(Object[] args)
+    @Deprecated
+    final void checkArityExact(Object[] args)
         throws ArityFailure
     {
         checkArityExact(myArity, args);
     }
 
 
-    void checkArityAtLeast(int atLeast, Object[] args)
+    final void checkArityAtLeast(int atLeast, Object[] args)
         throws ArityFailure
     {
         if (args.length < atLeast)
@@ -125,7 +135,7 @@ abstract class Procedure
     }
 
 
-    void checkArityRange(int atLeast, int atMost, Object[] args)
+    final void checkArityRange(int atLeast, int atMost, Object[] args)
         throws ArityFailure
     {
         if (args.length < atLeast || args.length > atMost)
@@ -149,13 +159,16 @@ abstract class Procedure
      *
      * @return a new exception.
      */
-    ArgumentException argFailure(String expectation, int badPos, Object... actuals)
+    final ArgumentException argFailure(String expectation,
+                                       int badPos,
+                                       Object... actuals)
     {
         return new ArgumentException(this, expectation, badPos, actuals);
     }
 
 
-    <T> T checkArg(Class<T> klass, String desc, int argNum, Object... args)
+    final <T> T checkArg(Class<T> klass, String desc, int argNum,
+                         Object... args)
         throws ArgumentException
     {
         try
@@ -176,7 +189,7 @@ abstract class Procedure
      * @deprecated Use helpers in {@link FusionNumber}.
      */
     @Deprecated
-    int checkIntArg(int argNum, Object... args)
+    final int checkIntArg(int argNum, Object... args)
         throws FusionException, ArgumentException
     {
         return checkIntArgToJavaInt(/*eval*/ null,           // NOT SUPPORTED!
@@ -190,7 +203,7 @@ abstract class Procedure
      * @deprecated Use helpers in {@link FusionNumber}.
      */
     @Deprecated
-    long checkLongArg(int argNum, Object... args)
+    final long checkLongArg(int argNum, Object... args)
         throws FusionException, ArgumentException
     {
         return checkIntArgToJavaLong(/*eval*/ null,          // NOT SUPPORTED!
@@ -204,7 +217,7 @@ abstract class Procedure
      * @deprecated Use helpers in {@link FusionNumber}.
      */
     @Deprecated
-    BigInteger checkBigIntArg(int argNum, Object... args)
+    final BigInteger checkBigIntArg(int argNum, Object... args)
         throws FusionException, ArgumentException
     {
         return checkRequiredIntArg(/*eval*/ null,            // NOT SUPPORTED!
@@ -217,7 +230,7 @@ abstract class Procedure
      * @deprecated Use helpers in {@link FusionNumber}.
      */
     @Deprecated
-    BigInteger checkBigIntArg(Evaluator eval, int argNum, Object... args)
+    final BigInteger checkBigIntArg(Evaluator eval, int argNum, Object... args)
         throws FusionException, ArgumentException
     {
         return checkNullableIntArg(eval, this, argNum, args);
@@ -231,7 +244,7 @@ abstract class Procedure
      * {@link FusionCollection#checkNullableCollectionArg(Evaluator, Procedure, int, Object...)}
      */
     @Deprecated
-    Object checkCollectionArg(Evaluator eval, int argNum, Object... args)
+    final Object checkCollectionArg(Evaluator eval, int argNum, Object... args)
         throws FusionException, ArgumentException
     {
         return checkNullableCollectionArg(eval, this, argNum, args);
@@ -245,7 +258,7 @@ abstract class Procedure
      * {@link FusionSequence#checkNullableSequenceArg(Evaluator, Procedure, int, Object...)}
      */
     @Deprecated
-    Object checkSequenceArg(Evaluator eval, int argNum, Object... args)
+    final Object checkSequenceArg(Evaluator eval, int argNum, Object... args)
         throws FusionException, ArgumentException
     {
         return checkNullableSequenceArg(eval, this, argNum, args);
@@ -258,7 +271,7 @@ abstract class Procedure
      * {@link FusionList#checkNullableListArg(Evaluator, Procedure, int, Object...)}
      */
     @Deprecated
-    Object checkListArg(Evaluator eval, int argNum, Object... args)
+    final Object checkListArg(Evaluator eval, int argNum, Object... args)
         throws FusionException, ArgumentException
     {
         return checkNullableListArg(eval, this, argNum, args);
@@ -272,14 +285,15 @@ abstract class Procedure
      * {@link FusionStruct#checkNullableStructArg(Evaluator, Procedure, int, Object...)}
      */
     @Deprecated
-    Object checkStructArg(Evaluator eval, int argNum, Object... args)
+    final Object checkStructArg(Evaluator eval, int argNum, Object... args)
         throws FusionException, ArgumentException
     {
         return checkNullableStructArg(eval, this, argNum, args);
     }
 
 
-    SyntaxValue checkSyntaxArg(int argNum, Object... args)
+    @Deprecated
+    final SyntaxValue checkSyntaxArg(int argNum, Object... args)
         throws ArgumentException
     {
         try
@@ -291,9 +305,11 @@ abstract class Procedure
         throw new ArgumentException(this, "Syntax value", argNum, args);
     }
 
-    <T extends SyntaxValue> T checkSyntaxArg(Class<T> klass, String typeName,
-                                             boolean nullable,
-                                             int argNum, Object... args)
+    private <T extends SyntaxValue> T checkSyntaxArg(Class<T> klass,
+                                                     String typeName,
+                                                     boolean nullable,
+                                                     int argNum,
+                                                     Object... args)
         throws ArgumentException
     {
         Object arg = args[argNum];
@@ -312,7 +328,8 @@ abstract class Procedure
     }
 
 
-    SyntaxSymbol checkSyntaxSymbolArg(int argNum, Object... args)
+    @Deprecated
+    final SyntaxSymbol checkSyntaxSymbolArg(int argNum, Object... args)
         throws ArgumentException
     {
         return checkSyntaxArg(SyntaxSymbol.class, "syntax symbol",
@@ -320,7 +337,8 @@ abstract class Procedure
     }
 
 
-    SyntaxContainer checkSyntaxContainerArg(int argNum, Object... args)
+    @Deprecated
+    final SyntaxContainer checkSyntaxContainerArg(int argNum, Object... args)
         throws ArgumentException
     {
         return checkSyntaxArg(SyntaxContainer.class,
@@ -329,8 +347,8 @@ abstract class Procedure
     }
 
 
-
-    SyntaxSequence checkSyntaxSequenceArg(int argNum, Object... args)
+    @Deprecated
+    final SyntaxSequence checkSyntaxSequenceArg(int argNum, Object... args)
         throws ArgumentException
     {
         return checkSyntaxArg(SyntaxSequence.class,
@@ -338,8 +356,9 @@ abstract class Procedure
                               true /* nullable */, argNum, args);
     }
 
+
     /** Ensures that an argument is a {@link Procedure}. */
-    Procedure checkProcArg(int argNum, Object... args)
+    final Procedure checkProcArg(int argNum, Object... args)
         throws ArgumentException
     {
         try

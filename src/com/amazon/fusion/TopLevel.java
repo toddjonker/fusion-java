@@ -177,6 +177,19 @@ public interface TopLevel
 
 
     /**
+     * Finds a top-level binding for a given name and returns any defined
+     * value.
+     *
+     * @param name the binding to lookup and dereference.
+     *
+     * @return the bound value, or null if there's no top-level definition or
+     * imported binding for the name.
+     */
+    public Object lookup(String name)
+        throws FusionException;
+
+
+    /**
      * Calls a Fusion procedure by name,
      * <a href="{@docRoot}/overview-summary.html#inject">injecting</a> Java
      * values.
@@ -194,6 +207,25 @@ public interface TopLevel
      * Note that "no value" is not the same as "returns void".
      */
     public Object call(String procedureName, Object... arguments)
+        throws FusionException;
+
+
+    /**
+     * Calls a Fusion procedure by value,
+     * <a href="{@docRoot}/overview-summary.html#inject">injecting</a> Java
+     * values.
+     *
+     * @param procedure must be a Fusion procedure.
+     * @param arguments the procedure arguments. It is unspecified whether the
+     * arguments will be copied in whole or in part. Values may be mutated by
+     * the procedure.
+     *
+     * @return the resulting Fusion value.
+     * May be null (if no value results) or an {@code Object[]} (if there are
+     * multiple values).
+     * Note that "no value" is not the same as "returns void".
+     */
+    Object call(Object procedure, Object... arguments)
         throws FusionException;
 
 

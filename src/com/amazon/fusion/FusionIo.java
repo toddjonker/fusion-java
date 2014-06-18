@@ -565,7 +565,7 @@ public final class FusionIo
 
 
     static final class ReadProc
-        extends Procedure
+        extends Procedure0
     {
         private final DynamicParameter myCurrentIonReaderParam;
 
@@ -579,11 +579,9 @@ public final class FusionIo
         }
 
         @Override
-        Object doApply(Evaluator eval, Object[] args)
+        Object doApply(Evaluator eval)
             throws FusionException
         {
-            checkArityExact(args);
-
             IonReader r = myCurrentIonReaderParam.currentValue(eval);
 
             return FusionIo.read(eval, r);
@@ -592,24 +590,28 @@ public final class FusionIo
 
 
     static final class IonizeProc
-        extends Procedure
+        extends Procedure1
     {
+        private final IonTextWriterBuilder myBuilder;
+
         IonizeProc()
         {
             //    "                                                                               |
             super("Outputs an Ion text representation of `value`, throwing an exception if the\n" +
                   "value contains any non-Ionizable data like closures.",
                   "value");
+
+            myBuilder = IonTextWriterBuilder.pretty().immutable();
         }
 
         @Override
-        Object doApply(Evaluator eval, Object[] args)
+        Object doApply(Evaluator eval, Object arg)
             throws FusionException
         {
-            IonTextWriterBuilder b = IonTextWriterBuilder.pretty();
-            IonWriter writer = b.build((OutputStream) System.out);
+            // Be careful not to close the output stream.
+            IonWriter writer = myBuilder.build((OutputStream) System.out);
 
-            FusionIo.ionize(eval, writer, args[0]);
+            FusionIo.ionize(eval, writer, arg);
 
             try
             {
@@ -626,7 +628,7 @@ public final class FusionIo
 
 
     static final class IonizeToBlobProc
-        extends Procedure
+        extends Procedure1
     {
         IonizeToBlobProc()
         {
@@ -638,12 +640,12 @@ public final class FusionIo
         }
 
         @Override
-        Object doApply(Evaluator eval, Object[] args)
+        Object doApply(Evaluator eval, Object arg)
             throws FusionException
         {
             try (IonBinaryWriter writer = eval.getSystem().newBinaryWriter())
             {
-                FusionIo.ionize(eval, writer, args[0]);
+                FusionIo.ionize(eval, writer, arg);
                 writer.finish();
                 byte[] bytes = writer.getBytes();
 
@@ -657,8 +659,45 @@ public final class FusionIo
     }
 
 
+    static final class IonizeToStringProc
+        extends Procedure1
+    {
+        private final IonTextWriterBuilder myBuilder;
+
+        IonizeToStringProc()
+        {
+            //    "                                                                               |
+            super("Encodes an Ion text representation of `value`, throwing an exception if the\n" +
+                  "value contains any non-Ionizable data like closures. The result is a string\n" +
+                  "containing an Ion text document.",
+                  "value");
+
+            myBuilder = IonTextWriterBuilder.minimal().immutable();
+        }
+
+        @Override
+        Object doApply(Evaluator eval, Object arg)
+            throws FusionException
+        {
+            StringBuilder buf = new StringBuilder(512);
+
+            try (IonWriter writer = myBuilder.build(buf);)
+            {
+                FusionIo.ionize(eval, writer, arg);
+            }
+            catch (IOException e)
+            {
+                throw new FusionException("I/O Exception", e);
+            }
+
+            String text = buf.toString();
+            return FusionString.makeString(eval, text);
+        }
+    }
+
+
     static final class WriteProc
-        extends Procedure
+        extends Procedure1
     {
         WriteProc()
         {
@@ -670,10 +709,10 @@ public final class FusionIo
         }
 
         @Override
-        Object doApply(Evaluator eval, Object[] args)
+        Object doApply(Evaluator eval, Object arg)
             throws FusionException
         {
-            FusionIo.write(eval, System.out, args[0]);
+            FusionIo.write(eval, System.out, arg);
 
             return voidValue(eval);
         }

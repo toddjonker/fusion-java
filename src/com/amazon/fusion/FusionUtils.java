@@ -112,7 +112,7 @@ final class FusionUtils
     static void writeFriendlyIndex(Appendable out, long i)
         throws IOException
     {
-        writeFriendlyOrdinal(out, i++);
+        writeFriendlyOrdinal(out, i + 1);
     }
 
 
@@ -173,11 +173,16 @@ final class FusionUtils
 
 
     static void createParentDirs(File file)
+        throws IOException
     {
         File parent = file.getParentFile();
-        if (parent != null)
+        if (parent != null && ! parent.exists())
         {
-            parent.mkdirs();
+            if (! parent.mkdirs())
+            {
+                throw new IOException("Unable to create parent directory of "
+                                         + file);
+            }
         }
     }
 

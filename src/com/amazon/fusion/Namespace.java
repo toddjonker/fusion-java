@@ -52,13 +52,6 @@ abstract class Namespace
             return this == other.originalBinding();
         }
 
-        @Override
-        public Object lookup(Environment env)
-        {
-            // Skip over any lexical environments and go straight to the top.
-            return env.namespace().lookup(this);
-        }
-
         final CompiledForm compileLocalTopReference(Evaluator   eval,
                                                     Environment env)
             throws FusionException
@@ -452,17 +445,12 @@ abstract class Namespace
         throws FusionException;
 
 
-    @Override
-    public final Object lookup(Binding binding)
-    {
-        if (binding instanceof NsBinding)    // else it can't possibly be ours
-        {
-            return lookup((NsBinding) binding);
-        }
-        return null;
-    }
-
-    public final Object lookup(NsBinding binding)
+    /**
+     * Looks for a definition's value in this namespace, ignoring imports.
+     *
+     * @return the binding's value, or null if there is none.
+     */
+    final Object lookupDefinition(NsBinding binding)
     {
         int address = binding.myAddress;
         if (address < myValues.size())              // for prepare-time lookup
@@ -476,10 +464,36 @@ abstract class Namespace
         return null;
     }
 
+
+    /**
+     * Looks for a binding's value in this namespace, finding both definitions
+     * and imports.
+     *
+     * @return the binding's value, or null if there is none.
+     */
+    final Object lookup(Binding binding)
+    {
+        return binding.lookup(this);
+    }
+
+
+    /**
+     * Looks for a binding's value in this namespace, finding both definitions
+     * and imports.
+     *
+     * @return the binding's value, or null if there is none.
+     */
     final Object lookup(String name)
     {
         Binding b = resolve(name);
-        return lookup(b);
+        if (b == null)
+        {
+            return b;
+        }
+        else
+        {
+            return lookup(b);
+        }
     }
 
 
@@ -628,7 +642,7 @@ abstract class Namespace
     }
 
 
-    protected static class CompiledTopDefine
+    static class CompiledTopDefine
         implements CompiledForm
     {
         private final String       myName;
@@ -686,7 +700,7 @@ abstract class Namespace
             if (value instanceof Procedure)
             {
                 Procedure xformProc = (Procedure) value;
-                value = new MacroTransformer(xformProc);
+                value = new MacroForm(xformProc);
             }
             else if (! (value instanceof SyntacticForm))
             {

@@ -18,6 +18,7 @@ The built-in sequence types are [list](fusion/list.html) and
     "/fusion/exception"
     "/fusion/experimental/defines"
     "/fusion/number"
+    "/fusion/private/bind"
     "/fusion/private/builtins"   // Some basic list ops
     "/fusion/private/control"
     "/fusion/private/sexp"
@@ -26,7 +27,7 @@ The built-in sequence types are [list](fusion/list.html) and
     "/fusion/unsafe/sexp")
 
   // Pass-through bindings from /fusion/collection
-  (provide . any do element elt every find has_key is_collection is_empty size)
+  (provide . any do element elt every find has_key is_collection is_empty none size)
 
 
   (defpub_j add    "com.amazon.fusion.AddProc")

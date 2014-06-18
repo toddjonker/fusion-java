@@ -27,12 +27,12 @@ final class StandardTopLevel
     StandardTopLevel(GlobalState globalState,
                      Namespace namespace,
                      String initialModulePath,
-                     _Private_CoverageCollector collector,
                      boolean documenting)
         throws FusionInterrupt, FusionException
     {
         assert ModuleIdentity.isValidAbsoluteModulePath(initialModulePath);
 
+        _Private_CoverageCollector collector = globalState.myCoverageCollector;
         Evaluator eval = (collector == null
                             ? new Evaluator(globalState)
                             : new CoverageEvaluator(globalState, collector));
@@ -57,7 +57,6 @@ final class StandardTopLevel
         throws FusionInterrupt, FusionException
     {
         this(globalState, new TopLevelNamespace(registry), initialModulePath,
-             null /* coverage collector */,
              false);
     }
 
@@ -219,16 +218,18 @@ final class StandardTopLevel
     }
 
 
-    private Object lookupBinding(String name)
+    @Override
+    public Object lookup(String name)
         throws FusionInterruptedException, FusionException
     {
         try
         {
-            SyntaxSymbol id = SyntaxSymbol.make(myEvaluator, name);
-            return FusionEval.eval(myEvaluator, id, myNamespace);
+            return myNamespace.lookup(name);
         }
         catch (FusionInterrupt e)
         {
+            // I don't think this can happen, but I prefer to be consistent
+            // throughout this class to be more resilient to changes.
             throw new FusionInterruptedException(e);
         }
     }
@@ -239,7 +240,7 @@ final class StandardTopLevel
     {
         try
         {
-            Object proc = lookupBinding(procedureName);
+            Object proc = lookup(procedureName);
             if (proc instanceof Procedure)
             {
                 return (Procedure) proc;
@@ -248,7 +249,7 @@ final class StandardTopLevel
             if (proc == null)
             {
                 throw new FusionException(printQuotedSymbol(procedureName) +
-                    " is not defined");
+                                          " is not defined");
             }
 
             throw new FusionException(printQuotedSymbol(procedureName) +
@@ -262,14 +263,11 @@ final class StandardTopLevel
     }
 
 
-    @Override
-    public Object call(String procedureName, Object... arguments)
+    private Object call(Procedure proc, Object... arguments)
         throws FusionInterruptedException, FusionException
     {
         try
         {
-            Procedure proc = lookupProcedure(procedureName);
-
             for (int i = 0; i < arguments.length; i++)
             {
                 Object arg = arguments[i];
@@ -292,5 +290,28 @@ final class StandardTopLevel
         {
             throw new FusionInterruptedException(e);
         }
+    }
+
+
+    @Override
+    public Object call(String procedureName, Object... arguments)
+        throws FusionInterruptedException, FusionException
+    {
+        Procedure proc = lookupProcedure(procedureName);
+
+        return call(proc, arguments);
+    }
+
+
+    @Override
+    public Object call(Object procedure, Object... arguments)
+        throws FusionInterruptedException, FusionException
+    {
+        if (! (procedure instanceof Procedure))
+        {
+            throw new IllegalArgumentException("Not a procedure: " + procedure);
+        }
+
+        return call((Procedure) procedure, arguments);
     }
 }

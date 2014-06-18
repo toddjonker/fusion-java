@@ -23,6 +23,7 @@ import com.amazon.ion.IonValue;
 import com.amazon.ion.IonWriter;
 import com.amazon.ion.ValueFactory;
 import java.io.IOException;
+import java.util.List;
 
 
 final class FusionSexp
@@ -34,6 +35,14 @@ final class FusionSexp
     static final NullSexp  NULL_SEXP  = new NullSexp();
 
 
+    /**
+     * Returns an unannotated, immutable {@code null.sexp}.
+     */
+    static NullSexp nullSexp(Evaluator eval)
+    {
+        return NULL_SEXP;
+    }
+
     static NullSexp nullSexp(Evaluator eval, String[] annotations)
     {
         if (annotations.length == 0)
@@ -42,6 +51,14 @@ final class FusionSexp
         }
 
         return new NullSexp(annotations);
+    }
+
+    /**
+     * Returns an unannotated, immutable empty sexp: {@code ()}.
+     */
+    static EmptySexp emptySexp(Evaluator eval)
+    {
+        return EMPTY_SEXP;
     }
 
     static EmptySexp emptySexp(Evaluator eval, String[] annotations)
@@ -57,45 +74,93 @@ final class FusionSexp
 
     /**
      * Caller must have injected children.
-     * @param values must not be null.
      */
-    static BaseSexp immutableSexp(Evaluator eval, Object[] values)
+    static BaseSexp immutableSexp(Evaluator eval, Object[] elements)
     {
         BaseSexp c = EMPTY_SEXP;
 
-        int i = values.length;
+        int i = elements.length;
         while (i-- != 0)
         {
-            c = new ImmutablePair(values[i], c);
+            c = new ImmutablePair(elements[i], c);
         }
 
         return c;
     }
 
+
+    /**
+     * Caller must have injected children.
+     * @param elements must not be null.
+     */
+    static BaseSexp immutableSexp(Evaluator eval, List<?> elements)
+    {
+        BaseSexp c = EMPTY_SEXP;
+
+        int i = elements.size();
+        while (i-- != 0)
+        {
+            c = new ImmutablePair(elements.get(i), c);
+        }
+
+        return c;
+    }
+
+
     /**
      * Caller must have injected children.
      *
      * @param annotations must not be null.
-     * @param values must not be null.
+     * @param elements must not be null.
      */
     static BaseSexp immutableSexp(Evaluator eval,
-                                  String[] annotations,
-                                  Object[] values)
+                                  String[]  annotations,
+                                  Object[]  elements)
     {
-        if (values.length == 0)
+        if (elements.length == 0)
         {
             return emptySexp(eval, annotations);
         }
 
         BaseSexp c = EMPTY_SEXP;
 
-        int i = values.length;
+        int i = elements.length;
         while (--i != 0)
         {
-            c = new ImmutablePair(values[i], c);
+            c = new ImmutablePair(elements[i], c);
         }
 
-        c = new ImmutablePair(annotations, values[0], c);
+        c = new ImmutablePair(annotations, elements[0], c);
+
+        return c;
+    }
+
+
+    /**
+     * Caller must have injected children.
+     *
+     * @param annotations must not be null.
+     * @param elements must not be null.
+     */
+    static BaseSexp immutableSexp(Evaluator eval,
+                                  String[]  annotations,
+                                  List<?>   elements)
+    {
+        int size = elements.size();
+        if (size == 0)
+        {
+            return emptySexp(eval, annotations);
+        }
+
+        BaseSexp c = EMPTY_SEXP;
+
+        int i = size;
+        while (--i != 0)
+        {
+            c = new ImmutablePair(elements.get(i), c);
+        }
+
+        c = new ImmutablePair(annotations, elements.get(0), c);
 
         return c;
     }

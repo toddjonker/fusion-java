@@ -1,8 +1,8 @@
-// Copyright (c) 2005-2012 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2005-2014 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion.cli;
 
-import java.io.PrintWriter;
+import java.io.IOException;
 
 class Help
     extends Command
@@ -19,9 +19,9 @@ class Help
         "for each one.";
 
     private final static String APP_HELP_TEXT_INTRO =
-        "Usage: fusion <command> [ARGS ...]\n" +
+        "Usage: fusion [OPTIONS ...] <command> [ARGS ...]\n" +
         "Type 'fusion help <command>' for help on a specific command.\n\n" +
-        "Available commands:";
+        "Available commands:\n";
 
     private final static String FULL_HELP_SEPARATOR =
         "\n                                *      *      *\n\n";
@@ -41,7 +41,7 @@ class Help
 
 
     @Override
-    Executor processArguments(String[] arguments)
+    Executor makeExecutor(String[] arguments)
     {
         return new Executor(arguments);
     }
@@ -60,105 +60,130 @@ class Help
 
         @Override
         public int execute()
+            throws UsageException, IOException
         {
-            PrintWriter out = new PrintWriter(System.out);
+            System.out.println();
 
-            try
+            if ((myCommands == null) || (myCommands.length == 0))
             {
-                if ((myCommands == null) || (myCommands.length == 0))
-                {
-                    out.println(APP_HELP_TEXT_INTRO);
-
-                    TablePrinter table = new TablePrinter();
-                    table.setIndent(2);
-
-                    Command[] allCommands = CommandFactory.getAllCommands();
-                    for (int i = 0; i < allCommands.length; i++)
-                    {
-                        Command command = allCommands[i];
-
-                        String oneLiner = command.getHelpOneLiner();
-                        if (oneLiner != null)
-                        {
-                            String[] row = { command.getCommand(), oneLiner };
-
-                            table.addRow(row);
-                        }
-                    }
-
-                    table.render(out);
-                }
-                else
-                {
-                    for (int i = 0; i < myCommands.length; i++)
-                    {
-                        if (i != 0)
-                        {
-                            out.print(FULL_HELP_SEPARATOR);
-                        }
-                        String command = myCommands[i];
-
-                        Command commandObj =
-                            CommandFactory.getMatchingCommand(command);
-                        if (commandObj == null)
-                        {
-                            out.println("Unknown command: '" + command + "'");
-                        }
-                        else
-                        {
-                            renderFullHelp(commandObj, out);
-                        }
-                    }
-                }
+                renderGeneralHelp(System.out);
             }
-            finally
+            else
             {
-                out.close();
+                renderCommands(System.out);
             }
 
             return 0;
         }
 
 
-        private void renderCommandAndAliases(Command command, PrintWriter out)
+        private void renderGeneralHelp(Appendable out)
+            throws IOException
         {
-            out.print(command.getCommand());
+            out.append(APP_HELP_TEXT_INTRO);
+
+            TablePrinter table = new TablePrinter();
+            table.setIndent(2);
+
+            Command[] allCommands = CommandFactory.getAllCommands();
+            for (int i = 0; i < allCommands.length; i++)
+            {
+                Command command = allCommands[i];
+
+                String oneLiner = command.getHelpOneLiner();
+                if (oneLiner != null)
+                {
+                    String[] row = { command.getCommand(), oneLiner };
+
+                    table.addRow(row);
+                }
+            }
+
+            table.render(out);
+
+            out.append(GlobalOptions.HELP);
+        }
+
+
+        private void renderCommands(Appendable out)
+            throws UsageException, IOException
+        {
+            boolean showGeneralUsage = false;
+
+            for (int i = 0; i < myCommands.length; i++)
+            {
+                if (i != 0)
+                {
+                    out.append(FULL_HELP_SEPARATOR);
+                }
+
+                String command = myCommands[i];
+
+                Command commandObj =
+                    CommandFactory.getMatchingCommand(command);
+                if (commandObj == null)
+                {
+                    out.append("Unknown command: '");
+                    out.append(command);
+                    out.append("'\n");
+                    showGeneralUsage = true;
+                }
+                else
+                {
+                    renderFullHelp(commandObj, out);
+                }
+            }
+
+            if (showGeneralUsage)
+            {
+                throw new UsageException(null);
+            }
+        }
+
+
+        private void renderCommandAndAliases(Command command, Appendable out)
+            throws IOException
+        {
+            out.append(command.getCommand());
 
             String[] aliases = command.getAliases();
             int len = aliases.length;
             if (len != 0)
             {
-                out.print(" (");
+                out.append(" (");
                 for (int i = 0; i < len; i++ )
                 {
-                    if (i != 0) out.print(", ");
-                    out.print(aliases[i]);
+                    if (i != 0) out.append(", ");
+                    out.append(aliases[i]);
                 }
-                out.print(")");
+                out.append(")");
             }
         }
 
 
-        private void renderFullHelp(Command command, PrintWriter out)
+        private void renderFullHelp(Command command, Appendable out)
+            throws IOException
         {
             String oneLiner = command.getHelpOneLiner();
             if (oneLiner != null)
             {
                 renderCommandAndAliases(command, out);
-                out.println();
+                out.append('\n');
                 //            out.print(": ");
-                out.print("  ");
-                out.println(oneLiner);
-                out.println();
-                out.print("Usage: ");
-                out.println(command.getHelpUsage());
+                out.append("  ");
+                out.append(oneLiner);
+                out.append("\n\n");
+                out.append("Usage: ");
+                out.append(command.getHelpUsage());
+                out.append('\n');
             }
 
             String helpBody = command.getHelpBody();
             if (helpBody != null)
             {
-                out.println();
-                out.println(helpBody);
+                out.append('\n');
+                out.append(helpBody);
+                out.append('\n');
             }
         }
     }
