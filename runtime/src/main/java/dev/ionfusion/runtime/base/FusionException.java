@@ -56,22 +56,27 @@ public class FusionException
         super(message);
     }
 
+    private FusionException(String message, Throwable cause, SourceLocation location)
+    {
+        super(message,
+              cause instanceof FusionException ? cause : new StackRewriteException(cause, null));
+        addContext(location);
+    }
+
     public FusionException(String message, Throwable cause)
     {
-        super(message, cause);
+        this(message, cause, null);
     }
 
     public FusionException(Throwable cause)
     {
-        super(cause.getMessage(), cause);
+        this(cause.getMessage(), cause, null);
     }
 
 
 
-    /**
-     * See {@link StandardTopLevel#exceptionForExit(Throwable)}
-     * for parallel code.
-     */
+    // See {@link StandardTopLevel#exceptionForExit(Throwable)}
+    // for parallel code.
     public static FusionException withContext(Throwable e, SourceLocation location)
     {
         FusionException fe;
@@ -112,6 +117,12 @@ public class FusionException
             {
                 myContext.add(location);
             }
+        }
+
+        Throwable cause = getCause();
+        if (cause instanceof FusionException)
+        {
+            ((FusionException) cause).addContext(location);
         }
     }
 
@@ -261,6 +272,12 @@ public class FusionException
             setStackTrace(trace);
 
             myContext = null;
+        }
+
+        Throwable cause = getCause();
+        if (cause instanceof FusionException)
+        {
+            ((FusionException) cause).rewriteStackTrace(0);
         }
 
         return this;
