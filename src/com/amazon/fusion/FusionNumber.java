@@ -1078,7 +1078,7 @@ final class FusionNumber
         @Override
         BigDecimal toBigDecimal()
         {
-            return new BigDecimal(myContent);
+            return Decimal.valueOf(myContent);
         }
 
         @Override
@@ -1641,6 +1641,13 @@ final class FusionNumber
 
     //========================================================================
     // Predicates
+
+
+    static boolean isNumber(Evaluator eval, Object value)
+        throws FusionException
+    {
+        return (value instanceof BaseNumber);
+    }
 
 
     public static boolean isInt(TopLevel top, Object value)

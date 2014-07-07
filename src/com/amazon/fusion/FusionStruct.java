@@ -605,9 +605,9 @@ final class FusionStruct
         }
 
         @Override
-        SyntaxValue wrapAsSyntax(Evaluator eval, SourceLocation loc)
+        SyntaxValue makeOriginalSyntax(Evaluator eval, SourceLocation loc)
         {
-            return SyntaxStruct.make(eval, loc, this);
+            return SyntaxStruct.makeOriginal(eval, loc, this);
         }
 
         @Override
@@ -834,6 +834,7 @@ final class FusionStruct
 
         private MapBasedStruct(String[] annotations, int size)
         {
+            super(annotations);
             myMap = new HashMap<>();
             mySize = size;
         }
@@ -979,9 +980,9 @@ final class FusionStruct
         }
 
         @Override
-        SyntaxValue wrapAsSyntax(Evaluator eval, SourceLocation loc)
+        SyntaxValue makeOriginalSyntax(Evaluator eval, SourceLocation loc)
         {
-            return SyntaxStruct.make(eval, loc, this);
+            throw new IllegalStateException("Cannot wrap mutable struct as syntax");
         }
 
         @SuppressWarnings("serial")
@@ -1019,7 +1020,7 @@ final class FusionStruct
 
             try
             {
-                Object datum = transformFields(eval, visitor);
+                ImmutableStruct datum = transformFields(eval, visitor);
                 SyntaxValue stx = SyntaxStruct.make(eval, loc, datum);
                 return Syntax.applyContext(eval, context, stx);
             }
@@ -1398,6 +1399,12 @@ final class FusionStruct
         private NonNullImmutableStruct(String[] annotations, int size)
         {
             super(annotations, size);
+        }
+
+        @Override
+        SyntaxValue makeOriginalSyntax(Evaluator eval, SourceLocation loc)
+        {
+            return SyntaxStruct.makeOriginal(eval, loc, this);
         }
 
         @Override

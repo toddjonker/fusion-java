@@ -2,6 +2,7 @@
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionUtils.EMPTY_OBJECT_ARRAY;
 import com.amazon.ion.IonException;
 import com.amazon.ion.IonWriter;
 import java.io.IOException;
@@ -18,15 +19,36 @@ class SimpleSyntaxValue
 
     /**
      * @param loc may be null.
+     * @param properties must not be null.
      * @param datum must not be null and must not be a {@link SyntaxValue}.
      */
-    SimpleSyntaxValue(SourceLocation loc, BaseValue datum)
+    SimpleSyntaxValue(SourceLocation loc, Object[] properties, BaseValue datum)
     {
-        super(loc);
+        super(loc, properties);
         assert ! (datum instanceof SyntaxValue);
         myDatum = datum;
     }
 
+    /**
+     * @param loc may be null.
+     * @param datum must not be null and must not be a {@link SyntaxValue}.
+     */
+    SimpleSyntaxValue(SourceLocation loc, BaseValue datum)
+    {
+        this(loc, EMPTY_OBJECT_ARRAY, datum);
+    }
+
+
+    /**
+     * @param loc may be null.
+     * @param datum must not be null and must not be a {@link SyntaxValue}.
+     */
+    static SyntaxValue makeOriginalSyntax(Evaluator      eval,
+                                          SourceLocation loc,
+                                          BaseValue      datum)
+    {
+        return new SimpleSyntaxValue(loc, ORIGINAL_STX_PROPS, datum);
+    }
 
     /**
      * @param loc may be null.
@@ -55,6 +77,12 @@ class SimpleSyntaxValue
     String[] annotationsAsJavaStrings()
     {
         return myDatum.annotationsAsJavaStrings();
+    }
+
+    @Override
+    SyntaxValue copyReplacingProperties(Object[] properties)
+    {
+        return new SimpleSyntaxValue(getLocation(), properties, myDatum);
     }
 
     @Override

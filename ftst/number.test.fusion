@@ -15,6 +15,9 @@
   ])
 
 
+// Comparisons are tested in compare.test.fusion
+
+
 //============================================================================
 // division
 
@@ -26,25 +29,6 @@
 
 // inexact result
 (expect_contract_exn (/ 12. 7.))
-
-
-//============================================================================
-// comparisons
-
-(check_true (< 1   2  ))
-(check_true (< 1   2.0))
-(check_true (< 1.0 2  ))
-(check_true (< 1.0 2.0))
-
-(check_false (< 2   1  ))
-(check_false (< 2   1.0))
-(check_false (< 2.0 1  ))
-(check_false (< 2.0 1.0))
-
-(check_false (< 1   1  ))
-(check_false (< 1   1.0))
-(check_false (< 1.0 1  ))
-(check_false (< 1.0 1.0))
 
 
 //============================================================================

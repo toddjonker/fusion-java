@@ -5,7 +5,9 @@ package com.amazon.fusion;
 import static com.amazon.fusion.FusionBool.falseBool;
 import static com.amazon.fusion.FusionBool.makeBool;
 import static com.amazon.fusion.FusionBool.trueBool;
-import static com.amazon.fusion.FusionNumber.isIntOrDecimal;
+import static com.amazon.fusion.FusionNumber.isFloat;
+import static com.amazon.fusion.FusionNumber.isNumber;
+import static com.amazon.fusion.FusionNumber.unsafeFloatToDouble;
 import static com.amazon.fusion.FusionNumber.unsafeNumberToBigDecimal;
 import static com.amazon.fusion.FusionString.isString;
 import static com.amazon.fusion.FusionString.unsafeStringToJavaString;
@@ -93,6 +95,9 @@ final class FusionCompare
                                      Object[]      args)
             throws FusionException;
 
+        abstract boolean compare(double left, double right)
+            throws FusionException;
+
 
         boolean compareStrings(String left, String right, Object[] args)
             throws FusionException
@@ -110,7 +115,21 @@ final class FusionCompare
             Object arg0 = args[0];
             Object arg1 = args[1];
 
-            if (isIntOrDecimal(eval, arg0) && isIntOrDecimal(eval, arg1))
+            // Try to avoid conversion to BigDecimal.
+            if (isFloat(eval, arg0) && isFloat(eval, arg1))
+            {
+                if (isAnyNull(eval, arg0).isFalse() &&
+                    isAnyNull(eval, arg1).isFalse())
+                {
+                    double left  = unsafeFloatToDouble(eval, arg0);
+                    double right = unsafeFloatToDouble(eval, arg1);
+
+                    boolean r = compare(left, right);
+                    return makeBool(eval, r);
+                }
+            }
+
+            if (isNumber(eval, arg0) && isNumber(eval, arg1))
             {
                 BigDecimal left  = unsafeNumberToBigDecimal(eval, arg0);
                 BigDecimal right = unsafeNumberToBigDecimal(eval, arg1);
@@ -173,6 +192,13 @@ final class FusionCompare
             int r = left.compareTo(right);
             return (r < 0);
         }
+
+        @Override
+        boolean compare(double left, double right)
+            throws FusionException
+        {
+            return (left < right);
+        }
     }
 
 
@@ -185,6 +211,13 @@ final class FusionCompare
         {
             int r = left.compareTo(right);
             return (r <= 0);
+        }
+
+        @Override
+        boolean compare(double left, double right)
+            throws FusionException
+        {
+            return (left <= right);
         }
     }
 
@@ -199,6 +232,13 @@ final class FusionCompare
             int r = left.compareTo(right);
             return (r > 0);
         }
+
+        @Override
+        boolean compare(double left, double right)
+            throws FusionException
+        {
+            return (left > right);
+        }
     }
 
 
@@ -211,6 +251,13 @@ final class FusionCompare
         {
             int r = left.compareTo(right);
             return (r >= 0);
+        }
+
+        @Override
+        boolean compare(double left, double right)
+            throws FusionException
+        {
+            return (left >= right);
         }
     }
 

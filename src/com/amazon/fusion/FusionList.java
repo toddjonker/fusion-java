@@ -71,6 +71,12 @@ final class FusionList
     }
 
 
+    static NullList nullList(Evaluator eval)
+    {
+        return NULL_LIST;
+    }
+
+
     static NullList nullList(Evaluator eval, String[] annotations)
     {
         if (annotations.length == 0)
@@ -568,9 +574,9 @@ final class FusionList
         }
 
         @Override
-        SyntaxValue wrapAsSyntax(Evaluator eval, SourceLocation loc)
+        SyntaxValue makeOriginalSyntax(Evaluator eval, SourceLocation loc)
         {
-            return SyntaxList.make(eval, loc, this);
+            return SyntaxList.makeOriginal(eval, loc, this);
         }
 
         /**
