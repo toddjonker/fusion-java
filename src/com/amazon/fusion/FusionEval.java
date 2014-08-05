@@ -4,13 +4,36 @@ package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionSyntax.isSyntax;
 import static com.amazon.fusion.FusionVoid.voidValue;
+import static com.amazon.fusion.StandardReader.readSyntax;
 import static com.amazon.fusion.Syntax.datumToSyntax;
+import com.amazon.ion.IonReader;
+import com.amazon.ion.IonSystem;
 import java.util.LinkedList;
 
 
 final class FusionEval
 {
     private FusionEval() {}
+
+
+    /**
+     * If the given syntax is a kernel {@code begin} form, return it;
+     * otherwise return null.
+     */
+    private static SyntaxSexp asBeginForm(Evaluator eval, SyntaxValue stx)
+        throws FusionException
+    {
+        if (stx instanceof SyntaxSexp)
+        {
+            SyntaxSexp sexp = (SyntaxSexp) stx;
+            Binding binding = sexp.firstBinding(eval);
+            if (binding == eval.getGlobalState().myKernelBeginBinding)
+            {
+                return sexp;
+            }
+        }
+        return null;
+    }
 
 
     /**
@@ -78,23 +101,17 @@ final class FusionEval
             {
                 stx = expander.partialExpand(ns, forms.pop());
 
-                if (stx instanceof SyntaxSexp)
+                SyntaxSexp beginStx = asBeginForm(eval, stx);
+                if (beginStx != null)
                 {
-                    SyntaxSexp sexp = (SyntaxSexp) stx;
-                    Binding binding = sexp.firstBinding(eval);
-                    if (binding == eval.getGlobalState().myKernelBeginBinding)
+                    // Splice 'begin' elements into the top-level sequence.
+                    for (int i = beginStx.size() - 1; i != 0;  i--)
                     {
-                        // Splice 'begin' into the top-level sequence
-                        int last = sexp.size() - 1;
-                        for (int i = last; i != 0;  i--)
-                        {
-                            forms.push(sexp.get(eval, i));
-                        }
-                        stx = null;
+                        forms.push(beginStx.get(eval, i));
                     }
+                    stx = null;
                 }
-
-                if (stx != null)
+                else
                 {
                     // We've partial-expanded, now full-expand.
                     stx = expander.expand(ns, stx);
@@ -202,6 +219,125 @@ final class FusionEval
         topLevelForm = ns.syntaxIntroduce(topLevelForm);
         return topLevelForm;
     }
+
+
+    //========================================================================
+    // Program traversal, for use by tools.
+
+
+    /**
+     * See http://docs.racket-lang.org/tools/drracket_eval.html#%28def._%28%28lib._drracket%2Ftool-lib..rkt%29._drracket~3aeval~3atraverse-program%2Fmultiple%29%29
+     *
+     * @param receiver is a 1-argument procedure that accepts a syntax object
+     * or EOF.
+     */
+    static void traverseProgram(Evaluator  eval,
+                                IonReader  source,
+                                SourceName name,
+                                Procedure  receiver)
+        throws FusionException
+    {
+        if (source.getType() == null) source.next();
+
+        while (source.getType() != null)
+        {
+            SyntaxValue sourceExpr = readSyntax(eval, source, name);
+
+            eval.callNonTail(receiver, sourceExpr);
+
+            source.next();
+        }
+
+        eval.callNonTail(receiver, FusionIo.eof(eval));
+    }
+
+
+    /**
+     * @param receiver is a 1-argument procedure that accepts a syntax object
+     * or EOF.
+     */
+    static void traverseProgram(Evaluator  eval,
+                                String     source,
+                                SourceName name,
+                                Procedure  receiver)
+        throws FusionException
+    {
+        IonSystem system = eval.getGlobalState().myIonSystem;
+        IonReader i = system.newReader(source);
+        traverseProgram(eval, i, name, receiver);
+    }
+
+
+    /**
+     * See http://docs.racket-lang.org/syntax/toplevel.html#%28def._%28%28lib._syntax%2Ftoplevel..rkt%29._expand-syntax-top-level-with-compile-time-evals%29%29
+     */
+    static SyntaxValue
+    expandSyntaxTopLevelWithCompileTimeEvals(Evaluator eval, SyntaxValue stx)
+        throws FusionException
+    {
+        Expander expander = new Expander(eval);
+        Namespace ns = eval.findCurrentNamespace();
+
+        stx = expander.partialExpand(ns, stx);
+
+        SyntaxSexp beginStx = asBeginForm(eval, stx);
+        if (beginStx != null)
+        {
+            SyntaxValue[] elts = beginStx.extract(eval);
+            for (int i = 1; i < elts.length; i++)
+            {
+                elts[i] =
+                    expandSyntaxTopLevelWithCompileTimeEvals(eval, elts[i]);
+            }
+
+            stx = beginStx.copyReplacingChildren(eval, elts);
+        }
+        else
+        {
+            stx = expander.expand(ns, stx);
+
+            // TODO this isn't correct
+            eval.compile(ns, stx);
+        }
+
+        return stx;
+    }
+
+
+    /**
+     * See http://docs.racket-lang.org/tools/drracket_eval.html#%28def._%28%28lib._drracket%2Ftool-lib..rkt%29._drracket~3aeval~3aexpand-program%29%29
+     * @param receiver is a 1-argument procedure that accepts a syntax object
+     * or EOF.
+     */
+    static void expandProgram(TopLevel        top,
+                              String          source,
+                              SourceName      name,
+                              final Procedure receiver)
+        throws FusionException
+    {
+        final Evaluator eval = StandardTopLevel.toEvaluator(top);
+
+        Procedure r2 = new Procedure1()
+        {
+            @Override
+            public Object doApply(Evaluator eval, Object arg)
+                throws FusionException
+            {
+                if (FusionIo.isEof(eval, arg)) return arg;
+
+                SyntaxValue stx = (SyntaxValue) arg;
+
+                stx = enrich(eval, stx);
+
+                stx = expandSyntaxTopLevelWithCompileTimeEvals(eval, stx);
+
+                return eval.bounceTailCall(receiver, stx);
+            }
+        };
+
+        traverseProgram(eval, source, name, r2);
+    }
+
 
 
     //========================================================================

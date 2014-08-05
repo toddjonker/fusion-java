@@ -340,10 +340,38 @@
 
 
 //==========================================================================
+// append
+
+(define_check (check_append v0)
+  (let [(mutable  (is_mutable_list  v0)),
+        (stretchy (is_stretchy_list v0)),
+        (v1 (append v0 [1]))]
+    (check_predicates v1 mutable stretchy)
+    (check === []  v0 "v0 not modified")
+    (check === [1] v1 "v1")
+    (let [(v2 (append v1 (stretchy_list 2 3) (mutable_list 4)))]
+      (check_predicates v2 mutable stretchy)
+      (begin
+        (check === []  v0 "v0 not modified")
+        (check === [1] v1 "v1 not modified"))
+      (check === [1, 2, 3, 4] v2))))
+
+(check_append [])
+(check_append (list))
+(check_append (mutable_list))
+(check_append (stretchy_list))
+
+
+// Check appending to stretchy list with available capacity.
+(check === [1,2,3,4]
+   (append (add_m (stretchy_list 1 2) 3) [4]))
+
+
+//==========================================================================
 // append_m
 
 (define_check (check_append_m v0)
-  (let [(mutable (is_mutable_list v0)),
+  (let [(mutable  (is_mutable_list  v0)),
         (stretchy (is_stretchy_list v0)),
         (v1 (append_m v0 [1]))]
     (check_predicates v1 mutable stretchy)
@@ -367,11 +395,17 @@
 (check_append_m (mutable_list))
 (check_append_m (stretchy_list))
 
+
+// Check appending to stretchy list with available capacity.
+(check === [1,2,3,4]
+   (append_m (add_m (stretchy_list 1 2) 3) [4]))
+
+
 (check === [1] (append_m null.list [1] null.list))
 (check === [1] (append_m [1] null.list))
 
 
-(check === (quote a::null.list)
+(check === (quote a::[])
   (append_m (quote a::null.list)))
 (check === (quote a::[c::2])
   (append_m (quote a::null.list) (quote b::[c::2])))
@@ -456,11 +490,11 @@
 //==========================================================================
 // none
 
-(check_true  (none is_truthy null.list)) 
-(check_true  (none is_truthy [])) 
+(check_true  (none is_truthy null.list))
+(check_true  (none is_truthy []))
 (check_true  (none is_truthy [false]))
 (check_true  (none is_truthy [false,null]))
-(check_false (none is_truthy [1, 2])) 
+(check_false (none is_truthy [1, 2]))
 (check_false (none is_truthy [1,"hello, world",null]))
 
 (check_false (none (lambda (e) (= e "hi")) ["oh", "hi"]))

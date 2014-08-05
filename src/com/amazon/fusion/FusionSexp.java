@@ -375,6 +375,51 @@ final class FusionSexp
         }
 
         @Override
+        void unsafeCopy(Evaluator eval, int srcPos, Object[] dest,
+                        int destPos, int length)
+            throws FusionException
+        {
+            assert length == 0;
+        }
+
+        /**
+         * @return null if this is not a proper sexp.
+         */
+        @Override
+        BaseSexp sexpAppend(Evaluator eval, BaseSexp back)
+            throws FusionException
+        {
+            return (BaseSexp) back.annotate(eval, myAnnotations);
+        }
+
+        @Override
+        BaseSexp append(Evaluator eval, Object[] sequences)
+            throws FusionException
+        {
+            int len = sequences.length;
+            if (len == 0) return this;
+
+            BaseSexp back = EMPTY_SEXP;
+            for (int i = len - 1 ; i >= 0; i--)
+            {
+                back = ((BaseSequence) sequences[i]).sexpAppend(eval, back);
+                if (back == null)
+                {
+                    throw new ArgumentException("append", "proper sequence",
+                                                i+1, sequences[i]);
+                }
+            }
+
+            BaseSexp result = sexpAppend(eval, back);
+            if (result == null)
+            {
+                throw new ArgumentException("append", "proper sequence",
+                                            0, this);
+            }
+            return result;
+        }
+
+        @Override
         BaseBool looseEquals(Evaluator eval, Object right)
             throws FusionException
         {
@@ -434,6 +479,14 @@ final class FusionSexp
             throws FusionException
         {
             return new NullSexp(annotations);
+        }
+
+        @Override
+        BaseSexp append(Evaluator eval, Object[] sequences)
+            throws FusionException
+        {
+            BaseSexp empty = emptySexp(eval, myAnnotations);
+            return empty.append(eval, sequences);
         }
 
         @Override
@@ -633,6 +686,44 @@ final class FusionSexp
             throw new IndexOutOfBoundsException(message);
         }
 
+        /**
+         * Assumes that this is a proper sexp!
+         */
+        @Override
+        void unsafeCopy(Evaluator eval, int srcPos, Object[] dest,
+                        int destPos, int length)
+            throws FusionException
+        {
+            if (length != 0)
+            {
+                BaseSexp tail = (BaseSexp) myTail;
+                if (srcPos == 0)
+                {
+                    dest[destPos] = myHead;
+
+                    tail.unsafeCopy(eval, srcPos, dest, destPos+1, length-1);
+                }
+                else
+                {
+                    tail.unsafeCopy(eval, srcPos-1, dest, destPos, length);
+                }
+            }
+        }
+
+        @Override
+        BaseSexp sexpAppend(Evaluator eval, BaseSexp back)
+            throws FusionException
+        {
+            if (myTail instanceof BaseSexp)
+            {
+                Object tail = ((BaseSexp) myTail).sexpAppend(eval, back);
+                if (tail != null)
+                {
+                    return pair(eval, myAnnotations, myHead, tail);
+                }
+            }
+            return null;
+        }
 
         private static BaseBool actualPairEqual(Evaluator     eval,
                                                 EqualityTier  tier,
@@ -1040,6 +1131,18 @@ final class FusionSexp
                 throw new ArgumentException("iterator_next", "proper sexp",
                                             0, this);
             }
+        }
+    }
+
+
+    static final class UnsafeSexpIteratorProc
+        extends Procedure1
+    {
+        @Override
+        Object doApply(Evaluator eval, Object list)
+            throws FusionException
+        {
+            return unsafeSexpIterator(eval, list);
         }
     }
 }

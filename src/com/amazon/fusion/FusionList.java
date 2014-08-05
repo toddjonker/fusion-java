@@ -335,6 +335,7 @@ final class FusionList
 
 
     static Object unsafeListAppendM(Evaluator eval, Object list, Object[] args)
+        throws FusionException
     {
         return ((BaseList) list).appendM(eval, args);
     }
@@ -472,11 +473,31 @@ final class FusionList
         }
 
 
+        @Override
+        final BaseSexp sexpAppend(Evaluator eval, BaseSexp back)
+            throws FusionException
+        {
+            int size = size();
+            if (size != 0)
+            {
+                Object[] values = values(eval);
+                for (int i = size - 1; i >= 0; i--)
+                {
+                    back = FusionSexp.pair(eval, values[i], back);
+                }
+            }
+
+            return back;
+        }
+
+        @Override
         void unsafeCopy(Evaluator eval, int srcPos, Object[] dest, int destPos,
                         int length)
         {
-            System.arraycopy(myValues, srcPos, dest, destPos, length);
+            Object[] values = values(eval);
+            System.arraycopy(values, srcPos, dest, destPos, length);
         }
+
 
         Object[] extract(Evaluator eval)
         {
@@ -658,7 +679,7 @@ final class FusionList
         BaseList add(Evaluator eval, Object value)
         {
             int len = size();
-            Object[] copy = Arrays.copyOf(myValues, len + 1);
+            Object[] copy = Arrays.copyOf(values(eval), len + 1);
             copy[len] = value;
             return makeSimilar(myAnnotations, copy);
         }
@@ -668,23 +689,26 @@ final class FusionList
             return add(eval, value);
         }
 
-        BaseList appendM(Evaluator eval, Object[] args)
+
+        @Override
+        BaseList append(Evaluator eval, Object[] args)
+            throws FusionException
         {
-            int myLen = myValues.length;
+            int myLen = size();
             int newLen = myLen;
             for (int i = 0; i < args.length; i++)
             {
-                newLen += ((BaseList) args[i]).size();
+                newLen += ((BaseSequence) args[i]).size();
             }
 
             if (newLen == myLen) return this; // Nothing to append
 
-            Object[] copy = Arrays.copyOf(myValues, newLen);
+            Object[] copy = Arrays.copyOf(values(eval), newLen);
 
             int pos = myLen;
             for (Object arg : args)
             {
-                BaseList v = (BaseList) arg;
+                BaseSequence v = (BaseSequence) arg;
                 int argLen = v.size();
 
                 v.unsafeCopy(eval, 0, copy, pos, argLen);
@@ -698,7 +722,8 @@ final class FusionList
 
         Iterator<?> javaIterate(Evaluator eval)
         {
-            return Arrays.asList(myValues).iterator();
+            Object[] values = values(eval);
+            return Arrays.asList(values).iterator();
         }
 
         @Override
@@ -850,6 +875,18 @@ final class FusionList
         }
 
         @Override
+        BaseList append(Evaluator eval, Object[] args)
+            throws FusionException
+        {
+            BaseList empty =
+                (myAnnotations.length == 0
+                    ? EMPTY_IMMUTABLE_LIST
+                    : immutableList(eval, myAnnotations, EMPTY_OBJECT_ARRAY));
+
+            return empty.append(eval, args);
+        }
+
+        @Override
         Object[] extract(Evaluator eval)
         {
             return null;
@@ -976,29 +1013,37 @@ final class FusionList
 
         @Override
         BaseList appendM(Evaluator eval, Object[] args)
+            throws FusionException
         {
             int newLen = mySize;
             for (Object arg : args)
             {
-                newLen += ((BaseList) arg).size();
+                newLen += ((BaseSequence) arg).size();
             }
 
-            if (myValues.length < newLen)
+            // Note that mySize <= myValues.length
+            if (mySize < newLen)
             {
-                myValues = Arrays.copyOf(myValues, newLen);
-            }
+                Object[] newValues =
+                    (myValues.length < newLen
+                        ? Arrays.copyOf(myValues, newLen)
+                        : myValues);
 
-            int pos = mySize;
-            for (Object arg : args)
-            {
-                BaseList v = (BaseList) arg;
-                int argLen = v.size();
+                int pos = mySize;
+                for (Object arg : args)
+                {
+                    BaseSequence v = (BaseSequence) arg;
+                    int argLen = v.size();
 
-                System.arraycopy(v.myValues, 0, myValues, pos, argLen);
-                pos += argLen;
+                    v.unsafeCopy(eval, 0, newValues, pos, argLen);
+                    pos += argLen;
+                }
+                assert pos == newLen;
+
+                // Be careful not to mutate this until the copies succeed.
+                myValues = newValues;
+                mySize   = pos;
             }
-            assert pos == newLen;
-            mySize = pos;
 
             return this;
         }
@@ -1091,30 +1136,6 @@ final class FusionList
         }
 
         @Override
-        void unsafeCopy(Evaluator eval, int srcPos, Object[] dest, int destPos,
-                        int length)
-        {
-            injectElements(eval);
-            System.arraycopy(myValues, srcPos, dest, destPos, length);
-        }
-
-        @Override
-        BaseBool looseEquals(Evaluator eval, Object right)
-            throws FusionException
-        {
-            injectElements(eval);
-            return super.looseEquals(eval, right);
-        }
-
-        @Override
-        BaseBool looseEquals2(Evaluator eval, BaseList left)
-            throws FusionException
-        {
-            injectElements(eval);
-            return super.looseEquals2(eval, left);
-        }
-
-        @Override
         IonList copyToIonValue(ValueFactory factory,
                                boolean throwOnConversionFailure)
             throws FusionException
@@ -1139,27 +1160,6 @@ final class FusionList
             // else our elements have already been injected, copy as normal.
 
             return super.copyToIonValue(factory, throwOnConversionFailure);
-        }
-
-        @Override
-        BaseList add(Evaluator eval, Object value)
-        {
-            injectElements(eval);
-            return super.add(eval, value);
-        }
-
-        @Override
-        BaseList appendM(Evaluator eval, Object[] args)
-        {
-            injectElements(eval);
-            return super.appendM(eval, args);
-        }
-
-        @Override
-        Iterator<?> javaIterate(Evaluator eval)
-        {
-            injectElements(eval);
-            return super.javaIterate(eval);
         }
 
         @Override

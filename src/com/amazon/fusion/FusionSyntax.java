@@ -33,6 +33,12 @@ final class FusionSyntax
     }
 
 
+    static Object unsafeSyntaxUnwrap(Evaluator eval, Object stx)
+        throws FusionException
+    {
+        return ((SyntaxValue) stx).unwrap(eval);
+    }
+
     static SourceLocation unsafeSyntaxLocation(Evaluator eval, Object stx)
     {
         return ((SyntaxValue) stx).getLocation();
@@ -53,6 +59,10 @@ final class FusionSyntax
     }
 
 
+    /**
+     * @param id1 must be an identifier.
+     * @param id2 must be an identifier.
+     */
     static boolean unsafeFreeIdentifierEqual(Evaluator eval,
                                              Object    id1,
                                              Object    id2)

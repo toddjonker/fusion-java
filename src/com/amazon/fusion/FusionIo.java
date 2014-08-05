@@ -3,6 +3,11 @@
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionBool.makeBool;
+import static com.amazon.fusion.FusionLob.isLob;
+import static com.amazon.fusion.FusionLob.unsafeLobBytesNoCopy;
+import static com.amazon.fusion.FusionString.checkNonEmptyStringArg;
+import static com.amazon.fusion.FusionString.checkRequiredStringArg;
+import static com.amazon.fusion.FusionUtils.resolvePath;
 import static com.amazon.fusion.FusionVoid.voidValue;
 import com.amazon.ion.IonBinaryWriter;
 import com.amazon.ion.IonException;
@@ -10,6 +15,8 @@ import com.amazon.ion.IonReader;
 import com.amazon.ion.IonValue;
 import com.amazon.ion.IonWriter;
 import com.amazon.ion.system.IonTextWriterBuilder;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
@@ -62,14 +69,6 @@ public final class FusionIo
     static final class IsEofProc
         extends Procedure1
     {
-        IsEofProc()
-        {
-            //    "                                                                               |
-            super("Determines whether a `value` is the Fusion end-of-file value.  This value is\n"
-                + "bound to the name `eof`.",
-                  "value");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object arg)
         {
@@ -571,10 +570,6 @@ public final class FusionIo
 
         public ReadProc(Object currentIonReaderParam)
         {
-            //    "                                                                               |
-            super("Reads an Ion value from the current Ion input stream.  Returns `eof` when\n" +
-                  "there's no more data.");
-
             myCurrentIonReaderParam = (DynamicParameter) currentIonReaderParam;
         }
 
@@ -596,11 +591,6 @@ public final class FusionIo
 
         IonizeProc()
         {
-            //    "                                                                               |
-            super("Outputs an Ion text representation of `value`, throwing an exception if the\n" +
-                  "value contains any non-Ionizable data like closures.",
-                  "value");
-
             myBuilder = IonTextWriterBuilder.pretty().immutable();
         }
 
@@ -630,15 +620,6 @@ public final class FusionIo
     static final class IonizeToBlobProc
         extends Procedure1
     {
-        IonizeToBlobProc()
-        {
-            //    "                                                                               |
-            super("Encodes an Ion binary representation of `value`, throwing an exception if the\n" +
-                  "value contains any non-Ionizable data like closures. The result is a blob\n" +
-                  "containing an Ion binary document.",
-                  "value");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object arg)
             throws FusionException
@@ -666,12 +647,6 @@ public final class FusionIo
 
         IonizeToStringProc()
         {
-            //    "                                                                               |
-            super("Encodes an Ion text representation of `value`, throwing an exception if the\n" +
-                  "value contains any non-Ionizable data like closures. The result is a string\n" +
-                  "containing an Ion text document.",
-                  "value");
-
             myBuilder = IonTextWriterBuilder.minimal().immutable();
         }
 
@@ -699,15 +674,6 @@ public final class FusionIo
     static final class WriteProc
         extends Procedure1
     {
-        WriteProc()
-        {
-            //    "                                                                               |
-            super("Outputs a text representation of `value`, following Ion syntax where possible.\n" +
-                  "The result will be unreadable (by the Fusion and Ion readers) if the value\n" +
-                  "contains any non-Ionizable data like closures.",
-                  "value");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object arg)
             throws FusionException
@@ -722,15 +688,6 @@ public final class FusionIo
     static final class DisplayProc
         extends Procedure
     {
-        DisplayProc()
-        {
-            //    "                                                                               |
-            super("Outputs a text representation of the `value`s, writing character data as-is but\n" +
-                  "otherwise following Ion syntax where possible.  In general, the result will be\n" +
-                  "unreadable by the Fusion and Ion readers.",
-                  "value", DOTDOTDOT);
-        }
-
         @Override
         Object doApply(Evaluator eval, Object[] args)
             throws FusionException
@@ -756,6 +713,128 @@ public final class FusionIo
             }
 
             return voidValue(eval);
+        }
+    }
+
+
+    //========================================================================
+
+
+    private abstract static class AbstractWithIonFromProc
+        extends Procedure
+    {
+        private final DynamicParameter myCurrentIonReaderParam;
+
+        public AbstractWithIonFromProc(Object currentIonReaderParam)
+        {
+            myCurrentIonReaderParam = (DynamicParameter) currentIonReaderParam;
+        }
+
+        abstract IonReader makeReader(Evaluator eval, Object[] args)
+            throws FusionException, IOException;
+
+        @Override
+        Object doApply(Evaluator eval, Object[] args)
+            throws FusionException
+        {
+            checkArityExact(2, args);
+
+            Procedure thunk = checkProcArg(1, args);
+            // TODO FUSION-85 check thunk arity
+
+            try (IonReader reader = makeReader(eval, args))
+            {
+                Evaluator parameterized =
+                    eval.markedContinuation(myCurrentIonReaderParam, reader);
+
+                // We cannot use a tail call here, since we must not close the
+                // stream until after the call returns.
+                return parameterized.callNonTail(thunk);
+            }
+            catch (IOException | IonException e)
+            {
+                // TODO improve error message
+                throw new FusionException(e);
+            }
+        }
+    }
+
+
+    static final class WithIonFromStringProc
+        extends AbstractWithIonFromProc
+    {
+        public WithIonFromStringProc(Object currentIonReaderParam)
+        {
+            super(currentIonReaderParam);
+        }
+
+        @Override
+        IonReader makeReader(Evaluator eval, Object[] args)
+            throws FusionException, IOException
+        {
+            String string = checkRequiredStringArg(eval, this, 0, args);
+
+            return eval.getSystem().newReader(string);
+        }
+    }
+
+
+    static final class WithIonFromLobProc
+        extends AbstractWithIonFromProc
+    {
+        public WithIonFromLobProc(Object currentIonReaderParam)
+        {
+            super(currentIonReaderParam);
+        }
+
+        @Override
+        IonReader makeReader(Evaluator eval, Object[] args)
+            throws FusionException, IOException
+        {
+            Object lob = args[0];
+            if (! isLob(eval, lob) || isAnyNull(eval, lob).isTrue())
+            {
+                throw argFailure("non-null blob or clob", 0, args);
+            }
+
+            byte[] bytes = unsafeLobBytesNoCopy(eval, lob);
+
+            return eval.getSystem().newReader(bytes);
+        }
+    }
+
+
+    static final class WithIonFromFileProc
+        extends AbstractWithIonFromProc
+    {
+        private final DynamicParameter myCurrentDirectoryParam;
+
+        public WithIonFromFileProc(Object currentDirectoryParam,
+                                   Object currentIonReaderParam)
+        {
+            super(currentIonReaderParam);
+
+            myCurrentDirectoryParam = (DynamicParameter) currentDirectoryParam;
+        }
+
+        @Override
+        IonReader makeReader(Evaluator eval, Object[] args)
+            throws FusionException, IOException
+        {
+            String path = checkNonEmptyStringArg(eval, this, 0, args);
+
+            File inFile = resolvePath(eval, myCurrentDirectoryParam, path);
+
+            FileInputStream in = new FileInputStream(inFile);
+            try
+            {
+                return eval.getSystem().newReader(in);
+            }
+            catch (IonException e)
+            {
+                in.close();
+                throw e;
+            }
         }
     }
 }

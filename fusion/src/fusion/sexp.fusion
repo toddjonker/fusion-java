@@ -24,7 +24,18 @@ sexps.
   (provide head is_pair is_sexp pair sexp tail)
 
   (require "/fusion/sequence")
-  (provide . add any choose do element elt every find first fold_left has_key
-    is_collection is_empty is_sequence last map none size)
+  (provide . add any append append_m choose do element elt every
+    find first fold_left has_key
+    is_collection is_empty is_sequence last map none size subseq)
+
+
+  (require "/fusion/unsafe/sexp" "/fusion/exception")
+
+  (provide sexp_iterator)
+  (define (sexp_iterator sexp)
+    "Returns an iterator over the elements of `sexp`."
+    (if (is_sexp sexp)
+      (unsafe_sexp_iterator sexp)
+      (raise_argument_error "sexp" "sexp" 0 sexp)))
 
 )
