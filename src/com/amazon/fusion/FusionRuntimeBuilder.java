@@ -3,9 +3,8 @@
 package com.amazon.fusion;
 
 import static com.amazon.fusion.ModuleIdentity.isValidAbsoluteModulePath;
+import static com.amazon.fusion._Private_CoverageCollectorImpl.fromDirectory;
 import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -73,6 +72,20 @@ import java.util.Properties;
  * directory used by many IO operations. The runtime can be configured with a
  * specific default value. If not configured when {@link #build()} is called,
  * the builder uses the value of the {@code "user.dir"} system property.
+ *
+ * <h3>Code Coverage Instrumentation<a id="coverage"/></h3>
+ *
+ * To instruct the runtime to collect code coverage metrics, you must use
+ * {@link #setCoverageDataDirectory(File)} to declare a directory storing the
+ * collected data along with relevant configuration.  If the directory already
+ * contains coverage metrics, it is loaded and updated by the runtime (as
+ * opposed to being replaced by fresh metrics).
+ * <p>
+ * If the property is not configured when {@link #build()} is called,
+ * a default value is read from the {@linkplain System#getProperties()
+ * system properties} using the key {@value #PROPERTY_COVERAGE_DATA_DIR}.
+ * If no such system property is configured, then no coverage metrics will be
+ * collected.
  */
 public class FusionRuntimeBuilder
 {
@@ -83,8 +96,12 @@ public class FusionRuntimeBuilder
     public static final String PROPERTY_BOOTSTRAP_REPOSITORY =
         "com.amazon.fusion.BootstrapRepository";
 
-    private static final String PROPERTY_CODE_COVERAGE_DIR =
-        "com.amazon.fusion.CodeCoverageDir";
+    /**
+     * The property used to configure the <a href="#coverage">code coverage
+     * data directory</a>: {@value}.
+     */
+    public static final String PROPERTY_COVERAGE_DATA_DIR =
+        "com.amazon.fusion.coverage.DataDir";
 
     private static final String STANDARD_DEFAULT_LANGUAGE = "/fusion";
 
@@ -109,7 +126,7 @@ public class FusionRuntimeBuilder
     private File[]  myRepositoryDirectories;
     private String  myDefaultLanguage = STANDARD_DEFAULT_LANGUAGE;
 
-    private File                       myCoverageDirectory;
+    private File                       myCoverageDataDirectory;
     private _Private_CoverageCollector myCollector;
 
     private boolean myDocumenting;
@@ -123,7 +140,7 @@ public class FusionRuntimeBuilder
         this.myBootstrapRepository   = that.myBootstrapRepository;
         this.myRepositoryDirectories = that.myRepositoryDirectories;
         this.myDefaultLanguage       = that.myDefaultLanguage;
-        this.myCoverageDirectory     = that.myCoverageDirectory;
+        this.myCoverageDataDirectory = that.myCoverageDataDirectory;
         this.myCollector             = that.myCollector;
         this.myDocumenting           = that.myDocumenting;
     }
@@ -178,6 +195,9 @@ public class FusionRuntimeBuilder
      * These properties are observed:
      * <ul>
      *   <li>{@value #PROPERTY_BOOTSTRAP_REPOSITORY}
+     *       invokes {@link #setBootstrapRepository(File)}.
+     *   <li>{@value #PROPERTY_COVERAGE_DATA_DIR}
+     *       invokes {@link #setCoverageDataDirectory(File)}.
      * </ul>
      *
      * @param props must not be null.
@@ -192,29 +212,25 @@ public class FusionRuntimeBuilder
     {
         FusionRuntimeBuilder b = this;
 
-        String path = props.getProperty(PROPERTY_BOOTSTRAP_REPOSITORY);
-        if (path != null)
+        try
         {
-            File f = new File(path);
-
-            if (! isValidBootstrapRepo(f))
+            String path = props.getProperty(PROPERTY_BOOTSTRAP_REPOSITORY);
+            if (path != null)
             {
-                String message =
-                    "Not a Fusion bootstrap repository: " + path;
-                throw new FusionException(message);
+                File f = new File(path);
+                b = b.withBootstrapRepository(f);
             }
 
-            b = b.withBootstrapRepository(f);
+            path = props.getProperty(PROPERTY_COVERAGE_DATA_DIR);
+            if (path != null)
+            {
+                File f = new File(path);
+                b = b.withCoverageDataDirectory(f);
+            }
         }
-
-        path = props.getProperty(PROPERTY_CODE_COVERAGE_DIR);
-        if (path != null)
+        catch (IllegalArgumentException e)
         {
-            b = b.mutable();
-
-            // TODO validate
-
-            b.setCoverageDirectory(new File(path));
+            throw new FusionException(e.getMessage());
         }
 
         return b;
@@ -228,6 +244,9 @@ public class FusionRuntimeBuilder
      * These properties are observed:
      * <ul>
      *   <li>{@value #PROPERTY_BOOTSTRAP_REPOSITORY}
+     *       invokes {@link #setBootstrapRepository(File)}.
+     *   <li>{@value #PROPERTY_COVERAGE_DATA_DIR}
+     *       invokes {@link #setCoverageDataDirectory(File)}.
      * </ul>
      *
      * @param resource may be null, in which case no configuration happens.
@@ -243,21 +262,8 @@ public class FusionRuntimeBuilder
     {
         if (resource == null) return this;
 
-        try (InputStream stream = resource.openStream())
-        {
-            if (stream == null) return this;
-
-            Properties props = new Properties();
-            props.load(stream);
-
-            return withConfigProperties(props);
-        }
-        catch (IOException e)
-        {
-            String message =
-                "Error reading properties from resource " + resource;
-            throw new FusionException(message, e);
-        }
+        Properties props = FusionUtils.readProperties(resource);
+        return withConfigProperties(props);
     }
 
 
@@ -272,6 +278,9 @@ public class FusionRuntimeBuilder
      * These properties are observed:
      * <ul>
      *   <li>{@value #PROPERTY_BOOTSTRAP_REPOSITORY}
+     *       invokes {@link #setBootstrapRepository(File)}.
+     *   <li>{@value #PROPERTY_COVERAGE_DATA_DIR}
+     *       invokes {@link #setCoverageDataDirectory(File)}.
      * </ul>
      *
      * @return this builder, if it's mutable or if no properties were
@@ -474,6 +483,8 @@ public class FusionRuntimeBuilder
 
         if (directory != null)
         {
+            File original = directory;
+
             if (! directory.isAbsolute())
             {
                 directory = directory.getAbsoluteFile();
@@ -481,14 +492,14 @@ public class FusionRuntimeBuilder
 
             if (! directory.isDirectory())
             {
-                String message = "Not a directory: " + directory;
+                String message = "Not a directory: " + original;
                 throw new IllegalArgumentException(message);
             }
 
             if (! isValidBootstrapRepo(directory))
             {
                 String message =
-                    "Not a Fusion bootstrap repository: " + directory;
+                    "Not a Fusion bootstrap repository: " + original;
                 throw new IllegalArgumentException(message);
             }
         }
@@ -541,6 +552,8 @@ public class FusionRuntimeBuilder
     {
         mutationCheck();
 
+        File original = directory;
+
         if (! directory.isAbsolute())
         {
             directory = directory.getAbsoluteFile();
@@ -548,14 +561,14 @@ public class FusionRuntimeBuilder
 
         if (! directory.isDirectory())
         {
-           String message = "Repository is not a directory: " + directory;
+           String message = "Repository is not a directory: " + original;
            throw new IllegalArgumentException(message);
         }
 
         File src = new File(directory, "src");
         if (! src.isDirectory())
         {
-           String message = "Repository has no src directory: " + directory;
+           String message = "Repository has no src directory: " + original;
            throw new IllegalArgumentException(message);
         }
 
@@ -595,6 +608,90 @@ public class FusionRuntimeBuilder
 
 
     //=========================================================================
+    // Code Coverage instrumentation
+
+
+    /**
+     * Gets the directory to which code-coverage metrics will be added.
+     * By default, this property is null.
+     *
+     * @return an absolute path, or null if a directory has not been
+     * configured.
+     *
+     * @see #setCoverageDataDirectory(File)
+     * @see #withCoverageDataDirectory(File)
+     */
+    public File getCoverageDataDirectory()
+    {
+        return myCoverageDataDirectory;
+    }
+
+
+    /**
+     * Sets the directory to which code-coverage metrics will be added.
+     *
+     * @param directory the desired coverage data directory.
+     * If a relative path is given, it is immediately resolved as per
+     * {@link File#getAbsolutePath()}.
+     * May be null to clear a previously-configured directory.
+     *
+     * @throws UnsupportedOperationException if this is immutable.
+     * @throws IllegalArgumentException if the file exists but isn't a
+     * directory.
+     *
+     * @see #getCoverageDataDirectory()
+     * @see #withCoverageDataDirectory(File)
+     */
+    public void setCoverageDataDirectory(File directory)
+    {
+        mutationCheck();
+
+        if (directory != null)
+        {
+            File original = directory;
+
+            if (! directory.isAbsolute())
+            {
+                directory = directory.getAbsoluteFile();
+            }
+
+            if (directory.exists() && ! directory.isDirectory())
+            {
+                String message = "Not a directory: " + original;
+                throw new IllegalArgumentException(message);
+            }
+        }
+
+        myCoverageDataDirectory = directory;
+    }
+
+
+    /**
+     * Declares the directory to which code-coverage metrics will be added,
+     * returning a new mutable builder if this is immutable.
+     *
+     * @param directory the desired coverage data directory.
+     * If a relative path is given, it is immediately resolved as per
+     * {@link File#getAbsolutePath()}.
+     * May be null to clear a previously-configured directory.
+     *
+     * @return this builder, if it's mutable; otherwise a new mutable builder.
+     *
+     * @throws IllegalArgumentException if the file exists but isn't a
+     * directory.
+     *
+     * @see #getCoverageDataDirectory()
+     * @see #setCoverageDataDirectory(File)
+     */
+    public final FusionRuntimeBuilder withCoverageDataDirectory(File directory)
+    {
+        FusionRuntimeBuilder b = mutable();
+        b.setCoverageDataDirectory(directory);
+        return b;
+    }
+
+
+    //=========================================================================
 
 
     /** NOT FOR APPLICATION USE */
@@ -610,15 +707,6 @@ public class FusionRuntimeBuilder
         myDocumenting = documenting;
     }
 
-
-    /** NOT FOR APPLICATION USE */
-    void setCoverageDirectory(File directory)
-    {
-        mutationCheck();
-
-        // TODO check that its a directory
-        myCoverageDirectory = directory;
-    }
 
 
     /** NOT FOR APPLICATION USE */
@@ -666,11 +754,6 @@ public class FusionRuntimeBuilder
             if (bootstrap != null)
             {
                 File file = new File(bootstrap);
-                if (! file.isAbsolute())
-                {
-                    file = file.getAbsoluteFile();
-                }
-
                 if (! isValidBootstrapRepo(file))
                 {
                     String message =
@@ -685,21 +768,39 @@ public class FusionRuntimeBuilder
 
         if (b.getCoverageCollector() == null)
         {
-            if (b.myCoverageDirectory == null)
+            if (b.myCoverageDataDirectory == null)
             {
-                String property = PROPERTY_CODE_COVERAGE_DIR;
+                String property = PROPERTY_COVERAGE_DATA_DIR;
                 String path = System.getProperty(property);
                 if (path != null)
                 {
-                    b.myCoverageDirectory = new File(path);
-                    // TODO validate
+                    File file = new File(path);
+                    if (file.exists() && ! file.isDirectory())
+                    {
+                        String message =
+                            "Value of system property " + property +
+                            " is not a directory: " + path;
+                        throw new IllegalArgumentException(message);
+                    }
+
+                    b.setCoverageDataDirectory(file);
                 }
             }
 
-            if (b.myCoverageDirectory != null)
+            if (b.myCoverageDataDirectory != null)
             {
-                _Private_CoverageCollector c =
-                    _Private_CoverageCollectorImpl.fromDirectory(b.myCoverageDirectory);
+                _Private_CoverageCollectorImpl c =
+                    fromDirectory(b.myCoverageDataDirectory);
+
+                c.noteRepository(b.getBootstrapRepository());
+                if (b.myRepositoryDirectories != null)
+                {
+                    for (File f : b.myRepositoryDirectories)
+                    {
+                        c.noteRepository(f);
+                    }
+                }
+
                 b.setCoverageCollector(c);
             }
         }

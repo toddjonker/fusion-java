@@ -12,7 +12,9 @@
   (let [(len (size values))]
     (let loop [(i 0)]
       (if (= i len)
-        (check_false (iterator_has_next iter) "iterator should be empty")
+        (begin
+          (check_false (iterator_has_next iter) "iterator should be empty")
+          (expect_contract_exn (iterator_next iter)))
         (begin
           (check_pred iterator_has_next iter "iterator should have next")
           (let [(actual   (iterator_next iter)),
@@ -22,6 +24,13 @@
 
 (check_iter [] empty_iterator)
 
+(check_iter [[]]  (value_iterator []))
+(check_iter [509] (value_iterator 509))
+
+
+//==========================================================================
+// list_iterator, list_from_iterator
+
 (check_iter []              (list_iterator null.list))
 (check_iter []              (list_iterator [])     )
 (check_iter [1]             (list_iterator [1])    )
@@ -29,44 +38,11 @@
 (check_iter ["a", true]     (list_iterator ["a", true]))
 (check_iter [["a"], [true]] (list_iterator [["a"], [true]]) )
 
-(check_iter [[]]  (value_iterator []))
-(check_iter [509] (value_iterator 509))
-
 (define plus1 (lambda (n) (+ 1 n)))
-
-(check_iter []     (iterator_map plus1 empty_iterator))
-(check_iter [2, 8] (iterator_map plus1 (list_iterator [1, 7])))
-
-
-(check_iter []    (iterator_choose is_int empty_iterator))
-(check_iter []    (iterator_choose is_int (value_iterator true)))
-(check_iter [614] (iterator_choose is_int (value_iterator 614)))
-(check_iter [1,2,3]
-  (iterator_choose is_int (list_iterator [true, 1, 2, false, 3])))
-
-
-(check_void (iterator_find (lambda (e) true) empty_iterator))
-(check = 6 (iterator_find is_int (list_iterator [true, "", 6])))
-(check = 2 (iterator_find plus1 (list_iterator [2, 6])))
-
-
-(check_iter [] (iterator_append empty_iterator empty_iterator))
-(check_iter [601] (iterator_append empty_iterator (value_iterator 601)))
-(check_iter [616] (iterator_append (value_iterator 616) empty_iterator))
-(check_iter [1,2] (iterator_append (value_iterator 1) (value_iterator 2)))
-(check_iter [1,2,3,4,5]
-  (iterator_append (list_iterator [1,2,3]) (list_iterator [4,5])))
 
 (check === []    (list_from_iterator empty_iterator))
 (check === [1]   (list_from_iterator (list_iterator [1])))
 (check === [1,2] (list_from_iterator (list_iterator [1,2])))
-
-(check_iter []
-  (iterator_map_splicing list_iterator empty_iterator))
-(check_iter [1,2,3,4]
-  (iterator_map_splicing value_iterator (list_iterator [1,2,3,4])))
-(check_iter [1,2,3,4]
-  (iterator_map_splicing list_iterator (list_iterator [[1],[2,3],[],[4]])))
 
 
 //==========================================================================
@@ -79,9 +55,95 @@
 (expect_argument_exn (sexp_iterator null.list))
 (expect_argument_exn (sexp_iterator []))
 
-(check_iter [] (sexp_iterator (quote null.sexp)))
-(check_iter [] (sexp_iterator (sexp)))
-(check_iter [1]             (sexp_iterator (sexp 1))    )
+(check_iter []              (sexp_iterator (quote null.sexp)))
+(check_iter []              (sexp_iterator (sexp)))
+(check_iter [1]             (sexp_iterator (sexp 1)))
 (check_iter [1, 2]          (sexp_iterator (sexp 1 2)))
 (check_iter ["a", true]     (sexp_iterator (sexp "a" true)))
-(check_iter [["a"], [true]] (sexp_iterator (sexp ["a"] [true])) )
+(check_iter [["a"], [true]] (sexp_iterator (sexp ["a"] [true])))
+
+
+//==========================================================================
+// iterator_append
+
+(check_iter [] (iterator_append empty_iterator empty_iterator))
+(check_iter [601] (iterator_append empty_iterator (value_iterator 601)))
+(check_iter [616] (iterator_append (value_iterator 616) empty_iterator))
+(check_iter [1,2] (iterator_append (value_iterator 1) (value_iterator 2)))
+(check_iter [1,2,3,4,5]
+  (iterator_append (list_iterator [1,2,3]) (list_iterator [4,5])))
+
+// Make sure we can call `next` without `has_next`
+(let [(i (iterator_append (value_iterator 1) (value_iterator 2)))]
+  (check === 1 (iterator_next i))
+  (check === 2 (iterator_next i))
+  (expect_contract_exn (iterator_next i)))
+
+
+//==========================================================================
+// iterator_choose
+
+(check_iter []    (iterator_choose is_int empty_iterator))
+(check_iter []    (iterator_choose is_int (value_iterator true)))
+(check_iter [614] (iterator_choose is_int (value_iterator 614)))
+(check_iter [1,2,3]
+  (iterator_choose is_int (list_iterator [true, 1, 2, false, 3])))
+
+// Make sure we can call `next` without `has_next`
+(let [(i (iterator_choose is_int (list_iterator [true, 1, 2, false])))]
+  (check === 1 (iterator_next i))
+  (check === 2 (iterator_next i))
+  (expect_contract_exn (iterator_next i)))
+
+(expect_argument_exn
+  (iterator_choose true empty_iterator))     // 1st arg not a proc
+(expect_argument_exn
+  (iterator_choose identity []))             // 2nd arg not an iterator
+
+
+//==========================================================================
+// iterator_find
+
+(check_void (iterator_find (lambda (e) true) empty_iterator))
+(check = 6 (iterator_find is_int (list_iterator [true, "", 6])))
+(check = 2 (iterator_find plus1 (list_iterator [2, 6])))
+
+
+//==========================================================================
+// iterator_map
+
+(check_iter []     (iterator_map plus1 empty_iterator))
+(check_iter [2, 8] (iterator_map plus1 (list_iterator [1, 7])))
+
+(expect_argument_exn
+  (iterator_map true empty_iterator))     // 1st arg not a proc
+(expect_argument_exn
+  (iterator_map identity []))             // 2nd arg not an iterator
+
+
+//==========================================================================
+// iterator_map_splicing
+
+(check_iter []
+  (iterator_map_splicing list_iterator empty_iterator))
+(check_iter [1,2,3,4]
+  (iterator_map_splicing value_iterator (list_iterator [1,2,3,4])))
+(check_iter [1,2,3,4]
+  (iterator_map_splicing list_iterator (list_iterator [[1],[2,3],[],[4]])))
+
+// Make sure we can call `next` without `has_next`
+(let [(i (iterator_map_splicing list_iterator (list_iterator [[1],[2,3],[]])))]
+  (check === 1 (iterator_next i))
+  (check === 2 (iterator_next i))
+  (check === 3 (iterator_next i))
+  (expect_contract_exn (iterator_next i)))
+
+(expect_argument_exn
+  (iterator_map_splicing true empty_iterator))     // 1st arg not a proc
+(expect_argument_exn
+  (iterator_map_splicing identity []))             // 2nd arg not an iterator
+
+// Proc doesn't return an iterator
+(expect_result_exn
+  (let [(i (iterator_map_splicing identity (list_iterator [1])))]
+    (iterator_has_next i)))

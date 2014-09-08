@@ -2,71 +2,307 @@
 
 package com.amazon.fusion;
 
-import static com.amazon.ion.IonType.LIST;
-import static com.amazon.ion.IonType.STRUCT;
-import com.amazon.ion.IonReader;
-import com.amazon.ion.IonSystem;
-import com.amazon.ion.IonWriter;
-import com.amazon.ion.system.IonSystemBuilder;
-import com.amazon.ion.system.IonTextWriterBuilder;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
+import java.lang.ref.ReferenceQueue;
+import java.lang.ref.WeakReference;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
 /**
+ * Implements code-coverage metrics collection.
+ * <p>
+ * The collector is given a data directory from which it reads configuration
+ * and where it persists its metrics database.  This allows multiple runtime
+ * launches to contribute to the same set of metrics.  That's common during
+ * unit testing where each test case uses a fresh {@link FusionRuntime}.
+ * <p>
+ * At present, only file-based sources are instrumented. This includes sources
+ * loaded from a file-based {@link ModuleRepository} as well as scripts from
+ * other locations.
  *
+ * @see CoverageConfiguration
  */
 public final class _Private_CoverageCollectorImpl
     implements _Private_CoverageCollector
 {
-    private final File myDataDir;
-    private final File myCoverageFile;
+    private final CoverageConfiguration myConfig;
 
-    private final Map<SourceLocation,Boolean> myLocations = new HashMap<>();
+    /** Where we store our metrics. */
+    private final CoverageDatabase myDatabase;
 
-
-    public _Private_CoverageCollectorImpl()
-    {
-        myDataDir = null;
-        myCoverageFile = null;
-    }
 
     private _Private_CoverageCollectorImpl(File dataDir)
-        throws IOException
+        throws FusionException, IOException
     {
-        myDataDir = dataDir;
-        myCoverageFile = new File(myDataDir, "coverage.ion");
+        myConfig   = new CoverageConfiguration(dataDir);
+        myDatabase = new CoverageDatabase(dataDir);
+    }
 
-        if (myCoverageFile.exists())
+
+
+    private static
+    ReferenceQueue<_Private_CoverageCollectorImpl> ourReferenceQueue =
+        new ReferenceQueue<>();
+
+
+    private static final class CollectorRef
+        extends WeakReference<_Private_CoverageCollectorImpl>
+    {
+        private File             myFile;
+        private CoverageDatabase myDatabase;
+
+        CollectorRef(_Private_CoverageCollectorImpl referent)
         {
-            readFrom(myCoverageFile);
+            super(referent, ourReferenceQueue);
+
+            myDatabase = referent.myDatabase;
+        }
+
+        void flushDatabase()
+            throws IOException
+        {
+            try
+            {
+                synchronized (this)
+                {
+                    if (myDatabase != null)
+                    {
+                        // If we fail to write the database, don't try it again.
+                        CoverageDatabase db = myDatabase;
+                        myDatabase = null;
+                        db.write();
+                    }
+                }
+            }
+            finally
+            {
+                removeFromCache(myFile, this);
+            }
+        }
+    }
+
+
+    private static class Flusher
+        implements Runnable
+    {
+        @Override
+        public void run()
+        {
+            try
+            {
+                while (true)
+                {
+                    try
+                    {
+                        CollectorRef ref =
+                            (CollectorRef) ourReferenceQueue.remove();
+                        ref.flushDatabase();
+                    }
+                    catch (InterruptedException e)
+                    {
+                        break;
+                    }
+                    catch (IOException e)
+                    {
+                        // TODO Auto-generated catch block
+                        e.printStackTrace();
+                    }
+                }
+            }
+            finally
+            {
+                synchronized (Flusher.class)
+                {
+                    ourFlusherThread = null;
+                }
+            }
+        }
+
+
+        private static Thread ourFlusherThread = null;
+
+        static synchronized void start()
+        {
+            if (ourFlusherThread == null)
+            {
+                ourFlusherThread =
+                    new Thread(new Flusher(),
+                               "Fusion coverage metrics flusher");
+                ourFlusherThread.setDaemon(true);
+                ourFlusherThread.start();
+            }
+        }
+
+        /** Called when there are no more references to flush. */
+        static synchronized void stop()
+        {
+            if (ourFlusherThread != null)
+            {
+                ourFlusherThread.interrupt();
+                ourFlusherThread = null;
+            }
         }
     }
 
 
 
-    public static _Private_CoverageCollectorImpl fromDirectory(File dataDir)
+    private static Map<File,CollectorRef> ourCollectorCache;
+
+    private static Thread ourShutdownHook;
+    private static boolean ourShutdownHasStarted;
+
+
+    /**
+     * Called before every PUT into the cache.
+     */
+    private static synchronized void initCache()
         throws FusionException
     {
+        if (ourCollectorCache == null)
+        {
+            ourCollectorCache = new HashMap<>();
+        }
+
+        if (ourShutdownHook == null)
+        {
+            ourShutdownHook = new Thread()
+            {
+                @Override
+                public void run()
+                {
+                    emptyCache();
+                }
+            };
+
+            try
+            {
+                Runtime.getRuntime().addShutdownHook(ourShutdownHook);
+            }
+            catch (IllegalStateException e)
+            {
+                throw new FusionException("The JMV is shutting down.");
+            }
+        }
+        else if (ourShutdownHasStarted)
+        {
+            throw new FusionException("The JMV is shutting down.");
+        }
+    }
+
+
+    private static synchronized void addToCache(File file,  CollectorRef ref)
+    {
+        ourCollectorCache.put(file, ref);
+
+        Flusher.start();
+    }
+
+
+    /**
+     * Remove an entry from the cache AFTER it has been flushed.
+     *
+     * @param file
+     * @param ref
+     */
+    private static synchronized void removeFromCache(File file,
+                                                     CollectorRef ref)
+    {
+        assert ref.get() == null;
+
+        CollectorRef current = ourCollectorCache.get(file);
+        if (current == ref)
+        {
+            ourCollectorCache.remove(file);
+        }
+
+        if (ourCollectorCache.isEmpty())
+        {
+            assert ourShutdownHook != null;
+            try
+            {
+                Runtime.getRuntime().removeShutdownHook(ourShutdownHook);
+            }
+            catch (IllegalStateException e)
+            {
+                // The JMV is shutting down. Nothing to do.
+            }
+
+            Flusher.stop();
+        }
+    }
+
+    /**
+     * Called by the JVM shutdown hook, to ensure everything gets flushed.
+     */
+    private static synchronized void emptyCache()
+    {
+        ourShutdownHasStarted = true;
+
+        // Snapshot the values in the cache, to avoid concurrent
+        // modification problems. If the cache isn't empty, Flusher thread is
+        // still running.
+        Set<CollectorRef> files = new HashSet<>(ourCollectorCache.values());
+        for (CollectorRef ref : files)
+        {
+            if (ref != null)
+            {
+                ref.clear();
+                try
+                {
+                    ref.flushDatabase();
+                }
+                catch (IOException e)
+                {
+                    String message = "Error writing coverage data";
+                    throw new RuntimeException(message, e);
+                }
+            }
+        }
+    }
+
+    public static synchronized
+    _Private_CoverageCollectorImpl fromDirectory(File dataDir)
+        throws FusionException
+    {
+        initCache();
+
+        _Private_CoverageCollectorImpl collector;
+
+        CollectorRef ref = ourCollectorCache.get(dataDir);
+        if (ref != null)
+        {
+            collector = ref.get();
+            if (collector != null) return collector;
+
+            // The prior collector has been GCed, so write any remaining state.
+            // We want this to happen BEFORE creating a new collector using
+            // the same directory.
+            try
+            {
+                ref.flushDatabase();
+            }
+            catch (IOException e)
+            {
+                throw new FusionException("Error writing coverage data", e);
+            }
+            // ref is now useless. Fall through and create a new one.
+        }
+
         try
         {
-            return new _Private_CoverageCollectorImpl(dataDir);
+            collector = new _Private_CoverageCollectorImpl(dataDir);
         }
         catch (IOException e)
         {
             throw new FusionException("Error reading coverage data", e);
         }
+
+        addToCache(dataDir, new CollectorRef(collector));
+
+        return collector;
     }
 
     public static _Private_CoverageCollectorImpl fromDirectory(String dataDir)
@@ -80,32 +316,29 @@ public final class _Private_CoverageCollectorImpl
     // Managing the coverage data
 
 
-    @Override
-    public synchronized boolean coverableLocation(SourceLocation loc)
+    void noteRepository(File repoDir)
     {
-        Boolean prev = myLocations.put(loc, Boolean.FALSE);
+        myDatabase.noteRepository(repoDir);
+    }
 
-        // If already covered, don't un-cover it!
-        if (prev != null)
+
+    @Override
+    public boolean coverableLocation(SourceLocation loc)
+    {
+        boolean coverable = myConfig.locationIsSelected(loc);
+
+        if (coverable)
         {
-            myLocations.put(loc, prev);
+            myDatabase.noteCoverableLocation(loc);
         }
 
-        return true; // Collect coverage for everything
+        return coverable;
     }
 
     @Override
-    public synchronized void coverLocation(SourceLocation loc)
+    public void coverLocation(SourceLocation loc)
     {
-        myLocations.put(loc, Boolean.TRUE);
-    }
-
-
-    /** Has a location been covered? */
-    synchronized boolean locationCovered(SourceLocation loc)
-    {
-        Boolean covered = myLocations.get(loc);
-        return (covered != null && covered);
+        myDatabase.coverLocation(loc);
     }
 
 
@@ -115,332 +348,11 @@ public final class _Private_CoverageCollectorImpl
     {
         try
         {
-            writeTo(myCoverageFile);
+            myDatabase.write();
         }
         catch (IOException e)
         {
             throw new FusionException("Error writing coverage data", e);
-        }
-    }
-
-
-    //=========================================================================
-
-
-    private static final class SourceNameComparator
-        implements Comparator<SourceName>
-    {
-        @Override
-        public int compare(SourceName a, SourceName b)
-        {
-            return a.display().compareTo(b.display());
-        }
-    }
-
-    static final Comparator<SourceName> SRCNAME_COMPARE =
-        new SourceNameComparator();
-
-
-    private static final class SourceLocationComparator
-        implements Comparator<SourceLocation>
-    {
-        @Override
-        public int compare(SourceLocation a, SourceLocation b)
-        {
-            if (a.getLine() < b.getLine()) return -1;
-            if (a.getLine() > b.getLine()) return  1;
-
-            if (a.getColumn() < b.getColumn()) return -1;
-            if (a.getColumn() > b.getColumn()) return  1;
-
-            return 0;
-        }
-    }
-
-    static final Comparator<SourceLocation> SRCLOC_COMPARE =
-        new SourceLocationComparator();
-
-
-
-    //=========================================================================
-
-
-    synchronized Set<SourceName> sourceNames()
-    {
-        Set<SourceName> names = new HashSet<>();
-
-        Iterator<SourceLocation> i = myLocations.keySet().iterator();
-        while (i.hasNext())
-        {
-            SourceLocation loc = i.next();
-            if (loc.myName != null)
-            {
-                names.add(loc.myName);
-            }
-        }
-
-        return names;
-    }
-
-
-    SourceName[] sortedNames()
-    {
-        Set<SourceName> sourceSet = sourceNames();
-
-        SourceName[] sourceArray = sourceSet.toArray(new SourceName[0]);
-
-        Arrays.sort(sourceArray, SRCNAME_COMPARE);
-
-        return sourceArray;
-    }
-
-
-    synchronized SourceLocation[] sortedLocations(SourceName name)
-    {
-        ArrayList<SourceLocation> locsList = new ArrayList<>();
-
-        Iterator<SourceLocation> i = myLocations.keySet().iterator();
-        while (i.hasNext())
-        {
-            SourceLocation loc = i.next();
-            if (name.equals(loc.myName))
-            {
-                locsList.add(loc);
-            }
-        }
-
-        SourceLocation[] locsArray =
-            locsList.toArray(new SourceLocation[locsList.size()]);
-
-        Arrays.sort(locsArray, SRCLOC_COMPARE);
-
-        return locsArray;
-    }
-
-
-    synchronized SourceLocation[] sortedLocations(File sourceFile)
-    {
-        SourceName name = SourceName.forFile(sourceFile);
-        return sortedLocations(name);
-    }
-
-
-    //=========================================================================
-
-
-    private void writeLocation(IonWriter iw, SourceLocation loc)
-        throws IOException
-    {
-        iw.stepIn(STRUCT);
-        {
-            long line = loc.getLine();
-            long col  = loc.getColumn();
-
-            boolean covered = locationCovered(loc);
-
-            iw.setFieldName("line");
-            iw.writeInt(line);
-
-            iw.setFieldName("column");
-            iw.writeInt(col);
-
-            iw.setFieldName("covered");
-            iw.writeBool(covered);
-        }
-        iw.stepOut();
-    }
-
-
-    private void writeLocations(IonWriter iw, SourceName name)
-        throws IOException
-    {
-        SourceLocation[] locations = sortedLocations(name);
-        assert locations.length != 0;
-
-        iw.stepIn(LIST);
-        {
-            for (SourceLocation loc : locations)
-            {
-                writeLocation(iw, loc);
-            }
-        }
-        iw.stepOut();
-    }
-
-
-    private void writeSource(IonWriter iw, SourceName name)
-        throws IOException
-    {
-        iw.stepIn(STRUCT);
-        {
-            iw.setFieldName("file");
-            iw.writeString(name.getFile().getPath());
-
-            iw.setFieldName("locations");
-            writeLocations(iw, name);
-        }
-        iw.stepOut();
-    }
-
-
-    private void writeTo(IonWriter iw)
-        throws IOException
-    {
-        for (SourceName name : sourceNames())
-        {
-            if (name.getFile() != null)
-            {
-                writeSource(iw, name);
-            }
-        }
-    }
-
-
-    private void writeTo(OutputStream out)
-        throws IOException
-    {
-        try (IonWriter iw = IonTextWriterBuilder.minimal().build(out))
-        {
-            writeTo(iw);
-        }
-    }
-
-
-    private void writeTo(File where)
-        throws IOException
-    {
-        FusionUtils.createParentDirs(where);
-        try (OutputStream out = new FileOutputStream(where))
-        {
-            writeTo(out);
-        }
-    }
-
-
-    //=========================================================================
-
-
-    private void readLocation(IonReader in, SourceName name)
-        throws IOException
-    {
-        assert in.getType() == STRUCT;
-        in.stepIn();
-        {
-            long    line    = 0;
-            long    column  = 0;
-            boolean covered = false;
-
-            while (in.next() != null)
-            {
-                switch (in.getFieldName())
-                {
-                    case "line":
-                    {
-                        line = in.longValue();
-                        break;
-                    }
-                    case "column":
-                    {
-                        column = in.longValue();
-                        break;
-                    }
-                    case "covered":
-                    {
-                        covered = in.booleanValue();
-                        break;
-                    }
-                    default:
-                    {
-                        // ignore it
-                        break;
-                    }
-                }
-            }
-
-            SourceLocation loc =
-                SourceLocation.forLineColumn(name, line, column);
-            assert loc != null;
-
-            if (coverableLocation(loc) && covered)
-            {
-                coverLocation(loc);
-            }
-        }
-        in.stepOut();
-    }
-
-
-    private void readLocations(IonReader in, SourceName name)
-        throws IOException
-    {
-        assert in.getType() == LIST;
-        in.stepIn();
-        {
-            while (in.next() != null)
-            {
-                readLocation(in, name);
-            }
-        }
-        in.stepOut();
-    }
-
-
-    private void readSource(IonReader in)
-        throws IOException
-    {
-        assert in.getType() == STRUCT;
-        in.stepIn();
-        {
-            SourceName name = null;
-
-            while (in.next() != null)
-            {
-                switch (in.getFieldName())
-                {
-                    case "file":
-                    {
-                        name = SourceName.forFile(in.stringValue());
-                        break;
-                    }
-                    case "locations":
-                    {
-                        // TODO I'm too lazy to handle out-of-order fields.
-                        assert name != null;
-                        readLocations(in, name);
-                        break;
-                    }
-                    default:
-                    {
-                        // Ignore it.
-                        break;
-                    }
-                }
-            }
-        }
-        in.stepOut();
-    }
-
-
-    private void readFrom(IonReader in)
-        throws IOException
-    {
-        while (in.next() != null)
-        {
-            readSource(in);
-        }
-    }
-
-
-    private void readFrom(File where)
-        throws IOException
-    {
-        IonSystem system = IonSystemBuilder.standard().build();
-        try (InputStream is = new FileInputStream(where))
-        {
-            try (IonReader ir = system.newReader(is))
-            {
-                readFrom(ir);
-            }
         }
     }
 }

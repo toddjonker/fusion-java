@@ -3,13 +3,12 @@
 (require
   "/fusion/experimental/check"
   "/fusion/experimental/syntax"
-  "/fusion/private/builtins"    // annotate
   "/testutils"
   )
 
 
 //==========================================================================
-// annotate and type_annotations
+// annotate and annotations
 
 // TODO what about mutable variants?
 //   These tests apply `annotate` to quoted (therefore immutable) data, but
