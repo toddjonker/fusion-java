@@ -10,6 +10,7 @@ import static com.amazon.fusion.FusionVoid.voidValue;
 import static com.amazon.fusion.GlobalState.PROVIDE;
 import static com.amazon.fusion.GlobalState.REQUIRE;
 import static com.amazon.fusion.ModuleIdentity.isValidAbsoluteModulePath;
+import static com.amazon.fusion.ModuleIdentity.isValidModulePath;
 import com.amazon.fusion.ModuleNamespace.ModuleBinding;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -75,7 +76,12 @@ final class ModuleForm
             throw check.failure("`module` declaration not at top-level");
         }
 
-
+        // Ensure there's a name and language. We check for a body below, but
+        // want a different error message for that situation.
+        if (source.size() < 3)
+        {
+            throw check.failure("Malformed module declaration");
+        }
 
         SyntaxSymbol moduleNameSymbol =
             check.requiredIdentifier("module name", 1);
@@ -104,6 +110,11 @@ final class ModuleForm
             String path = check.requiredText(eval, "initial module path", 2);
             SyntaxValue initialBindingsStx = source.get(eval, 2);
 
+            if (! isValidModulePath(path))
+            {
+                String message = "Invalid module path for language";
+                throw new ModuleNotFoundException(message, initialBindingsStx);
+            }
             if (! isValidAbsoluteModulePath(path))
             {
                 String message = "Module path for language must be absolute";
@@ -140,6 +151,12 @@ final class ModuleForm
                                         STX_PROP_LANGUAGE_IDENTITY, languageId);
         }
 
+
+        if (source.size() < 4)
+        {
+            throw check.failure("Module has no body");
+        }
+
         // The new namespace shares the registry of current-namespace
         ModuleNamespace moduleNamespace =
             new ModuleNamespace(registry, language, id);
@@ -157,7 +174,7 @@ final class ModuleForm
 
         ArrayList<SyntaxSexp>  provideForms      = new ArrayList<>();
         ArrayList<SyntaxValue> otherForms        = new ArrayList<>();
-        ArrayList<Boolean>     preparedFormFlags = new ArrayList<>();
+        ArrayList<Boolean>     expandedFormFlags = new ArrayList<>();
 
         LinkedList<SyntaxValue> forms = new LinkedList<>();
         source.extract(eval, forms, 3);
@@ -177,7 +194,7 @@ final class ModuleForm
                 formsAlreadyWrapped--;
             }
 
-            boolean formIsPrepared = false;
+            boolean formIsExpanded = false;
 
             SyntaxValue expanded =
                 expander.partialExpand(moduleNamespace, form);
@@ -207,7 +224,7 @@ final class ModuleForm
                         e.addContext(form);
                         throw e;
                     }
-                    formIsPrepared = true;
+                    formIsExpanded = true;
                 }
                 else if (binding == globals.myKernelRequireBinding)
                 {
@@ -223,7 +240,7 @@ final class ModuleForm
                         ex.initCause(e);
                         throw ex;
                     }
-                    expanded = null;
+                    formIsExpanded = true;
                 }
                 else if (binding == globals.myKernelProvideBinding)
                 {
@@ -233,10 +250,13 @@ final class ModuleForm
                 else if (binding == globals.myKernelBeginBinding)
                 {
                     // Splice 'begin' into the module-begin sequence
+                    SyntaxSymbol beginId = (SyntaxSymbol) sexp.get(eval, 0);
                     int last = sexp.size() - 1;
                     for (int i = last; i != 0;  i--)
                     {
-                        forms.push(sexp.get(eval, i));
+                        SyntaxValue expr = sexp.get(eval, i);
+                        expr = expr.trackOrigin(eval, expanded, beginId);
+                        forms.push(expr);
                     }
                     formsAlreadyWrapped += last;
                     expanded = null;
@@ -246,7 +266,7 @@ final class ModuleForm
             if (expanded != null)
             {
                 otherForms.add(expanded);
-                preparedFormFlags.add(formIsPrepared);
+                expandedFormFlags.add(formIsExpanded);
             }
         }
 
@@ -267,10 +287,10 @@ final class ModuleForm
         subforms[i++] = source.get(eval, 1); // name
         subforms[i++] = source.get(eval, 2); // language
 
-        Iterator<Boolean> prepared = preparedFormFlags.iterator();
+        Iterator<Boolean> expanded = expandedFormFlags.iterator();
         for (SyntaxValue stx : otherForms)
         {
-            if (! prepared.next())
+            if (! expanded.next())
             {
                 if (firstBinding(eval, stx) == globals.myKernelDefineBinding)
                 {
@@ -350,6 +370,8 @@ final class ModuleForm
         }
 
 
+        final Binding kernelRequireBinding =
+            eval.getGlobalState().myKernelRequireBinding;
         final Binding kernelProvideBinding =
             eval.getGlobalState().myKernelProvideBinding;
 
@@ -357,7 +379,16 @@ final class ModuleForm
         for (i = bodyPos; i < stx.size(); i++)
         {
             SyntaxValue form = stx.get(eval, i);
-            if (firstBinding(eval, form) == kernelProvideBinding)
+
+            Binding firstBinding = firstBinding(eval, form);
+            if (firstBinding == kernelRequireBinding)
+            {
+                // All require forms have already been evaluated.
+                // We preserve them through macro expansion so that the are
+                // retained by `expand` and similar operations.
+                continue;
+            }
+            if (firstBinding == kernelProvideBinding)
             {
                 break;
             }
