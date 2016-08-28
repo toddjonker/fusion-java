@@ -6,21 +6,6 @@
   "/fusion/string")
 
 
-
-//============================================================================
-// string_size_codepoints
-
-(expect_argument_exn (string_size_codepoints (void)))
-(expect_argument_exn (string_size_codepoints null))
-(expect_argument_exn (string_size_codepoints null.string))
-(check === 0 (string_size_codepoints ""))
-(check === 1 (string_size_codepoints "1"))
-(check === 10 (string_size_codepoints "1234567890"))
-(check === 2 (string_size_codepoints "\u0394\u0394"))
-(check === 5 (string_size_codepoints "A\u0394B\u0394C"))
-(check === 3 (string_size_codepoints "\uD835\uDFCB\u006B\uD835\uDF9E"))
-
-
 //============================================================================
 // string_size_utf8
 
@@ -32,26 +17,6 @@
 (check === 9  (string_size_utf8 "hello\x80\u07ff"))
 (check === 12 (string_size_utf8 "hello\x80\u07ff\uffff"))
 (check === 16 (string_size_utf8 "hello\x80\u07ff\uffff\U000ffff1"))
-
-//============================================================================
-// string_index_codepoints
-
-(expect_argument_exn (string_index_codepoints (void) "a"))
-(expect_argument_exn (string_index_codepoints "a" (void)))
-(expect_argument_exn (string_index_codepoints null "a"))
-(expect_argument_exn (string_index_codepoints "a" null))
-(expect_argument_exn (string_index_codepoints null.string "a"))
-(expect_argument_exn (string_index_codepoints "a" null.string))
-(expect_argument_exn (string_index_codepoints null.string null.string))
-
-(check === 0 (string_index_codepoints "" ""))
-(check_void (string_index_codepoints "" "a"))
-(check === 0 (string_index_codepoints "aabaabaa" "a"))
-(check === 2 (string_index_codepoints "aabaabaa" "b"))
-(check === 1 (string_index_codepoints "aabaabaa" "ab"))
-(check === 0 (string_index_codepoints "aabaabaa" ""))
-(check === 2 (string_index_codepoints "\uD835\uDFCB\u006B\uD835\uDF9E" "\uD835\uDF9E"))
-(check === 1 (string_index_codepoints "\uD835\uDFCB\u006B\uD835\uDF9E" "\u006B"))
 
 
 //============================================================================
