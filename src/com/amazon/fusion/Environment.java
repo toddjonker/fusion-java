@@ -1,7 +1,8 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import java.util.Set;
 
 /**
@@ -14,7 +15,7 @@ interface Environment
     Namespace namespace();
 
 
-    /** What's the lexical depth?  0 == top-level */
+    /** What's the lexical depth?  0 == namespace-level */
     int getDepth();
 
 
@@ -25,7 +26,7 @@ interface Environment
      *
      * @return given binding if not substituted here; not null.
      */
-    Binding substitute(Binding binding, Set<Integer> marks);
+    Binding substitute(Binding binding, Set<MarkWrap> marks);
 
 
     /**
@@ -35,5 +36,5 @@ interface Environment
      *
      * @return null if the name is not substituted here.
      */
-    Binding substituteFree(String name, Set<Integer> marks);
+    Binding substituteFree(BaseSymbol name, Set<MarkWrap> marks);
 }

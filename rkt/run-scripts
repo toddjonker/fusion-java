@@ -1,0 +1,31 @@
+#!/bin/bash
+
+set -e
+
+if [[ -z "$RACKET_HOME" ]]
+then
+    echo '$RACKET_HOME is not defined'
+    exit 1
+fi
+echo RACKET_HOME=$RACKET_HOME
+
+cd $(dirname "$0")/..
+
+failed=''
+
+for script in $(cd rkt && ls *.rkt); do
+    echo "Loading $script"
+    if ! "$RACKET_HOME"/bin/racket --load "rkt/$script"
+    then
+        echo "  FAILED"
+        failed="$failed
+     $script"
+    fi
+done
+
+if [ -n "$failed" ]
+then
+    echo
+    echo "FAILURES:$failed"
+    exit 1
+fi

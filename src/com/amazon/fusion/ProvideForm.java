@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -7,7 +7,8 @@ import static com.amazon.fusion.FusionSymbol.isSymbol;
 import static com.amazon.fusion.FusionSymbol.makeSymbol;
 import static com.amazon.fusion.Syntax.datumToSyntax;
 import static com.amazon.ion.util.IonTextUtils.printQuotedSymbol;
-import com.amazon.fusion.Namespace.NsBinding;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
+import com.amazon.fusion.Namespace.NsDefinedBinding;
 import java.util.ArrayList;
 
 
@@ -21,9 +22,19 @@ final class ProvideForm
               "Declares bindings to be exported from the enclosing module.  This form may only\n" +
               "appear at module level.\n" +
               "\n" +
-              "The clauses denote the bindings to be exported.  The basic clause is an\n" +
-              "identifier bound at module-level, either via definition or import.  At present\n" +
-              "the only other `provide_clause` form is `all_defined_out`.");
+              "Each `provide_clause` denotes some names to be exported. The following clause\n" +
+              "forms are allowed:\n" +
+              "\n" +
+              "  * An identifier defined at module-level or imported from another module.\n" +
+              "  * [`all_defined_out`][all_defined_out] exports all module-level definitions.\n" +
+              "  * [`rename_out`][rename_out] exports selected bindings, giving them new names\n" +
+              "    on the way out.\n" +
+              "\n" +
+              "Within a module, a single `provide` form with multiple clauses behaves\n" +
+              " identically to multiple `provide` forms with single clauses.\n" +
+              "\n" +
+              "[all_defined_out]: fusion/module.html#all_defined_out\n" +
+              "[rename_out]:      fusion/module.html#rename_out\n");
     }
 
 
@@ -64,7 +75,7 @@ final class ProvideForm
             {
                 expandProvideSexp(eval, moduleNamespace,
                                   (SyntaxSexp) spec,
-                                  check.subformSexp("provide-spec", i),
+                                  check,
                                   expanded);
             }
             else
@@ -73,8 +84,7 @@ final class ProvideForm
             }
         }
 
-        SyntaxValue[] children =
-            expanded.toArray(new SyntaxValue[expanded.size()]);
+        SyntaxValue[] children = expanded.toArray(SyntaxValue.EMPTY_ARRAY);
         return form.copyReplacingChildren(eval, children);
     }
 
@@ -84,8 +94,30 @@ final class ProvideForm
                                  ArrayList<SyntaxValue> expanded)
         throws FusionException
     {
-        String publicName = identifier.stringValue();
+        Binding b = verifyBoundId(moduleNamespace, identifier, check);
 
+        BaseSymbol freeName = b.getName();
+        if (freeName != identifier.getName())
+        {
+            String message =
+                "cannot export binding since symbolic name " +
+                printQuotedSymbol(identifier.stringValue()) +
+                " differs from resolved name " +
+                printQuotedSymbol(freeName.stringValue());
+            throw check.failure(message);
+        }
+
+        expanded.add(identifier);
+    }
+
+    /**
+     * Check that an identifier is bound within the module and can be exported.
+     */
+    private Binding verifyBoundId(Namespace moduleNamespace,
+                                  SyntaxSymbol identifier,
+                                  SyntaxChecker check)
+        throws FusionException
+    {
         // TODO FUSION-139 id.resolve works when the id has the ns in context
         // It doesn't work when the ns isn't in context because the
         // provided binding was macro-introduced.
@@ -97,35 +129,30 @@ final class ProvideForm
         if (b instanceof FreeBinding)
         {
             String message =
-                "cannot export " + printQuotedSymbol(publicName) +
-                " since it has no definition.";
-            throw check.failure(message);
+                "cannot export " + printQuotedSymbol(identifier.stringValue()) +
+                " since it is neither defined in nor imported into this module.";
+            throw check.failure(message, identifier);
         }
 
-        String freeName = b.getName();
-        if (! publicName.equals(freeName))
-        {
-            String message =
-                "cannot export binding since symbolic name " +
-                printQuotedSymbol(publicName) +
-                " differs from resolved name " +
-                printQuotedSymbol(freeName);
-            throw check.failure(message);
-        }
-
-        expanded.add(identifier);
+        return b;
     }
 
     private void expandProvideSexp(Evaluator eval,
                                    Namespace moduleNamespace,
                                    SyntaxSexp specForm,
-                                   SyntaxChecker check,
+                                   SyntaxChecker provideCheck,
                                    ArrayList<SyntaxValue> expanded)
         throws FusionException
     {
-        Binding b = specForm.firstBinding(eval);
-        if (b == eval.getGlobalState().myKernelAllDefinedOutBinding)
+        SyntaxChecker check = new SyntaxChecker(eval, specForm);
+
+        GlobalState globalState = eval.getGlobalState();
+
+        Binding b = specForm.firstTargetBinding(eval);
+        if (b == globalState.myKernelAllDefinedOutBinding)
         {
+            // Expanded form is a sequence of identifiers.
+
             check.arityExact(1);
 
             SyntaxSymbol tag = (SyntaxSymbol) specForm.get(eval, 0);
@@ -133,7 +160,7 @@ final class ProvideForm
             // Filter by lexical context: we shouldn't export identifiers
             // introduced by macros unless this form was also introduced
             // at the same time.
-            for (NsBinding binding : moduleNamespace.getBindings())
+            for (NsDefinedBinding binding : moduleNamespace.getDefinedBindings())
             {
                 // TODO FUSION-329 the datum->syntax context should be the sexp
                 // form `(all_defined_out)` not just `all_defined_out` but
@@ -141,11 +168,10 @@ final class ProvideForm
                 // it has been pushed down to children.
                 SyntaxSymbol localized = (SyntaxSymbol)
                     datumToSyntax(eval,
-                                  makeSymbol(eval, binding.getName()),
+                                  binding.getName(),
                                   tag,
                                   null);
-                localized = localized.copyAndResolveTop();
-                Binding localBinding = moduleNamespace.localResolve(localized);
+                Binding localBinding = moduleNamespace.resolveDefinition(localized);
                 if (localBinding != null && binding.sameTarget(localBinding))
                 {
                     localized = localized.copyReplacingBinding(binding);
@@ -155,9 +181,32 @@ final class ProvideForm
                 // TODO FUSION-136 handle rename-transformers per Racket
             }
         }
+        else if (b == globalState.myKernelRenameOutBinding)
+        {
+            // Expanded form is a sequence of (rename local exported) triples.
+
+            SyntaxSymbol renameSym = SyntaxSymbol.make(eval, null /*location*/,
+                                                       makeSymbol(eval, "rename"));
+
+            int arity = check.arityAtLeast(1);
+            for (int i = 1; i < arity; i++)
+            {
+                SyntaxChecker rename = check.subformSexp("rename pair", i);
+                rename.arityExact(2);
+
+                SyntaxSymbol inner =
+                    rename.requiredIdentifier("local identifier", 0);
+                SyntaxSymbol outer =
+                    rename.requiredIdentifier("exported identifier", 1);
+
+                verifyBoundId(moduleNamespace, inner, check);
+
+                expanded.add(SyntaxSexp.make(eval, renameSym, inner, outer));
+            }
+        }
         else
         {
-            throw check.failure("invalid provide-spec");
+            throw provideCheck.failure("invalid provide-spec");
         }
     }
 
@@ -177,21 +226,16 @@ final class ProvideForm
 
 
     /**
-     * This class primarily provides syntax to bind to all_defined_out so that
+     * This class primarily provides syntax to bind to provide-clauses so that
      * {@link ProvideForm} can compare bindings, not symbolic names.  This is
      * as specified by Racket.
      */
-    static final class AllDefinedOutForm
+    private abstract static class AbstractProvideClauseForm
         extends SyntacticForm
     {
-        AllDefinedOutForm()
+        AbstractProvideClauseForm(String bodyPattern, String doc)
         {
-            //    "                                                                               |
-            super("",
-                  "A `provide` clause that exports all bindings `define`d by the enclosing module.\n" +
-                  "Imported bindings are not exported.\n" +
-                  "\n" +
-                  "This form can only appear within `provide`.");
+            super(bodyPattern, doc);
         }
 
         @Override
@@ -206,6 +250,36 @@ final class ProvideForm
             throws FusionException
         {
             throw new IllegalStateException("Shouldn't be compiled");
+        }
+    }
+
+
+    static final class AllDefinedOutForm
+        extends AbstractProvideClauseForm
+    {
+        AllDefinedOutForm()
+        {
+            //    "                                                                               |
+            super("",
+                  "A `provide` clause that exports all bindings `define`d by the enclosing module.\n" +
+                  "Imported bindings are not exported.\n" +
+                  "\n" +
+                  "This form can only appear within `provide`.");
+        }
+    }
+
+
+    static final class RenameOutForm
+        extends AbstractProvideClauseForm
+    {
+        RenameOutForm()
+        {
+            //    "                                                                               |
+            super("(local_id exported_id) ...",
+                  "A `provide` clause that exports each `local_id` using the name `exported_id`.\n" +
+                  "This effectively renames the binding on export.\n" +
+                  "\n" +
+                  "This form can only appear within `provide`.");
         }
     }
 }

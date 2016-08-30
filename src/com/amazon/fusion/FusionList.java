@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -12,13 +12,14 @@ import static com.amazon.fusion.FusionIo.dispatchIonize;
 import static com.amazon.fusion.FusionIo.dispatchWrite;
 import static com.amazon.fusion.FusionNumber.makeInt;
 import static com.amazon.fusion.FusionNumber.unsafeTruncateIntToJavaInt;
+import static com.amazon.fusion.FusionSymbol.BaseSymbol.internSymbols;
 import static com.amazon.fusion.FusionUtils.EMPTY_OBJECT_ARRAY;
-import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
 import static com.amazon.fusion.FusionVoid.voidValue;
 import com.amazon.fusion.FusionBool.BaseBool;
 import com.amazon.fusion.FusionCompare.EqualityTier;
 import com.amazon.fusion.FusionSequence.BaseSequence;
 import com.amazon.fusion.FusionSexp.BaseSexp;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import com.amazon.ion.IonList;
 import com.amazon.ion.IonSequence;
 import com.amazon.ion.IonType;
@@ -50,23 +51,21 @@ final class FusionList
      */
     static BaseList listFromIonSequence(Evaluator eval, IonSequence seq)
     {
-        String[] annotations = seq.getTypeAnnotations();
-        // TODO FUSION-47 intern annotation text
+        BaseSymbol[] annotations = internSymbols(seq.getTypeAnnotations());
 
         if (seq.isNullValue())
         {
             return nullList(eval, annotations);
         }
 
-        int size = seq.size();
-        if (size == 0)
+        if (seq.isEmpty())
         {
             return immutableList(eval, annotations, EMPTY_OBJECT_ARRAY);
         }
         else
         {
-            Object[] elts = seq.toArray(new Object[size]);
-            return new LazyInjectingList(annotations, elts);
+            return new LazyInjectingList(annotations,
+                                         seq.toArray(EMPTY_OBJECT_ARRAY));
         }
     }
 
@@ -77,14 +76,16 @@ final class FusionList
     }
 
 
+    static NullList nullList(Evaluator eval, BaseSymbol[] annotations)
+    {
+        if (annotations.length == 0) return NULL_LIST;
+        return new NullList(annotations);
+    }
+
     static NullList nullList(Evaluator eval, String[] annotations)
     {
-        if (annotations.length == 0)
-        {
-            return NULL_LIST;
-        }
-
-        return new NullList(annotations);
+        if (annotations.length == 0) return NULL_LIST;
+        return new NullList(internSymbols(annotations));
     }
 
 
@@ -101,11 +102,9 @@ final class FusionList
      * Creates a mutable list containing the elements.
      * @param elements must be injected.
      */
-    static <T> MutableList mutableList(Evaluator eval, List<T> elements)
+    static MutableList mutableList(Evaluator eval, List<?> elements)
     {
-        Object[] v = new Object[elements.size()];
-        elements.toArray(v);
-        return new MutableList(v);
+        return new MutableList(elements.toArray());
     }
 
 
@@ -129,7 +128,7 @@ final class FusionList
      * @param elements must not be null. This method assumes ownership!
      */
     static ImmutableList immutableList(Evaluator eval,
-                                       String[] annotations,
+                                       BaseSymbol[] annotations,
                                        Object[] elements)
     {
         if (elements.length == 0 && annotations.length == 0)
@@ -142,21 +141,30 @@ final class FusionList
         }
     }
 
+    /**
+     * @param elements must not be null. This method assumes ownership!
+     */
+    static ImmutableList immutableList(Evaluator eval,
+                                       String[] annotations,
+                                       Object[] elements)
+    {
+        return immutableList(eval, internSymbols(annotations), elements);
+    }
+
+
 
     /**
      * @param elements must not be null
      */
-    static <T> ImmutableList immutableList(Evaluator eval, List<T> elements)
+    static ImmutableList immutableList(Evaluator eval, List<?> elements)
     {
-        int size = elements.size();
-        if (size == 0)
+        if (elements.isEmpty())
         {
             return EMPTY_IMMUTABLE_LIST;
         }
         else
         {
-            Object[] elts = elements.toArray(new Object[size]);
-            return new ImmutableList(elts);
+            return new ImmutableList(elements.toArray());
         }
     }
 
@@ -165,19 +173,27 @@ final class FusionList
      * @param elements must not be null. This method assumes ownership!
      */
     static ImmutableList immutableList(Evaluator eval,
-                                       String[] annotations,
+                                       BaseSymbol[] annotations,
                                        List<?> elements)
     {
-        int size = elements.size();
-        if (size == 0 && annotations.length == 0)
+        if (elements.isEmpty() && annotations.length == 0)
         {
             return EMPTY_IMMUTABLE_LIST;
         }
         else
         {
-            Object[] elts = elements.toArray(new Object[size]);
-            return new ImmutableList(annotations, elts);
+            return new ImmutableList(annotations, elements.toArray());
         }
+    }
+
+    /**
+     * @param elements must not be null. This method assumes ownership!
+     */
+    static ImmutableList immutableList(Evaluator eval,
+                                       String[] annotations,
+                                       List<?> elements)
+    {
+        return immutableList(eval, internSymbols(annotations), elements);
     }
 
 
@@ -223,13 +239,6 @@ final class FusionList
     //========================================================================
     // Accessors
 
-    /**
-     * @return not null.
-     */
-    static String[] unsafeListAnnotationStrings(Evaluator eval, Object list)
-    {
-        return ((BaseList) list).myAnnotations;
-    }
 
     static int unsafeListSize(Evaluator eval, Object list)
     {
@@ -330,7 +339,7 @@ final class FusionList
             unsafeListCopy(eval, list, srcPos, copy, 0, length);
         }
 
-        return lst.makeSimilar(EMPTY_STRING_ARRAY, copy);
+        return lst.makeSimilar(BaseSymbol.EMPTY_ARRAY, copy);
     }
 
 
@@ -346,7 +355,7 @@ final class FusionList
     {
         if (list instanceof NullList)
         {
-            String[] annotations = ((NullList)list).myAnnotations;
+            BaseSymbol[] annotations = ((NullList)list).myAnnotations;
             return FusionSexp.nullSexp(eval, annotations);
         }
 
@@ -431,7 +440,7 @@ final class FusionList
         /**
          * @param elements must not be null. This method assumes ownership!
          */
-        BaseList(String[] annotations, Object[] elements)
+        BaseList(BaseSymbol[] annotations, Object[] elements)
         {
             super(annotations);
             myValues = elements;
@@ -443,7 +452,8 @@ final class FusionList
          * of the array and it must not be modified later.
          * @param elements must not be null. This method assumes ownership!
          */
-        abstract BaseList makeSimilar(String[] annotations, Object[] elements);
+        abstract BaseList makeSimilar(BaseSymbol[] annotations,
+                                      Object[] elements);
 
 
         Object[] values(Evaluator eval)
@@ -634,7 +644,7 @@ final class FusionList
                     children[i] = child;
                 }
 
-                String[] anns = annotationsAsJavaStrings();
+                BaseSymbol[] anns = getAnnotations();
                 Object list = immutableList(eval, anns, children);
                 stx = SyntaxList.make(eval, loc, list);
             }
@@ -672,7 +682,7 @@ final class FusionList
             }
 
             IonList list = factory.newList(ions);
-            list.setTypeAnnotations(myAnnotations);
+            list.setTypeAnnotations(getAnnotationsAsJavaStrings());
             return list;
         }
 
@@ -749,7 +759,7 @@ final class FusionList
         void ionize(Evaluator eval, IonWriter out)
             throws IOException, FusionException
         {
-            out.setTypeAnnotations(myAnnotations);
+            out.setTypeAnnotations(getAnnotationsAsJavaStrings());
             out.stepIn(IonType.LIST);
             for (int i = 0; i < size(); i++)
             {
@@ -774,7 +784,7 @@ final class FusionList
         /**
          * @param elements must not be null. This method assumes ownership!
          */
-        MutableList(String[] annotations, Object[] elements)
+        MutableList(BaseSymbol[] annotations, Object[] elements)
         {
             super(annotations, elements);
         }
@@ -783,7 +793,7 @@ final class FusionList
          * @param elements must not be null. This method assumes ownership!
          */
         @Override
-        BaseList makeSimilar(String[] annotations, Object[] elements)
+        BaseList makeSimilar(BaseSymbol[] annotations, Object[] elements)
         {
             return new MutableList(annotations, elements);
         }
@@ -792,7 +802,7 @@ final class FusionList
          * Assumes ownership of arguments.
          */
         @Override
-        Object annotate(Evaluator eval, String[] annotations)
+        Object annotate(Evaluator eval, BaseSymbol[] annotations)
         {
             // Since this instance is mutable, we cannot share the array.
             Object[] values = Arrays.copyOf(myValues, size());
@@ -820,7 +830,7 @@ final class FusionList
         /**
          * @param elements must not be null. This method assumes ownership!
          */
-        ImmutableList(String[] annotations, Object[] elements)
+        ImmutableList(BaseSymbol[] annotations, Object[] elements)
         {
             super(annotations, elements);
         }
@@ -829,13 +839,13 @@ final class FusionList
          * @param elements must not be null. This method assumes ownership!
          */
         @Override
-        BaseList makeSimilar(String[] annotations, Object[] elements)
+        BaseList makeSimilar(BaseSymbol[] annotations, Object[] elements)
         {
             return new ImmutableList(annotations, elements);
         }
 
         @Override
-        Object annotate(Evaluator eval, String[] annotations)
+        Object annotate(Evaluator eval, BaseSymbol[] annotations)
         {
             // Since this instance is immutable, we can share the array.
             return makeSimilar(annotations, myValues);
@@ -851,7 +861,7 @@ final class FusionList
             super(EMPTY_OBJECT_ARRAY);
         }
 
-        NullList(String[] annotations)
+        NullList(BaseSymbol[] annotations)
         {
             super(annotations, EMPTY_OBJECT_ARRAY);
         }
@@ -869,7 +879,7 @@ final class FusionList
         }
 
         @Override
-        Object annotate(Evaluator eval, String[] annotations)
+        Object annotate(Evaluator eval, BaseSymbol[] annotations)
         {
             return new NullList(annotations);
         }
@@ -881,7 +891,7 @@ final class FusionList
             BaseList empty =
                 (myAnnotations.length == 0
                     ? EMPTY_IMMUTABLE_LIST
-                    : immutableList(eval, myAnnotations, EMPTY_OBJECT_ARRAY));
+                    : new ImmutableList(myAnnotations, EMPTY_OBJECT_ARRAY));
 
             return empty.append(eval, args);
         }
@@ -935,7 +945,7 @@ final class FusionList
             throws FusionException
         {
             IonList list = factory.newNullList();
-            list.setTypeAnnotations(myAnnotations);
+            list.setTypeAnnotations(getAnnotationsAsJavaStrings());
             return list;
         }
 
@@ -952,7 +962,7 @@ final class FusionList
         void ionize(Evaluator eval, IonWriter out)
             throws IOException, FusionException
         {
-            out.setTypeAnnotations(myAnnotations);
+            out.setTypeAnnotations(getAnnotationsAsJavaStrings());
             out.writeNull(IonType.LIST);
         }
     }
@@ -975,7 +985,7 @@ final class FusionList
         /**
          * @param elements must not be null. This method assumes ownership!
          */
-        StretchyList(String[] annotations, Object[] elements)
+        StretchyList(BaseSymbol[] annotations, Object[] elements)
         {
             super(annotations, elements);
             mySize = elements.length;
@@ -985,7 +995,7 @@ final class FusionList
          * @param elements must not be null. This method assumes ownership!
          */
         @Override
-        BaseList makeSimilar(String[] annotations, Object[] elements)
+        BaseList makeSimilar(BaseSymbol[] annotations, Object[] elements)
         {
             return new StretchyList(annotations, elements);
         }
@@ -1084,7 +1094,7 @@ final class FusionList
         /**
          * @param elements must not be null. This method assumes ownership!
          */
-        LazyInjectingList(String[] annotations, Object[] elements)
+        LazyInjectingList(BaseSymbol[] annotations, Object[] elements)
         {
             super(annotations, elements);
             assert elements.length != 0;
@@ -1112,7 +1122,7 @@ final class FusionList
         }
 
         @Override
-        Object annotate(Evaluator eval, String[] annotations)
+        Object annotate(Evaluator eval, BaseSymbol[] annotations)
         {
             // Since this instance is immutable, we can share the array AFTER
             // we inject the children.
@@ -1153,7 +1163,7 @@ final class FusionList
                     }
 
                     IonList list = factory.newList(ions);
-                    list.setTypeAnnotations(myAnnotations);
+                    list.setTypeAnnotations(getAnnotationsAsJavaStrings());
                     return list;
                 }
             }
@@ -1194,7 +1204,7 @@ final class FusionList
             {
                 if (myValues[0] instanceof IonValue)
                 {
-                    out.setTypeAnnotations(myAnnotations);
+                    out.setTypeAnnotations(getAnnotationsAsJavaStrings());
                     out.stepIn(IonType.LIST);
                     {
                         int len = myValues.length;
@@ -1300,13 +1310,6 @@ final class FusionList
     static final class IsImmutableListProc
         extends Procedure1
     {
-        IsImmutableListProc()
-        {
-            //    "                                                                               |
-            super("Determines whether `value` is an immutable list, returning `true` or `false`.",
-                  "value");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object value)
             throws FusionException
@@ -1320,13 +1323,6 @@ final class FusionList
     static final class IsMutableListProc
         extends Procedure1
     {
-        IsMutableListProc()
-        {
-            //    "                                                                               |
-            super("Determines whether `value` is a mutable list, returning `true` or `false`.",
-                  "value");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object value)
             throws FusionException
@@ -1340,13 +1336,6 @@ final class FusionList
     static final class IsStretchyListProc
         extends Procedure1
     {
-        IsStretchyListProc()
-        {
-            //    "                                                                               |
-            super("Determines whether `value` is a stretchy list, returning `true` or `false`.",
-                  "value");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object value)
             throws FusionException
@@ -1360,13 +1349,6 @@ final class FusionList
     static final class ImmutableListProc
         extends Procedure
     {
-        ImmutableListProc()
-        {
-            //    "                                                                               |
-            super("Makes a fresh, immutable list containing the given `value`s.",
-                  "value", DOTDOTDOT);
-        }
-
         @Override
         Object doApply(Evaluator eval, Object[] args)
             throws FusionException
@@ -1379,13 +1361,6 @@ final class FusionList
     static final class MutableListProc
         extends Procedure
     {
-        MutableListProc()
-        {
-            //    "                                                                               |
-            super("Makes a fresh, mutable list containing the given `value`s.",
-                  "value", DOTDOTDOT);
-        }
-
         @Override
         Object doApply(Evaluator eval, Object[] args)
             throws FusionException
@@ -1398,13 +1373,6 @@ final class FusionList
     static final class StretchyListProc
         extends Procedure
     {
-        StretchyListProc()
-        {
-            //    "                                                                               |
-            super("Makes a fresh, stretchy list containing the given `value`s.",
-                  "value", DOTDOTDOT);
-        }
-
         @Override
         Object doApply(Evaluator eval, Object[] args)
             throws FusionException
@@ -1417,13 +1385,6 @@ final class FusionList
     static final class UnsafeListSizeProc
         extends Procedure1
     {
-        UnsafeListSizeProc()
-        {
-            //    "                                                                               |
-            super("Returns the number of elements in `list`.",
-                  "list");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object list)
             throws FusionException
@@ -1435,23 +1396,15 @@ final class FusionList
 
 
     static final class UnsafeListElementProc
-        extends Procedure
+        extends Procedure2
     {
-        UnsafeListElementProc()
-        {
-            //    "                                                                               |
-            super("Returns the element of `list` at (zero-based) position `pos`. The `pos` must\n"
-                + "be a non-null int with a valid value.",
-                  "list", "pos");
-        }
-
         @Override
-        Object doApply(Evaluator eval, Object[] args)
+        Object doApply(Evaluator eval, Object list, Object p)
             throws FusionException
         {
-            int pos = unsafeTruncateIntToJavaInt(eval, args[1]);
+            int pos = unsafeTruncateIntToJavaInt(eval, p);
 
-            return unsafeListElement(eval, args[0], pos);
+            return unsafeListElement(eval, list, pos);
         }
     }
 
@@ -1459,18 +1412,6 @@ final class FusionList
     static final class UnsafeListSubseqProc
         extends Procedure
     {
-        UnsafeListSubseqProc()
-        {
-            //    "                                                                               |
-            super("Returns a list holding the elements from `list` between positions\n" +
-                  "`from` and `to`.  The following precondition applies:\n" +
-                  "\n" +
-                  "    0 <= from <= to <= (size list)\n" +
-                  "\n" +
-                  "The result may share structure with `list`.",
-                  "list", "from", "to");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object[] args)
             throws FusionException
@@ -1487,14 +1428,6 @@ final class FusionList
     static final class UnsafeListSetProc
         extends Procedure
     {
-        UnsafeListSetProc()
-        {
-            //    "                                                                               |
-            super("Changes the element of `list` at (zero-based) position `pos`. This assumes\n" +
-                  "that the `list` is mutable and that the `pos` is valid.",
-                  "list", "pos", "value");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object[] args)
             throws FusionException
@@ -1511,13 +1444,6 @@ final class FusionList
     static final class UnsafeListAddProc
         extends Procedure2
     {
-        UnsafeListAddProc()
-        {
-            //    "                                                                               |
-            super("Returns a list similar to `list` with the `value` added to the end.",
-                  "list", "value");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object list, Object value)
             throws FusionException
@@ -1530,17 +1456,6 @@ final class FusionList
     static final class UnsafeListAddMProc
         extends Procedure2
     {
-        UnsafeListAddMProc()
-        {
-            //    "                                                                               |
-            super("Returns a list similar to `list` with the `value` added to the end.  The\n" +
-                  "result may share structure with the list, which may also be mutated.\n" +
-                  "\n" +
-                  "In particular, when given a stretchy list, the input is expanded to contain\n" +
-                  "the given value, and the result is the `list` argument.",
-                  "list", "value");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object list, Object value)
             throws FusionException
@@ -1553,13 +1468,6 @@ final class FusionList
     static final class UnsafeListIterateProc
         extends Procedure1
     {
-        UnsafeListIterateProc()
-        {
-            //    "                                                                               |
-            super("Returns an iterator over the content of `list`.",
-                  "list");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object list)
             throws FusionException

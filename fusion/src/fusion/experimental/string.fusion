@@ -1,4 +1,4 @@
-// Copyright (c) 2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2014-2016 Amazon.com, Inc.  All rights reserved.
 
 /*                       *** WARNING ***
  *
@@ -31,15 +31,28 @@ Returns the size of a string in UTF-8 bytes. Throws an exception if the
 argument contains invalid Unicode data (such as mismatched surrogates).
 Given `null.string` the result is zero.
 
-Note that this is an inefficient operation since it requires a transcoding
-from UTF-16 (Java's native String representation) to UTF-8.
+Since Fusion doesn't define a specific implementation of strings, this procedure
+is not guaranteed to have better than O(_n_) time.
     '''
-    "com.amazon.fusion.FusionString$SizeUtf8")
+    "com.amazon.fusion.FusionString$SizeUtf8Proc")
 
 
   // TODO See TODOs in the implementation before finalizing these procedures.
   (defpub_j string_explode
+    '''
+    (string_explode string)
+
+Returns a stretchy list of the Unicode scalar values (code points) in the given
+non-null string.
+    '''
     "com.amazon.fusion.FusionString$ExplodeProc")
+
   (defpub_j string_implode
+    '''
+    (string_implode list)
+
+Returns a string filled by the given list of Unicode scalar values.
+    '''
     "com.amazon.fusion.FusionString$ImplodeProc")
+
 )

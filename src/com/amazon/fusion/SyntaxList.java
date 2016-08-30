@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -9,6 +9,7 @@ import static com.amazon.fusion.FusionList.unsafeListElement;
 import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
 import static java.lang.System.arraycopy;
 import com.amazon.fusion.FusionList.BaseList;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import com.amazon.ion.IonWriter;
 import java.io.IOException;
 
@@ -73,9 +74,9 @@ final class SyntaxList
     @Override
     SyntaxList copyReplacingChildren(Evaluator      eval,
                                      SyntaxValue... children)
+        throws FusionException
     {
-
-        String[] annotations = annotationsAsJavaStrings();
+        BaseSymbol[] annotations = myImmutableList.getAnnotations();
         BaseList datum = (children == null
                               ? nullList(eval, annotations)
                               : immutableList(eval, annotations, children));
@@ -122,8 +123,8 @@ final class SyntaxList
 
             if (changed) // Keep sharing when we can
             {
-                myImmutableList =
-                    immutableList(eval, annotationsAsJavaStrings(), children);
+                BaseSymbol[] annotations = myImmutableList.getAnnotations();
+                myImmutableList = immutableList(eval, annotations, children);
             }
 
             myWraps = null;
@@ -153,25 +154,9 @@ final class SyntaxList
 
         if (! mustCopy) return this;
 
-        BaseList newList =
-            immutableList(eval,
-                          myImmutableList.annotationsAsJavaStrings(),
-                          children);
+        BaseSymbol[] annotations = myImmutableList.getAnnotations();
+        BaseList newList = immutableList(eval, annotations, children);
         return new SyntaxList(getLocation(), getProperties(), null, newList);
-    }
-
-
-    @Override
-    String[] annotationsAsJavaStrings()
-    {
-        return myImmutableList.annotationsAsJavaStrings();
-    }
-
-
-    @Override
-    final boolean isAnyNull()
-    {
-        return myImmutableList.isAnyNull();
     }
 
 
@@ -193,7 +178,7 @@ final class SyntaxList
     SyntaxValue[] extract(Evaluator eval)
         throws FusionException
     {
-        if (isAnyNull()) return null;
+        if (myImmutableList.isAnyNull()) return null;
 
         pushWraps(eval);
 
@@ -237,8 +222,8 @@ final class SyntaxList
             arraycopy(c, 0, children, thisLength, thatLength);
         }
 
-        BaseList list =
-            immutableList(eval, annotationsAsJavaStrings(), children);
+        BaseSymbol[] anns = myImmutableList.getAnnotations();
+        BaseList list = immutableList(eval, anns, children);
         return new SyntaxList(eval, null, list);
     }
 
@@ -248,7 +233,7 @@ final class SyntaxList
         throws FusionException
     {
         if ((myImmutableList.size() == 0 || from == 0)
-            && myImmutableList.annotationsAsJavaStrings().length == 0)
+            && ! myImmutableList.isAnnotated())
         {
             return this;
         }
@@ -256,7 +241,7 @@ final class SyntaxList
         pushWraps(eval);
 
         BaseList list;
-        if (isAnyNull())
+        if (myImmutableList.isAnyNull())
         {
             list = FusionList.NULL_LIST;
         }
@@ -342,7 +327,8 @@ final class SyntaxList
             children[i] = child.syntaxToDatum(eval);
         }
 
-        return immutableList(eval, annotationsAsJavaStrings(), children);
+        BaseSymbol[] annotations = myImmutableList.getAnnotations();
+        return immutableList(eval, annotations, children);
     }
 
 
@@ -353,12 +339,15 @@ final class SyntaxList
     CompiledForm doCompile(Evaluator eval, Environment env)
         throws FusionException
     {
-        // We don't have to worry about annotations, since that's not valid
-        // syntax.
-        if (isAnyNull())
+        // Annotations on this form are not handled here.
+        assert ! myImmutableList.isAnnotated();
+
+        if (myImmutableList.isAnyNull())
         {
             return new CompiledConstant(myImmutableList);
         }
+
+        boolean allConstant = true;
 
         int len = size();
         CompiledForm[] children = new CompiledForm[len];
@@ -367,8 +356,24 @@ final class SyntaxList
             SyntaxValue elementExpr = get(eval, i);
             CompiledForm child = eval.compile(env, elementExpr);
             children[i] = child;
+
+            allConstant &= (child instanceof CompiledConstant);
         }
-        return new CompiledList(children);
+
+        if (allConstant)
+        {
+            Object[] constChildren = new Object[len];
+            for (int i = 0; i < len; i++)
+            {
+                constChildren[i] = ((CompiledConstant) children[i]).getValue();
+            }
+
+            return new CompiledConstant(immutableList(eval, constChildren));
+        }
+        else
+        {
+            return new CompiledList(children);
+        }
 
     }
 

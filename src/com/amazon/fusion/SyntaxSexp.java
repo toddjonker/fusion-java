@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -15,10 +15,10 @@ import static com.amazon.fusion.FusionSexp.unsafePairDot;
 import static com.amazon.fusion.FusionSexp.unsafePairHead;
 import static com.amazon.fusion.FusionSexp.unsafePairTail;
 import static com.amazon.fusion.FusionSexp.unsafeSexpSize;
-import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
 import static com.amazon.fusion.LetValuesForm.compilePlainLet;
 import com.amazon.fusion.FusionSexp.BaseSexp;
 import com.amazon.fusion.FusionSexp.ImmutablePair;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import com.amazon.fusion.LambdaForm.CompiledLambdaBase;
 import com.amazon.fusion.LambdaForm.CompiledLambdaExact;
 import com.amazon.ion.IonWriter;
@@ -81,7 +81,7 @@ final class SyntaxSexp
      */
     static SyntaxSexp make(Evaluator eval,
                            SourceLocation loc,
-                           String[] anns,
+                           BaseSymbol[] anns,
                            SyntaxValue[] children)
     {
         BaseSexp datum = (children == null
@@ -99,7 +99,7 @@ final class SyntaxSexp
      */
     static SyntaxSexp make(Evaluator eval, SyntaxValue... children)
     {
-        return make(eval, null, EMPTY_STRING_ARRAY, children);
+        return make(eval, null, BaseSymbol.EMPTY_ARRAY, children);
     }
 
     /**
@@ -112,7 +112,7 @@ final class SyntaxSexp
     static SyntaxSexp make(Evaluator eval, SourceLocation loc,
                            SyntaxValue... children)
     {
-        return make(eval, loc, EMPTY_STRING_ARRAY, children);
+        return make(eval, loc, BaseSymbol.EMPTY_ARRAY, children);
     }
 
 
@@ -122,9 +122,9 @@ final class SyntaxSexp
     @Override
     SyntaxSexp copyReplacingChildren(Evaluator      eval,
                                      SyntaxValue... children)
+        throws FusionException
     {
-
-        String[] annotations = annotationsAsJavaStrings();
+        BaseSymbol[] annotations = mySexp.getAnnotations();
         BaseSexp datum = (children == null
                               ? nullSexp(eval, annotations)
                               : immutableSexp(eval, annotations, children));
@@ -277,20 +277,6 @@ final class SyntaxSexp
 
         BaseSexp newSexp = stripWraps(eval, (ImmutablePair) mySexp);
         return new SyntaxSexp(getLocation(), getProperties(), null, newSexp);
-    }
-
-
-    @Override
-    String[] annotationsAsJavaStrings()
-    {
-        return mySexp.annotationsAsJavaStrings();
-    }
-
-
-    @Override
-    boolean isAnyNull()
-    {
-        return mySexp.isAnyNull();
     }
 
 
@@ -454,10 +440,11 @@ final class SyntaxSexp
     //========================================================================
 
     /**
-     * Finds the binding for the leading symbol in the sexp, or null if the
-     * sexp doesn't start with a symbol.
+     * Finds the leading identifier in this sexp.
+     *
+     * @return null if this sexp doesn't start with an identifier.
      */
-    Binding firstBinding(Evaluator eval)
+    SyntaxSymbol firstIdentifier(Evaluator eval)
         throws FusionException
     {
         if (isPair(eval, mySexp))
@@ -467,30 +454,27 @@ final class SyntaxSexp
             Object first = unsafePairHead(eval, mySexp);
             if (first instanceof SyntaxSymbol)
             {
-                Binding binding = ((SyntaxSymbol)first).uncachedResolve();
-                return binding.originalBinding();
+                return (SyntaxSymbol) first;
             }
         }
         return null;
     }
 
     /**
-     * Finds the binding for the leading symbol in the sexp, or null if the
-     * sexp doesn't start with a symbol with a binding.
+     * Finds the {@linkplain Binding#target() target binding} for the leading
+     * identifier in this sexp.
+     *
+     * @return null if this sexp doesn't start with an identifier.
+     * Null is also equivalent to a {@link FreeBinding} on a lead identifier.
      */
-    Binding firstBindingMaybe(Evaluator eval)
+    Binding firstTargetBinding(Evaluator eval)
         throws FusionException
     {
-        if (isPair(eval, mySexp))
+        SyntaxSymbol first = firstIdentifier(eval);
+        if (first != null)
         {
-            pushWraps(eval);
-
-            Object first = unsafePairHead(eval, mySexp);
-            if (first instanceof SyntaxSymbol)
-            {
-                Binding binding = ((SyntaxSymbol)first).uncachedResolveMaybe();
-                return (binding == null ? null : binding.originalBinding());
-            }
+            Binding binding = first.uncachedResolveMaybe();
+            if (binding != null) return binding.target();
         }
         return null;
     }
@@ -519,12 +503,12 @@ final class SyntaxSexp
             // since this scope may override #%app or #%variable-reference.
             // Thus we cannot call expand on the symbol and must not cache the
             // results of the binding resolution unless it resolves to syntax.
-            SyntacticForm xform =
+            SyntacticForm form =
                 ((SyntaxSymbol) first).resolveSyntaxMaybe(env);
-            if (xform != null)
+            if (form != null)
             {
-                // We found a static top-level binding to a built-in form or
-                // to a macro. Continue the expansion process.
+                // We found a static top-level binding to a built-in form or a
+                // macro. Continue the expansion process.
 
                 // TODO FUSION-31 identifier macros entail extra work here.
                 assert expander.expand(env, first) == first;
@@ -534,8 +518,7 @@ final class SyntaxSexp
 
                 // We use the same expansion context as we already have.
                 // Don't need to replace the sexp since we haven't changed it.
-                SyntaxValue expandedExpr =
-                    expander.expand(env, xform, this);
+                SyntaxValue expandedExpr = expander.expand(env, form, this);
                 return expandedExpr;
             }
         }

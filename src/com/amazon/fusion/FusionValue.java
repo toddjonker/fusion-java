@@ -1,8 +1,10 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2015 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionBool.falseBool;
+import static com.amazon.fusion.FusionSymbol.BaseSymbol.internSymbols;
+import static com.amazon.fusion.FusionUtils.EMPTY_OBJECT_ARRAY;
 import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
 import com.amazon.fusion.FusionBool.BaseBool;
 import com.amazon.ion.IonValue;
@@ -38,8 +40,9 @@ public final class FusionValue
 
 
     /**
-     * Determines whether a Fusion value is a null of an type; that is, is it
+     * Determines whether a Fusion value is a null of any type; that is, is it
      * {@code null.null}, {@code null.bool}, {@code null.int}, <em>etc.</em>?
+     * This is equivalent to the Fusion procedure {@code is_null}.
      *
      * @see FusionNull#isNullNull(Evaluator, Object)
      */
@@ -111,6 +114,111 @@ public final class FusionValue
     }
 
 
+    //========================================================================
+    // Annotations
+
+
+    static boolean isAnnotatable(Evaluator eval, Object value)
+        throws FusionException
+    {
+        if (value instanceof BaseValue)
+        {
+            return ((BaseValue) value).isAnnotatable();
+        }
+        return false;
+    }
+
+
+    /**
+     * Replaces or removes annotations on a Fusion value, generally making a
+     * (shallow) copy of the value while doing so.
+     *
+     * @param value must be an annotatable Fusion value.
+     * @param annotations must not be null and must not contain elements
+     * that are null or empty.
+     *
+     * @return a Fusion value.
+     * @throws FusionException
+     */
+    static Object annotate(Evaluator eval, Object value, String[] annotations)
+        throws FusionException
+    {
+        return ((BaseValue) value).annotate(eval, internSymbols(annotations));
+    }
+
+    /**
+     * Replaces or removes annotations on a Fusion value, generally making a
+     * (shallow) copy of the value while doing so.
+     *
+     * @param value must be an annotatable Fusion value.
+     * @param annotations must not be null and must not contain elements
+     * that are null or empty.
+     *
+     * @return a Fusion value.
+     * @throws FusionException
+     */
+    public static Object annotate(TopLevel top, Object value,
+                                  String[] annotations)
+        throws FusionException
+    {
+        Evaluator eval = StandardTopLevel.toEvaluator(top);
+        return annotate(eval, value, annotations);
+    }
+
+
+    /**
+     * Determines whether a Fusion value has any annotations.
+     */
+    static boolean isAnnotated(Evaluator eval, Object value)
+        throws FusionException
+    {
+        if (value instanceof BaseValue)
+        {
+            return ((BaseValue) value).isAnnotated();
+        }
+        return false;
+    }
+
+
+    /**
+     * Gets the annotations on a Fusion value as Fusion symbols.
+     *
+     * @return not null, but possibly empty, array of Fusion symbols.
+     * <b>Must not be modified by the caller!</b>
+     */
+    static Object[] annotations(Evaluator eval, Object value)
+        throws FusionException
+    {
+        if (value instanceof BaseValue)
+        {
+            return ((BaseValue) value).getAnnotations();
+        }
+        return EMPTY_OBJECT_ARRAY;
+    }
+
+
+    /**
+     * Determines whether two Fusion values have the same annotations in the
+     * same order.
+     */
+    static boolean sameAnnotations(Evaluator eval, Object left, Object right)
+        throws FusionException
+    {
+        Object[] thisAnn = annotations(eval, left);
+        Object[] thatAnn = annotations(eval, right);
+
+        int len = thisAnn.length;
+        if (thatAnn.length != len) return false;
+
+        for (int i = 0; i < len; i++)
+        {
+            // Annotations are interned symbols.
+            if (thisAnn[i] != thatAnn[i]) return false;
+        }
+        return true;
+    }
+
+
     /**
      * Gets the annotations on a Fusion value as Java strings.
      *
@@ -119,18 +227,11 @@ public final class FusionValue
     static String[] annotationsAsJavaStrings(Evaluator eval, Object value)
         throws FusionException
     {
-        String[] anns;
-
-        if (value instanceof Annotated)
+        if (value instanceof BaseValue)
         {
-            anns = ((Annotated) value).annotationsAsJavaStrings();
+            return ((BaseValue) value).getAnnotationsAsJavaStrings();
         }
-        else
-        {
-            anns = EMPTY_STRING_ARRAY;
-        }
-
-        return anns;
+        return EMPTY_STRING_ARRAY;
     }
 
 

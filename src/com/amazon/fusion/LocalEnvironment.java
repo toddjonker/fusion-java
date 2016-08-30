@@ -1,14 +1,19 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionVoid.voidValue;
 import static com.amazon.ion.util.IonTextUtils.printQuotedSymbol;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import java.util.Set;
 
 final class LocalEnvironment
     implements Environment
 {
+    /**
+     * Denotes a binding at some local scope, for example {@code lambda} and
+     * {@code letrec} expressions.
+     */
     static final class LocalBinding
         extends Binding
     {
@@ -27,29 +32,29 @@ final class LocalEnvironment
         }
 
         @Override
-        public String getName()
+        BaseSymbol getName()
         {
-            return myIdentifier.stringValue();
+            return myIdentifier.getName();
         }
 
         @Override
-        public boolean sameTarget(Binding other)
+        boolean sameTarget(Binding other)
         {
-            // Don't need to call other.originalBinding() since locals are
-            // never renamed or wrapped.
+            // Don't need to call other.target() since local bindings are
+            // original and unique.
             return this == other;
         }
 
 
         @Override
-        public Object lookup(Namespace ns)
+        Object lookup(Namespace ns)
         {
             return null;  // We're local, not a namespace binding.
         }
 
 
         @Override
-        public CompiledForm compileReference(Evaluator eval, Environment env)
+        CompiledForm compileReference(Evaluator eval, Environment env)
             throws FusionException
         {
             int rib = env.getDepth() - myDepth;
@@ -61,9 +66,9 @@ final class LocalEnvironment
         }
 
         @Override
-        public CompiledForm compileTopReference(Evaluator eval,
-                                                Environment env,
-                                                SyntaxSymbol id)
+        CompiledForm compileTopReference(Evaluator eval,
+                                         Environment env,
+                                         SyntaxSymbol id)
             throws FusionException
         {
             String message =
@@ -72,8 +77,8 @@ final class LocalEnvironment
         }
 
         @Override
-        public CompiledForm compileSet(Evaluator eval, Environment env,
-                                       CompiledForm valueForm)
+        CompiledForm compileSet(Evaluator eval, Environment env,
+                                CompiledForm valueForm)
             throws FusionException
         {
             int rib = env.getDepth() - myDepth;
@@ -89,6 +94,12 @@ final class LocalEnvironment
         public boolean equals(Object other)
         {
             throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public int hashCode()
+        {
+            return System.identityHashCode(this);
         }
 
         @Override
@@ -156,8 +167,10 @@ final class LocalEnvironment
                             "duplicate binding: " +
                             printQuotedSymbol(idJ.stringValue());
 
-                        throw new SyntaxException(null, message,
-                                                  formForErrors);
+                        SyntaxException ex =
+                            new SyntaxException(null, message, idJ);
+                        ex.addContext(formForErrors);
+                        throw ex;
                     }
                 }
             }
@@ -207,7 +220,7 @@ final class LocalEnvironment
 
 
     @Override
-    public Binding substitute(Binding binding, Set<Integer> marks)
+    public Binding substitute(Binding binding, Set<MarkWrap> marks)
     {
         for (LocalBinding b : myBindings)
         {
@@ -220,7 +233,7 @@ final class LocalEnvironment
     }
 
     @Override
-    public Binding substituteFree(String name, Set<Integer> marks)
+    public Binding substituteFree(BaseSymbol name, Set<MarkWrap> marks)
     {
         for (LocalBinding b : myBindings)
         {

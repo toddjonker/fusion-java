@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -6,18 +6,24 @@ import static com.amazon.fusion.FusionBool.falseBool;
 import static com.amazon.fusion.FusionBool.makeBool;
 import static com.amazon.fusion.FusionBool.trueBool;
 import static com.amazon.fusion.FusionList.checkActualListArg;
+import static com.amazon.fusion.FusionList.immutableList;
 import static com.amazon.fusion.FusionList.stretchyList;
 import static com.amazon.fusion.FusionList.unsafeListElement;
 import static com.amazon.fusion.FusionList.unsafeListSize;
 import static com.amazon.fusion.FusionNumber.isInt;
 import static com.amazon.fusion.FusionNumber.makeInt;
 import static com.amazon.fusion.FusionNumber.unsafeTruncateIntToJavaInt;
+import static com.amazon.fusion.FusionString.CHAR_TYPES.LOWERCASE;
+import static com.amazon.fusion.FusionString.CHAR_TYPES.UPPERCASE;
 import static com.amazon.fusion.FusionSymbol.makeSymbol;
+import static com.amazon.fusion.FusionSymbol.BaseSymbol.internSymbols;
 import static com.amazon.fusion.FusionText.checkRequiredTextArg;
+import static com.amazon.fusion.FusionVoid.voidValue;
 import static java.lang.Character.highSurrogate;
 import static java.lang.Character.isSupplementaryCodePoint;
 import static java.lang.Character.lowSurrogate;
 import com.amazon.fusion.FusionBool.BaseBool;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import com.amazon.fusion.FusionText.BaseText;
 import com.amazon.ion.IonException;
 import com.amazon.ion.IonType;
@@ -31,7 +37,9 @@ import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 
 
@@ -60,9 +68,10 @@ public final class FusionString
         private BaseString() {}
 
         @Override
-        BaseString annotate(Evaluator eval, String[] annotations)
+        BaseString annotate(Evaluator eval, BaseSymbol[] annotations)
         {
-            return FusionString.annotate(this, annotations);
+            if (annotations.length == 0) return this;
+            return new AnnotatedString(annotations, this);
         }
 
         @Override
@@ -99,9 +108,19 @@ public final class FusionString
             if (o instanceof BaseString)
             {
                 BaseString that = (BaseString) o;
-                return (Objects.equals(this.stringValue(), that.stringValue())
-                        && Arrays.equals(this.annotationsAsJavaStrings(),
-                                         that.annotationsAsJavaStrings()));
+                if (Objects.equals(this.stringValue(), that.stringValue()))
+                {
+                    try
+                    {
+                        // TODO Unsupported null Evaluator!
+                        return FusionValue.sameAnnotations(null, this, that);
+                    }
+                    catch (FusionException e)
+                    {
+                        throw new AssertionError("Should not happen", e);
+                    }
+                }
+
             }
             return false;
         }
@@ -215,15 +234,14 @@ public final class FusionString
 
     private static class AnnotatedString
         extends BaseString
-        implements Annotated
     {
         /** Not null or empty */
-        final String[] myAnnotations;
+        final BaseSymbol[] myAnnotations;
 
-        /** Not null, and not AnnotatedBool */
+        /** Not null, and not AnnotatedString */
         final BaseString  myValue;
 
-        private AnnotatedString(String[] annotations, BaseString value)
+        private AnnotatedString(BaseSymbol[] annotations, BaseString value)
         {
             assert annotations.length != 0;
             myAnnotations = annotations;
@@ -231,15 +249,21 @@ public final class FusionString
         }
 
         @Override
-        public String[] annotationsAsJavaStrings()
+        boolean isAnnotated()
+        {
+            return true;
+        }
+
+        @Override
+        public BaseSymbol[] getAnnotations()
         {
             return myAnnotations;
         }
 
         @Override
-        BaseString annotate(Evaluator eval, String[] annotations)
+        BaseString annotate(Evaluator eval, BaseSymbol[] annotations)
         {
-            return FusionString.annotate(myValue, annotations);
+            return myValue.annotate(eval, annotations);
         }
 
         @Override
@@ -272,7 +296,7 @@ public final class FusionString
         {
             IonValue iv = myValue.copyToIonValue(factory,
                                                  throwOnConversionFailure);
-            iv.setTypeAnnotations(myAnnotations);
+            iv.setTypeAnnotations(getAnnotationsAsJavaStrings());
             return iv;
         }
 
@@ -280,7 +304,7 @@ public final class FusionString
         void ionize(Evaluator eval, IonWriter out)
             throws IOException, IonException, FusionException, IonizeFailure
         {
-            out.setTypeAnnotations(myAnnotations);
+            out.setTypeAnnotations(getAnnotationsAsJavaStrings());
             myValue.ionize(eval, out);
         }
 
@@ -312,17 +336,6 @@ public final class FusionString
     }
 
 
-    private static BaseString annotate(BaseString unannotated,
-                                       String[] annotations)
-    {
-        assert ! (unannotated instanceof AnnotatedString);
-
-        if (annotations.length == 0) return unannotated;
-
-        return new AnnotatedString(annotations, unannotated);
-    }
-
-
     /**
      * @param annotations must not be null and must not contain elements
      * that are null or empty. This method assumes ownership of the array
@@ -336,7 +349,7 @@ public final class FusionString
                                  String    value)
     {
         BaseString base = makeString(eval, value);
-        return annotate(base, annotations);
+        return base.annotate(eval, internSymbols(annotations));
     }
 
 
@@ -353,14 +366,21 @@ public final class FusionString
                                            String[] annotations)
     {
         BaseString base = (BaseString) fusionString;
-        return base.annotate(eval, annotations);
+        return base.annotate(eval, internSymbols(annotations));
     }
 
 
     //========================================================================
     // Predicates
 
-
+    /**
+     * Determines whether a given Fusion value is a string.
+     *
+     * @param top the top-level that was the source of the value.
+     * @param value the value to test.
+     *
+     * @throws FusionException
+     */
     public static boolean isString(TopLevel top, Object value)
         throws FusionException
     {
@@ -484,6 +504,58 @@ public final class FusionString
 
 
     //========================================================================
+    // Java String utilities
+
+
+    static int numberOfCodePoints(final String string)
+    {
+        return string.codePointCount(0, string.length());
+    }
+
+    enum CHAR_TYPES {
+        LOWERCASE
+        {
+            @Override
+            boolean isType(int codePoint) {
+                return Character.isLowerCase(codePoint);
+            }
+        },
+        UPPERCASE
+        {
+            @Override
+            boolean isType(int codePoint) {
+                return Character.isUpperCase(codePoint);
+            }
+        };
+
+        abstract boolean isType(int codePoint);
+    }
+
+    static boolean everyCodePointIsType(final String string, CHAR_TYPES charType)
+    {
+        if (isEmptyJavaString(string))
+        {
+            return false;
+        }
+        for (int i = 0; i < string.length();)
+        {
+            int codePoint = string.codePointAt(i);
+            if (!charType.isType(codePoint))
+            {
+                return false;
+            }
+            i += Character.charCount(codePoint);
+        }
+        return true;
+    }
+
+    static boolean isEmptyJavaString(String string)
+    {
+        return string == null || string.length() == 0;
+    }
+
+
+    //========================================================================
     // Procedures
 
 
@@ -507,13 +579,27 @@ public final class FusionString
     }
 
 
-    static final class SizeUtf8
+    static final class SizeCodePointsProc
+            extends Procedure1
+    {
+        @Override
+        Object doApply(Evaluator eval, Object stringArg)
+                throws FusionException
+        {
+            String string = checkRequiredStringArg(eval, this, 0, stringArg);
+            return makeInt(eval, numberOfCodePoints(string));
+        }
+    }
+
+
+    static final class SizeUtf8Proc
         extends Procedure1
     {
         @Override
         Object doApply(Evaluator eval, Object arg)
             throws FusionException
         {
+            // TODO size_codepoint requires its string, but this does not.
             String s = checkNullableStringArg(eval, this, 0, arg);
 
             if (s == null || s.isEmpty()) return FusionNumber.ZERO_INT;
@@ -536,14 +622,6 @@ public final class FusionString
     static final class AppendProc
         extends Procedure
     {
-        AppendProc()
-        {
-            //    "                                                                               |
-            super("Concatenates the `text` values (strings or symbols), returning a string.  If no\n" +
-                  "arguments are supplied, the result is `\"\"`.",
-                  "text", DOTDOTDOT);
-        }
-
         @Override
         Object doApply(Evaluator eval, Object[] args)
             throws FusionException
@@ -563,21 +641,13 @@ public final class FusionString
 
 
     static final class ToLowerProc
-        extends Procedure
+        extends Procedure1
     {
-        ToLowerProc()
-        {
-            super("Converts all the characters in a `string` to lower-case letters.",
-                  "string");
-        }
-
         @Override
-        Object doApply(Evaluator eval, Object[] args)
+        Object doApply(Evaluator eval, Object arg)
             throws FusionException
         {
-            checkArityExact(args);
-
-            String input = checkRequiredStringArg(eval, this, 0, args);
+            String input = checkRequiredStringArg(eval, this, 0, arg);
             return makeString(eval, input.toLowerCase());
         }
     }
@@ -585,21 +655,13 @@ public final class FusionString
 
 
     static final class ToUpperProc
-        extends Procedure
+        extends Procedure1
     {
-        ToUpperProc()
-        {
-            super("Converts all the characters in a `string` to upper-case letters.",
-                  "string");
-        }
-
         @Override
-        Object doApply(Evaluator eval, Object[] args)
+        Object doApply(Evaluator eval, Object arg)
             throws FusionException
         {
-            checkArityExact(args);
-
-            String input = checkRequiredStringArg(eval, this, 0, args);
+            String input = checkRequiredStringArg(eval, this, 0, arg);
             return makeString(eval, input.toUpperCase());
         }
     }
@@ -607,27 +669,17 @@ public final class FusionString
 
 
     static final class ToSymbolProc
-        extends Procedure
+        extends Procedure1
     {
-        ToSymbolProc()
-        {
-            //    "                                                                               |
-            super("Converts a `string` to a symbol with the same text.  Returns `null.symbol` when\n"
-                + "given `null.string`.  Raises an exception when given an empty string.",
-                  "string");
-        }
-
         @Override
-        Object doApply(Evaluator eval, Object[] args)
+        Object doApply(Evaluator eval, Object arg)
             throws FusionException
         {
-            checkArityExact(args);
-
-            String input = checkNullableStringArg(eval, this, 0, args);
+            String input = checkNullableStringArg(eval, this, 0, arg);
 
             if (input != null && input.isEmpty())
             {
-                throw argFailure("non-empty string", 0, args);
+                throw argFailure("non-empty string", 0, arg);
             }
 
             return makeSymbol(eval, input);
@@ -643,24 +695,14 @@ public final class FusionString
      * edit the data before imploding it back into a string.
      */
     static final class ExplodeProc
-        extends Procedure
+        extends Procedure1
     {
-       public ExplodeProc()
-       {
-           //    "                                                                               |
-          super("Returns a stretchy list of the Unicode scalar values (code points) in the given\n" +
-                "non-null string.",
-                "string");
-       }
-
        @Override
-       Object doApply(Evaluator eval, Object[] args)
+       Object doApply(Evaluator eval, Object arg)
            throws FusionException
        {
-          checkArityExact(args);
-
           // TODO what about annotations?
-          String string = checkRequiredStringArg(eval, this, 0, args);
+          String string = checkRequiredStringArg(eval, this, 0, arg);
 
           int charSize   = string.length();
           int scalarSize = string.codePointCount(0, charSize);
@@ -684,23 +726,14 @@ public final class FusionString
 
 
     static final class ImplodeProc
-        extends Procedure
+        extends Procedure1
     {
-        public ImplodeProc()
-        {
-            //    "                                                                               |
-           super("Returns a string filled by the given list of Unicode scalar values.",
-                 "list");
-        }
-
         @Override
-        Object doApply(Evaluator eval, Object[] args)
+        Object doApply(Evaluator eval, Object arg)
             throws FusionException
         {
-            checkArityExact(args);
-
             // TODO what about annotations?
-            Object list = checkActualListArg(eval, this, 0, args);
+            Object list = checkActualListArg(eval, this, 0, arg);
 
             final int scalarSize = unsafeListSize(eval, list);
             int charSize = scalarSize;
@@ -746,4 +779,149 @@ public final class FusionString
             return makeString(eval, string);
         }
     }
+
+    static final class ContainsProc
+            extends Procedure
+    {
+        @Override
+        Object doApply(Evaluator eval, Object[] args)
+                throws FusionException
+        {
+            checkArityExact(2, args);
+            String string = checkRequiredStringArg(eval, this, 0, args);
+            String values = checkRequiredStringArg(eval, this, 1, args);
+            return makeBool(eval, string.contains(values));
+        }
+    }
+
+
+    static final class EndsWithProc
+            extends Procedure
+    {
+        @Override
+        Object doApply(Evaluator eval, Object[] args)
+                throws FusionException
+        {
+            checkArityExact(2, args);
+            String string = checkRequiredStringArg(eval, this, 0, args);
+            String suffix = checkRequiredStringArg(eval, this, 1, args);
+            return makeBool(eval, string.endsWith(suffix));
+        }
+    }
+
+
+    static final class IndexCodePointsProc
+            extends Procedure
+    {
+        @Override
+        Object doApply(Evaluator eval, Object[] args)
+                throws FusionException
+        {
+            checkArityExact(2, args);
+            String string    = checkRequiredStringArg(eval, this, 0, args);
+            String substring = checkRequiredStringArg(eval, this, 1, args);
+            int indexOf = string.indexOf(substring);
+            if (indexOf == -1)
+            {
+                return voidValue(eval);
+            }
+            else
+            {
+                return makeInt(eval, string.codePointCount(0, indexOf));
+            }
+        }
+    }
+
+
+    static final class IsLowerCaseProc
+            extends Procedure1
+    {
+        @Override
+        Object doApply(Evaluator eval, Object stringArg)
+                throws FusionException
+        {
+            String string = checkRequiredStringArg(eval, this, 0, stringArg);
+            return makeBool(eval, everyCodePointIsType(string, LOWERCASE));
+        }
+    }
+
+
+    static final class IsUpperCaseProc
+            extends Procedure1
+    {
+        @Override
+        Object doApply(Evaluator eval, Object stringArg)
+                throws FusionException
+        {
+            String string = checkRequiredStringArg(eval, this, 0, stringArg);
+            return makeBool(eval, everyCodePointIsType(string, UPPERCASE));
+        }
+    }
+
+
+    static final class JoinProc
+            extends Procedure
+    {
+        @Override
+        Object doApply(Evaluator eval, Object[] args)
+                throws FusionException
+        {
+            checkArityAtLeast(1, args);
+            String separator = checkRequiredTextArg(eval, this, 0, args);
+
+            StringBuilder resultBuilder = new StringBuilder();
+
+            for (int i = 1; i < args.length; i++)
+            {
+                String v = checkRequiredTextArg(eval, this, i, args);
+                resultBuilder.append(v);
+                if (i + 1 < args.length)
+                {
+                    resultBuilder.append(separator);
+                }
+            }
+
+            return makeString(eval, resultBuilder.toString());
+        }
+    }
+
+
+    static final class SplitProc
+            extends Procedure
+    {
+        @Override
+        Object doApply(Evaluator eval, Object[] args)
+                throws FusionException
+        {
+            checkArityExact(2, args);
+            String string    = checkRequiredStringArg(eval, this, 0, args);
+            String separator = checkRequiredStringArg(eval, this, 1, args);
+            String[] splitResult = string.split(separator);
+            List<Object> fusionStrings = new ArrayList<>();
+            for (int i = 0; i < splitResult.length; i++)
+            {
+                if (!(i == 0 && "".equals(splitResult[i])))
+                {
+                    fusionStrings.add(makeString(eval, splitResult[i]));
+                }
+            }
+            return immutableList(eval, fusionStrings);
+        }
+    }
+
+
+    static final class StartsWithProc
+            extends Procedure
+    {
+        @Override
+        Object doApply(Evaluator eval, Object[] args)
+                throws FusionException
+        {
+            checkArityExact(2, args);
+            String string = checkRequiredStringArg(eval, this, 0, args);
+            String prefix = checkRequiredStringArg(eval, this, 1, args);
+            return makeBool(eval, string.startsWith(prefix));
+        }
+    }
+
 }

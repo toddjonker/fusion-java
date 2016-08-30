@@ -1,30 +1,32 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
+
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 
 
 final class FreeBinding
     extends Binding
 {
-    private final String myName;
+    private final BaseSymbol myName;
 
-    FreeBinding(String name)
+    FreeBinding(BaseSymbol name)
     {
         myName = name;
     }
 
     @Override
-    public String getName()
+    public BaseSymbol getName()
     {
         return myName;
     }
 
 
     @Override
-    public boolean isFree(String name)
+    public boolean isFree(BaseSymbol name)
     {
-        // TODO FUSION-47 intern symbol names and use ==
-        return myName.equals(name);
+        // This works due to symbol interning.
+        return myName == name;
     }
 
 
@@ -32,12 +34,7 @@ final class FreeBinding
     public boolean sameTarget(Binding other)
     {
         if (this == other) return true;
-        if (! (other instanceof FreeBinding)) return false;
-
-        FreeBinding that = (FreeBinding) other;
-
-        // TODO FUSION-47 intern symbol names and use ==
-        return this.myName.equals(that.myName);
+        return other.isFree(myName);
     }
 
 
@@ -46,6 +43,14 @@ final class FreeBinding
     {
         return null;
     }
+
+
+    @Override
+    public String mutationSyntaxErrorMessage()
+    {
+         return "unbound variable";
+    }
+
 
     @Override
     CompiledForm compileDefine(Evaluator eval,
@@ -91,6 +96,11 @@ final class FreeBinding
         throw new UnsupportedOperationException();
     }
 
+    @Override
+    public int hashCode()
+    {
+        return myName.hashCode();
+    }
 
     @Override
     public String toString()

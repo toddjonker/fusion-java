@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc. All rights reserved.
+// Copyright (c) 2012-2015 Amazon.com, Inc. All rights reserved.
 
 package com.amazon.fusion;
 
@@ -6,8 +6,10 @@ import static com.amazon.fusion.FusionBool.falseBool;
 import static com.amazon.fusion.FusionBool.makeBool;
 import static com.amazon.fusion.FusionBool.trueBool;
 import static com.amazon.fusion.FusionIo.safeWriteToString;
-import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
+import static com.amazon.fusion.FusionSymbol.BaseSymbol.unsafeSymbolsToJavaStrings;
+import static com.amazon.fusion.FusionValue.sameAnnotations;
 import com.amazon.fusion.FusionBool.BaseBool;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import com.amazon.ion.IonException;
 import com.amazon.ion.IonValue;
 import com.amazon.ion.IonWriter;
@@ -15,31 +17,56 @@ import com.amazon.ion.ValueFactory;
 import com.amazon.ion.system.IonTextWriterBuilder;
 import com.amazon.ion.util.IonTextUtils;
 import java.io.IOException;
-import java.util.Arrays;
 
 /**
  * Root class for most (if not all) Fusion values.
+ * <p>
+ * This class, and all subclasses, are <b>not for application use.</b>
+ * Any aspect of this class hierarchy can and will change without notice!
  */
 abstract class BaseValue
 {
     BaseValue() {}
 
 
-    String[] annotationsAsJavaStrings()
+    boolean isAnnotated()
+        throws FusionException
     {
-        return EMPTY_STRING_ARRAY;
+        return false;
+    }
+
+    boolean isAnnotatable()
+        throws FusionException
+    {
+        return false;
+    }
+
+    /**
+     * @return the annotation symbols.
+     * <b>Must not be modified by the caller!</b>
+     */
+    BaseSymbol[] getAnnotations()
+        throws FusionException
+    {
+        return BaseSymbol.EMPTY_ARRAY;
+    }
+
+    final String[] getAnnotationsAsJavaStrings()
+        throws FusionException
+    {
+        return unsafeSymbolsToJavaStrings(getAnnotations());
     }
 
     /**
      * @param annotations must not be null and must not contain elements
-     * that are null or empty. This method assumes ownership of the array
-     * and it must not be modified later.
-     * @return null if this value isn't annotatable.
+     * that are null, empty, or annotated.
+     *
+     * @throws UnsupportedOperationException if this value isn't annotatable.
      */
-    Object annotate(Evaluator eval, String[] annotations)
+    Object annotate(Evaluator eval, BaseSymbol[] annotations)
         throws FusionException
     {
-        return null;
+        throw new UnsupportedOperationException("Not annotatable");
     }
 
 
@@ -180,12 +207,12 @@ abstract class BaseValue
 
 
     /** Helper method for subclasses. */
-    static void writeAnnotations(Appendable out, String[] annotations)
+    static void writeAnnotations(Appendable out, BaseSymbol[] annotations)
         throws IOException
     {
-        for (String ann : annotations)
+        for (BaseSymbol ann : annotations)
         {
-            IonTextUtils.printSymbol(out, ann);
+            IonTextUtils.printSymbol(out, ann.stringValue());
             out.append("::");
         }
     }
@@ -297,15 +324,12 @@ abstract class BaseValue
         if (left instanceof BaseValue)
         {
             BaseValue lv = (BaseValue) left;
+            // TODO check annotations first, to fail faster.
             BaseBool b = lv.strictEquals(eval, right);
             if (b.isTrue())
             {
-                BaseValue rv = (BaseValue) right;
-
-                String[] lAnn = lv.annotationsAsJavaStrings();
-                String[] rAnn = rv.annotationsAsJavaStrings();
-
-                if (Arrays.equals(lAnn, rAnn)) return b;
+                boolean result = sameAnnotations(eval, left, right);
+                return makeBool(eval, result);
             }
         }
 
@@ -317,7 +341,11 @@ abstract class BaseValue
      * Gets the annotations on a Fusion value as Java strings.
      *
      * @return not null, but possibly empty.
+     *
+     * @deprecated
+     * Use {@link FusionValue#annotationsAsJavaStrings(Evaluator, Object)}.
      */
+    @Deprecated
     static String[] annotationsAsJavaStrings(Evaluator eval, Object value)
         throws FusionException
     {

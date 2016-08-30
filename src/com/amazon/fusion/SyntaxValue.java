@@ -1,12 +1,14 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2015 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionCompare.isSame;
 import static com.amazon.fusion.FusionSexp.emptySexp;
 import static com.amazon.fusion.FusionSexp.pair;
+import static com.amazon.fusion.FusionSymbol.BaseSymbol.internSymbol;
 import static com.amazon.fusion.FusionUtils.EMPTY_OBJECT_ARRAY;
 import static java.lang.Boolean.TRUE;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import com.amazon.ion.IonValue;
 import java.util.Arrays;
 
@@ -21,9 +23,13 @@ abstract class SyntaxValue
     /** A zero-length array. */
     static final SyntaxValue[] EMPTY_ARRAY = new SyntaxValue[0];
 
-    // TODO WORKAROUND FUSION-47 Should use interned symbol
-    // We use 'new String' to ensure uniqueness of the object identity.
-    static final Object STX_PROPERTY_ORIGIN   = new String("origin");
+    static final Object STX_PROPERTY_ORIGIN   = internSymbol("origin");
+
+    /**
+     * Private key used to identify syntax objects constructed by the reader.
+     * We don't use a normal symbol here, because the property key must be
+     * kept private: a symbol would be interned and therefore reproducible.
+     */
     static final Object STX_PROPERTY_ORIGINAL = new String("is_original");
 
     /**
@@ -52,11 +58,21 @@ abstract class SyntaxValue
     }
 
 
-    /**
-     * Determines whether the wrapped datum is a null value.
-     */
+    // This final override isn't semantically necessary, but it exists to
+    // ensure that we don't return annotations from any syntax object.
     @Override
-    abstract boolean isAnyNull();
+    final BaseSymbol[] getAnnotations()
+    {
+        return BaseSymbol.EMPTY_ARRAY;
+    }
+
+    // This final override isn't semantically necessary, but it exists to
+    // ensure that a syntax object is never considered null.
+    @Override
+    final boolean isAnyNull()
+    {
+        return false;
+    }
 
 
     /**
@@ -253,6 +269,7 @@ abstract class SyntaxValue
         // TODO FUSION-39 Optimize this. Perhaps remove a matching mark?
         // 2014-07-03 Only 32/906 (3.5%) of marks matched the first wrap.
         //            Eliminating those didn't increase that count.
+        // 2016-08-17 I bet that's because the mark has usually been pushed.
         return addWrap(mark);
     }
 

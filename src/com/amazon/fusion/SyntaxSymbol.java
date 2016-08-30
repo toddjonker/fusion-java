@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -109,7 +109,7 @@ final class SyntaxSymbol
                                            myWraps,
                                            getLocation(),
                                            properties,
-                                           (BaseSymbol) myDatum);
+                                           getName());
         id.myBinding = myBinding;
         return id;
     }
@@ -125,7 +125,7 @@ final class SyntaxSymbol
 
         SyntaxSymbol copy =
             new SyntaxSymbol(null, wraps, getLocation(), getProperties(),
-                             (BaseSymbol) myDatum);
+                             getName());
         return copy;
     }
 
@@ -134,7 +134,7 @@ final class SyntaxSymbol
     {
         SyntaxSymbol copy =
             new SyntaxSymbol(null, myWraps, getLocation(), getProperties(),
-                             (BaseSymbol) myDatum);
+                             getName());
         copy.myBinding = binding;
         return copy;
     }
@@ -142,6 +142,10 @@ final class SyntaxSymbol
 
     //========================================================================
 
+    BaseSymbol getName()
+    {
+        return (BaseSymbol) myDatum;
+    }
 
     @Override
     SyntaxSymbol addWrap(SyntaxWrap wrap)
@@ -196,7 +200,7 @@ final class SyntaxSymbol
     /**
      * @return not null.
      */
-    Set<Integer> computeMarks()
+    Set<MarkWrap> computeMarks()
     {
         if (myWraps == null) return Collections.emptySet();
         return myWraps.computeMarks();
@@ -227,8 +231,8 @@ final class SyntaxSymbol
     {
         if (myBinding == null)
         {
-            String name = stringValue();
-            assert (name != null && name.length() != 0);
+            BaseSymbol name = getName();
+            assert name.isNonEmpty();
 
             if (myWraps == null)
             {
@@ -253,7 +257,7 @@ final class SyntaxSymbol
     Binding uncachedResolve()
     {
         if (myBinding != null) return myBinding;
-        String name = stringValue();
+        BaseSymbol name = getName();
         if (myWraps != null)
         {
             Binding b = myWraps.resolve(name);
@@ -267,14 +271,14 @@ final class SyntaxSymbol
      * Resolves this identifier, but doesn't cache the result if it has not
      * been previously resolved.
      *
-     * @return null is equivalent to a {@link FreeBinding}.
+     * @return null is equivalent to a {@link FreeBinding}, and either may be
+     * returned.
      */
     Binding uncachedResolveMaybe()
     {
         if (myBinding != null) return myBinding;
         if (myWraps   == null) return null;
-        String name = stringValue();
-        return myWraps.resolve(name);
+        return myWraps.resolve(getName());
     }
 
 
@@ -287,12 +291,11 @@ final class SyntaxSymbol
         Binding b = null;
         if (myWraps != null)
         {
-            String name = stringValue();
-            b = myWraps.resolveTop(name);
+            b = myWraps.resolveTop(getName());
         }
         if (b == null)
         {
-            b = new FreeBinding(stringValue());
+            b = new FreeBinding(getName());
         }
 
         return copyReplacingBinding(b);
@@ -303,12 +306,12 @@ final class SyntaxSymbol
      * Determines whether this identifier resolves to a {@link FreeBinding}
      * with the given name and marks.
      */
-    boolean resolvesFree(String name, Set<Integer> marks)
+    boolean resolvesFree(BaseSymbol name, Set<MarkWrap> marks)
     {
         Binding resolvedBoundId = resolve();
         if (resolvedBoundId.isFree(name))
         {
-            Set<Integer> boundMarks = computeMarks();
+            Set<MarkWrap> boundMarks = computeMarks();
             if (marks.equals(boundMarks))
             {
                 return true;
@@ -321,13 +324,16 @@ final class SyntaxSymbol
     /**
      * Determines whether this identifier resolves to a given binding and has
      * the given marks.
+     *
+     * @param binding must not be null.
+     * @param marks must not be null.
      */
-    boolean resolvesBound(Binding binding, Set<Integer> marks)
+    boolean resolvesBound(Binding binding, Set<MarkWrap> marks)
     {
         Binding resolvedBoundId = resolve();
         if (resolvedBoundId.sameTarget(binding))
         {
-            Set<Integer> boundMarks = computeMarks();
+            Set<MarkWrap> boundMarks = computeMarks();
             if (marks.equals(boundMarks))
             {
                 return true;
@@ -356,7 +362,7 @@ final class SyntaxSymbol
             String name = stringValue();
             if (name != null && name.length() != 0)
             {
-                b = myWraps.resolve(name);
+                b = myWraps.resolve(getName());
             }
         }
 
@@ -413,7 +419,7 @@ final class SyntaxSymbol
                     throw new UnboundIdentifierException(this);
                 }
 
-                assert annotationsAsJavaStrings().length == 0;
+                assert ! FusionValue.isAnnotated(eval, myDatum);
                 SyntaxSexp topExpr = SyntaxSexp.make(eval, top, this);
 
                 // TODO FUSION-207 tail expand
@@ -438,17 +444,21 @@ final class SyntaxSymbol
     }
 
 
+    /**
+     * Give a debugging representation: the symbol name and all its marks.
+     * For example, {@code "symbol_name#26#12"}.
+     */
     String debugString()
     {
         String base = toString();
-        Set<Integer> marks = this.computeMarks();
+        Set<MarkWrap> marks = this.computeMarks();
         if (! marks.isEmpty())
         {
             StringBuilder buf = new StringBuilder(base);
-            for (Integer mark : marks)
+            for (MarkWrap mark : marks)
             {
                 buf.append('#');
-                buf.append(mark);
+                buf.append(mark.getMark());
             }
             base = buf.toString();
         }

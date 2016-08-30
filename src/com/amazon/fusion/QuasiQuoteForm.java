@@ -1,9 +1,12 @@
-// Copyright (c) 2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2014-2015 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionList.immutableList;
 import static com.amazon.fusion.FusionSexp.immutableSexp;
+import com.amazon.fusion.FusionList.BaseList;
+import com.amazon.fusion.FusionSexp.BaseSexp;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 
 final class QuasiQuoteForm
     extends QuasiBaseForm
@@ -43,7 +46,8 @@ final class QuasiQuoteForm
                            CompiledForm[] children)
         throws FusionException
     {
-        String[] annotations = originalStx.annotationsAsJavaStrings();
+        BaseSexp list = (BaseSexp) originalStx.unwrap(eval);
+        BaseSymbol[] annotations = list.getAnnotations();
         return new CompiledQuasiQuoteSexp(annotations, children);
     }
 
@@ -54,7 +58,8 @@ final class QuasiQuoteForm
                            CompiledForm[] children)
         throws FusionException
     {
-        String[] annotations = originalStx.annotationsAsJavaStrings();
+        BaseList list = (BaseList) originalStx.unwrap(eval);
+        BaseSymbol[] annotations = list.getAnnotations();
         return new CompiledQuasiQuoteList(annotations, children);
     }
 
@@ -65,10 +70,10 @@ final class QuasiQuoteForm
     private static final class CompiledQuasiQuoteSexp
         implements CompiledForm
     {
-        private final String[]       myAnnotations;
+        private final BaseSymbol[]   myAnnotations;
         private final CompiledForm[] myChildForms;
 
-        CompiledQuasiQuoteSexp(String[]       annotations,
+        CompiledQuasiQuoteSexp(BaseSymbol[]   annotations,
                                CompiledForm[] childForms)
         {
             assert childForms.length != 0;
@@ -94,10 +99,10 @@ final class QuasiQuoteForm
     private static final class CompiledQuasiQuoteList
         implements CompiledForm
     {
-        private final String[]       myAnnotations;
+        private final BaseSymbol[]   myAnnotations;
         private final CompiledForm[] myChildForms;
 
-        CompiledQuasiQuoteList(String[]       annotations,
+        CompiledQuasiQuoteList(BaseSymbol[]   annotations,
                                CompiledForm[] childForms)
         {
             myAnnotations = annotations;

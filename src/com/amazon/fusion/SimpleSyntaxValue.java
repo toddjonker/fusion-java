@@ -1,4 +1,4 @@
-// Copyright (c) 2013-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2013-2015 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -74,12 +74,6 @@ class SimpleSyntaxValue
 
 
     @Override
-    String[] annotationsAsJavaStrings()
-    {
-        return myDatum.annotationsAsJavaStrings();
-    }
-
-    @Override
     SyntaxValue copyReplacingProperties(Object[] properties)
     {
         return new SimpleSyntaxValue(getLocation(), properties, myDatum);
@@ -104,12 +98,6 @@ class SimpleSyntaxValue
         throws FusionException
     {
         return myDatum;
-    }
-
-    @Override
-    boolean isAnyNull()
-    {
-        return myDatum.isAnyNull();
     }
 
     @Override

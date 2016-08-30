@@ -1,28 +1,15 @@
-// Copyright (c) 2013-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2013-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
-import com.amazon.fusion.Namespace.NsBinding;
-
 
 /**
- * Implementation of {@code #%top}.
+ * Implementation of {@code #%top}, which is introduced when identifiers are
+ * macro-expanded in a scope where the identifier is not bound.
  */
 final class TopForm
     extends SyntacticForm
 {
-    TopForm()
-    {
-        //    "                                                                               |
-        super("('#%top' id)",
-              "References a top-level definition for symbol `id`, skipping over any\n" +
-              "surrounding local bindings.  Within a module, `id` must be defined within the\n" +
-              "module and not locally.\n" +
-              "\n" +
-              "As suggested by the awkward name, this form is rarely needed by application\n" +
-              "code and is primarily an artifact of the macro-expansion process.");
-    }
-
     @Override
     SyntaxValue expand(Expander expander, Environment env, SyntaxSexp stx)
         throws FusionException
@@ -32,28 +19,36 @@ final class TopForm
         SyntaxChecker check = check(eval, stx);
         check.arityExact(2);
 
-        SyntaxSymbol id = check.requiredIdentifier("top-level variable", 1);
+        SyntaxSymbol id =
+            check.requiredIdentifier("namespace-level variable", 1);
 
         SyntaxValue[] children = stx.extract(eval);
 
         Namespace ns = env.namespace();
         if (ns instanceof TopLevelNamespace)
         {
-            // This allows top-levels shadowed by local to work
-            SyntaxSymbol topId = id.copyAndResolveTop();
+            // https://docs.racket-lang.org/reference/__top.html says:
+            //
+            //   In a top-level context, (#%top . id) always refers to a
+            //   top-level variable, even if id is unbound or otherwise bound.
 
-            NsBinding binding = ns.localResolve(topId);
+            Binding binding = ns.resolveDefinition(id);
             if (binding == null)
             {
-                // There's no top-level binding with the same marks, so just
+                // There's no top-level definition with the same marks, so just
                 // lookup by name.
 
                 SyntaxSymbol stripped = id.stripWraps(eval);
                 assert stripped.resolve() instanceof FreeBinding;
 
-                binding = ns.localResolve(stripped);
+                binding = ns.resolveDefinition(stripped);
                 // This may still be free, but don't fail until eval-time.
                 // We'd like things like (expand (#%top foo)) to succeed.
+
+                if (binding == null)
+                {
+                    binding = stripped.getBinding();
+                }
             }
 
             id = id.copyReplacingBinding(binding);
@@ -68,7 +63,7 @@ final class TopForm
             SyntaxSymbol topId = (SyntaxSymbol) children[0];
 
             Binding binding = id.resolve();
-            if (ns.ownsBinding(binding))
+            if (ns.ownsDefinedBinding(binding))
             {
                 id = (SyntaxSymbol) id.trackOrigin(eval, stx, topId);
                 return id;
@@ -77,7 +72,7 @@ final class TopForm
             {
                 // The identifier may be from a different lexical context.
                 // Let's look it up as-is.
-                binding = ns.localResolve(id);
+                binding = ns.resolveDefinition(id);
                 if (binding != null)
                 {
                     id = (SyntaxSymbol) id.trackOrigin(eval, stx, topId);

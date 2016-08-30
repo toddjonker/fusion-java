@@ -1,9 +1,8 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.BindingDoc.COLLECT_DOCS_MARK;
-import static com.amazon.fusion.FusionEval.evalSyntax;
 import static com.amazon.fusion.FusionString.isString;
 import static com.amazon.fusion.FusionString.stringToJavaString;
 import static com.amazon.fusion.FusionVoid.voidValue;
@@ -11,11 +10,14 @@ import static com.amazon.fusion.GlobalState.PROVIDE;
 import static com.amazon.fusion.GlobalState.REQUIRE;
 import static com.amazon.fusion.ModuleIdentity.isValidAbsoluteModulePath;
 import static com.amazon.fusion.ModuleIdentity.isValidModulePath;
-import com.amazon.fusion.ModuleNamespace.ModuleBinding;
+import static com.amazon.ion.util.IonTextUtils.printQuotedSymbol;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
+import com.amazon.fusion.ModuleNamespace.ProvidedBinding;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -27,7 +29,7 @@ final class ModuleForm
 {
     private static final String STX_PROP_MODULE_IDENTITY   = "module identity";
     private static final String STX_PROP_LANGUAGE_IDENTITY = "language identity";
-    private static final String STX_PROP_BINDING_COUNT     = "binding count";
+    private static final String STX_PROP_DEFINITION_COUNT  = "definition count";
 
 
     private final DynamicParameter myCurrentModuleDeclareName;
@@ -112,12 +114,14 @@ final class ModuleForm
 
             if (! isValidModulePath(path))
             {
-                String message = "Invalid module path for language";
+                String message = "Invalid module path for language: "
+                    + initialBindingsStx.toString();
                 throw new ModuleNotFoundException(message, initialBindingsStx);
             }
             if (! isValidAbsoluteModulePath(path))
             {
-                String message = "Module path for language must be absolute";
+                String message = "Module path for language must be absolute: "
+                    + initialBindingsStx.toString();
                 throw new ModuleNotFoundException(message, initialBindingsStx);
             }
 
@@ -157,9 +161,15 @@ final class ModuleForm
             throw check.failure("Module has no body");
         }
 
-        // The new namespace shares the registry of current-namespace
+        // The new namespace shares the registry of current-namespace.
+        // We use the module-name symbol as lexical context for bindings
+        // introduced by the language, so they "match" references in the body
+        // of the module. The leading 'module' symbol is enriched differently
+        // when this is called via `eval` and top-level evaluation.
         ModuleNamespace moduleNamespace =
-            new ModuleNamespace(registry, language, id);
+            new ModuleNamespace(eval, registry,
+                                (SyntaxSymbol) source.get(eval, 1),
+                                language, id);
 
         // TODO handle #%module-begin and #%plain-module-begin
         expander = expander.enterModuleContext();
@@ -202,7 +212,7 @@ final class ModuleForm
             if (expanded instanceof SyntaxSexp)
             {
                 SyntaxSexp sexp = (SyntaxSexp)expanded;
-                Binding binding = sexp.firstBinding(eval);
+                Binding binding = sexp.firstTargetBinding(eval);
 
                 if (binding == globals.myKernelDefineBinding)
                 {
@@ -230,7 +240,10 @@ final class ModuleForm
                 {
                     try
                     {
-                        evalSyntax(eval, expanded, moduleNamespace);
+                        expanded = expander.expand(moduleNamespace, expanded);
+                        CompiledForm compiled =
+                            eval.compile(moduleNamespace, expanded);
+                        eval.eval(moduleNamespace, compiled);
                     }
                     catch (FusionException e)
                     {
@@ -272,8 +285,8 @@ final class ModuleForm
 
         source = (SyntaxSexp)
             source.copyWithProperty(eval,
-                                    STX_PROP_BINDING_COUNT,
-                                    moduleNamespace.getBindings().size());
+                                    STX_PROP_DEFINITION_COUNT,
+                                    moduleNamespace.definitionCount());
 
 
         // Pass 2: Expand the expressions. We also rearrange the forms,
@@ -292,7 +305,8 @@ final class ModuleForm
         {
             if (! expanded.next())
             {
-                if (firstBinding(eval, stx) == globals.myKernelDefineBinding)
+                Binding firstBinding = firstTargetBindingOfSexp(eval, stx);
+                if (firstBinding == globals.myKernelDefineBinding)
                 {
                     assert expander.isModuleContext();
                     stx = expander.expand(moduleNamespace, stx);
@@ -305,6 +319,7 @@ final class ModuleForm
             subforms[i++] = stx;
         }
 
+        // Push all the `provide` forms to the end of the module.
         for (SyntaxValue stx : provideForms)
         {
             stx = expander.expand(moduleNamespace, stx);
@@ -314,12 +329,17 @@ final class ModuleForm
         return source.copyReplacingChildren(eval, subforms);
     }
 
-    Binding firstBinding(Evaluator eval, SyntaxValue stx)
+    /**
+     * @return null if stx isn't a sexp or doesn't start with an identifier.
+     * Null is also equivalent to a {@link FreeBinding} on a lead identifier.
+     */
+    private static Binding firstTargetBindingOfSexp(Evaluator eval,
+                                                    SyntaxValue stx)
         throws FusionException
     {
         if (stx instanceof SyntaxSexp)
         {
-            return ((SyntaxSexp) stx).firstBinding(eval);
+            return ((SyntaxSexp) stx).firstTargetBinding(eval);
         }
         return null;
     }
@@ -347,7 +367,9 @@ final class ModuleForm
                 envOutsideModule.namespace().getRegistry();
             ModuleInstance language = registry.instantiate(eval, languageId);
 
-            moduleNamespace = new ModuleNamespace(registry, language, id);
+            moduleNamespace = new ModuleNamespace(eval, registry,
+                                                  (SyntaxSymbol) stx.get(eval, 0),
+                                                  language, id);
         }
 
 
@@ -380,7 +402,7 @@ final class ModuleForm
         {
             SyntaxValue form = stx.get(eval, i);
 
-            Binding firstBinding = firstBinding(eval, form);
+            Binding firstBinding = firstTargetBindingOfSexp(eval, form);
             if (firstBinding == kernelRequireBinding)
             {
                 // All require forms have already been evaluated.
@@ -388,8 +410,11 @@ final class ModuleForm
                 // retained by `expand` and similar operations.
                 continue;
             }
+
             if (firstBinding == kernelProvideBinding)
             {
+                // Expansion pushes all `provide` forms to the end of the
+                // module, so when we hit one we know we're done compiling.
                 break;
             }
 
@@ -397,22 +422,21 @@ final class ModuleForm
             otherForms.add(compiled);
         }
 
-        Object[] providedIdentifiers =
-            providedSymbols(eval, moduleNamespace, stx, i);
+        ProvidedBinding[] providedBindings =
+            providedBindings(eval, moduleNamespace, stx, i);
 
         CompiledForm[] otherFormsArray =
-            otherForms.toArray(new CompiledForm[otherForms.size()]);
+            otherForms.toArray(CompiledForm.EMPTY_ARRAY);
 
         int bindingCount = (Integer)
-            stx.findProperty(eval, STX_PROP_BINDING_COUNT);
+            stx.findProperty(eval, STX_PROP_DEFINITION_COUNT);
 
         return new CompiledModule(id,
                                   docs,
                                   moduleNamespace.requiredModuleIds(),
                                   bindingCount,
                                   moduleNamespace.extractBindingDocs(),
-                                  (String[]) providedIdentifiers[0],
-                                  (ModuleBinding[]) providedIdentifiers[1],
+                                  providedBindings,
                                   otherFormsArray);
     }
 
@@ -445,17 +469,20 @@ final class ModuleForm
 
 
     /**
-     * @return [String[] names, ModuleBinding[] bindings]
+     * Process all the provide-forms, which macro-expansion has grouped
+     * together at the end of the module.
+     *
+     * @param firstProvidePos the index within {@code moduleStx} of the first
+     * provide-form. All elements from that position onward are provide-forms.
      */
-    private Object[] providedSymbols(Evaluator  eval,
-                                     Namespace  ns,
-                                     SyntaxSexp moduleStx,
-                                     int        firstProvidePos)
+    private ProvidedBinding[] providedBindings(Evaluator  eval,
+                                               Namespace  ns,
+                                               SyntaxSexp moduleStx,
+                                               int        firstProvidePos)
         throws FusionException
     {
-        Map<String,Binding>      bound    = new HashMap<>();
-        ArrayList<String>        names    = new ArrayList<>();
-        ArrayList<ModuleBinding> bindings = new ArrayList<>();
+        Map<BaseSymbol,Binding> bound    = new IdentityHashMap<>();
+        List<ProvidedBinding>   bindings = new ArrayList<>();
 
         for (int p = firstProvidePos; p < moduleStx.size(); p++)
         {
@@ -465,37 +492,55 @@ final class ModuleForm
             int size = form.size();
             for (int i = 1; i < size; i++)
             {
+                SyntaxSymbol exportId;
+                Binding binding;
+
                 SyntaxValue spec = form.get(eval, i);
-
-                SyntaxSymbol id;
-                try
+                if (spec instanceof SyntaxSymbol)
                 {
-                    id = (SyntaxSymbol) spec;
+                    exportId = (SyntaxSymbol) spec;
+                    binding = exportId.getBinding();
                 }
-                catch (ClassCastException e)
+                else
                 {
-                    throw check.failure("invalid provide-spec");
+                    SyntaxSexp sexp = (SyntaxSexp) spec;
+                    SyntaxSymbol formName = sexp.firstIdentifier(eval);
+                    switch (formName.getName().stringValue())
+                    {
+                        case "rename":
+                        {
+                            SyntaxSymbol localId = (SyntaxSymbol)
+                                sexp.get(eval, 1);
+                            exportId = (SyntaxSymbol) sexp.get(eval, 2);
+                            binding = localId.getBinding();
+                            break;
+                        }
+                        default:
+                        {
+                            throw check.failure("invalid provide-spec");
+                        }
+                    }
                 }
 
-                Binding binding = id.getBinding();
-                String name = id.stringValue();
+                BaseSymbol name = exportId.getName();
                 Binding prior = bound.put(name, binding);
                 if (prior != null && ! binding.sameTarget(prior))
                 {
                     String message =
-                        "identifier already provided with a different" +
-                        " binding";
-                    throw check.failure(message, id);
+                        "the identifier " +
+                        printQuotedSymbol(name.stringValue()) +
+                        " is being exported with multiple bindings";
+                    throw check.failure(message, exportId);
                 }
-                names.add(name);
-                bindings.add((ModuleBinding) binding.originalBinding());
+
+                ProvidedBinding provided = binding.provideAs(name);
+                assert name == provided.getName();
+
+                bindings.add(provided);
             }
         }
 
-        int count = names.size();
-        Object[] result = { names.toArray(new String[count]),
-                            bindings.toArray(new ModuleBinding[count]) };
-        return result;
+        return bindings.toArray(new ProvidedBinding[0]);
     }
 
 
@@ -505,30 +550,30 @@ final class ModuleForm
     static final class CompiledModule
         implements CompiledForm
     {
-        private final ModuleIdentity   myId;
-        private final String           myDocs;
-        private final ModuleIdentity[] myRequiredModules;
-        private final int              myVariableCount;
-        private final BindingDoc[]     myBindingDocs;
-        private final String[]         myProvidedNames;
-        private final ModuleBinding[]  myProvidedBindings;
-        private final CompiledForm[]   myBody;
+        // We use arrays to hold the provided bindings, rather than a map
+        // from names to bindings, because we want compiled forms to be flat
+        // and compact.
+        private final ModuleIdentity    myId;
+        private final String            myDocs;
+        private final ModuleIdentity[]  myRequiredModules;
+        private final int               myVariableCount;
+        private final BindingDoc[]      myBindingDocs;
+        private final ProvidedBinding[] myProvidedBindings;
+        private final CompiledForm[]    myBody;
 
-        private CompiledModule(ModuleIdentity   id,
-                               String           docs,
-                               ModuleIdentity[] requiredModules,
-                               int              variableCount,
-                               BindingDoc[]     bindingDocs,
-                               String[]         providedNames,
-                               ModuleBinding[]  providedBindings,
-                               CompiledForm[]   body)
+        private CompiledModule(ModuleIdentity    id,
+                               String            docs,
+                               ModuleIdentity[]  requiredModules,
+                               int               variableCount,
+                               BindingDoc[]      bindingDocs,
+                               ProvidedBinding[] providedBindings,
+                               CompiledForm[]    body)
         {
             myId                  = id;
             myDocs                = docs;
             myRequiredModules     = requiredModules;
             myVariableCount       = variableCount;
             myBindingDocs         = bindingDocs;
-            myProvidedNames       = providedNames;
             myProvidedBindings    = providedBindings;
             myBody                = body;
         }
@@ -563,8 +608,7 @@ final class ModuleForm
                                 myVariableCount, myBindingDocs);
 
             ModuleInstance module =
-                new ModuleInstance(myId, myDocs, store, myProvidedNames,
-                                   myProvidedBindings);
+                new ModuleInstance(myId, myDocs, store, myProvidedBindings);
 
             for (CompiledForm form : myBody)
             {

@@ -1,7 +1,8 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2015 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import java.util.Iterator;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -28,9 +29,9 @@ class MarkWrap
 
 
     @Override
-    Binding resolve(String name,
+    Binding resolve(BaseSymbol name,
                     Iterator<SyntaxWrap> moreWraps,
-                    Set<Integer> returnMarks)
+                    Set<MarkWrap> returnMarks)
     {
         Binding b = null;
         if (moreWraps.hasNext())
@@ -39,19 +40,12 @@ class MarkWrap
             b = nextWrap.resolve(name, moreWraps, returnMarks);
         }
 
-        if (! returnMarks.add(myMark))
+        if (! returnMarks.add(this))
         {
-            returnMarks.remove(myMark);
+            returnMarks.remove(this);
         }
 
         return b;
-    }
-
-
-    @Override
-    Iterator<SyntaxWrap> iterator()
-    {
-        return null;
     }
 
 

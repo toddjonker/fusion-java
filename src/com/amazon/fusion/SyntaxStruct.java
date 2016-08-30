@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -9,6 +9,7 @@ import static com.amazon.fusion.FusionStruct.structImplAdd;
 import com.amazon.fusion.FusionStruct.ImmutableStruct;
 import com.amazon.fusion.FusionStruct.NonNullImmutableStruct;
 import com.amazon.fusion.FusionStruct.StructFieldVisitor;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import com.amazon.ion.IonException;
 import com.amazon.ion.IonWriter;
 import java.io.IOException;
@@ -65,20 +66,6 @@ final class SyntaxStruct
 
 
     //========================================================================
-
-
-    @Override
-    String[] annotationsAsJavaStrings()
-    {
-        return myStruct.annotationsAsJavaStrings();
-    }
-
-
-    @Override
-    boolean isAnyNull()
-    {
-        return ((BaseValue)myStruct).isAnyNull();
-    }
 
 
     @Override
@@ -157,8 +144,8 @@ final class SyntaxStruct
 
         if (! mustReplace) return this;
 
-        ImmutableStruct s =
-            immutableStruct(newMap, annotationsAsJavaStrings());
+        BaseSymbol[] annotations = myStruct.getAnnotations();
+        ImmutableStruct s = immutableStruct(newMap, annotations);
         return new SyntaxStruct(getLocation(), getProperties(), null, s);
     }
 
@@ -218,7 +205,8 @@ final class SyntaxStruct
             }
         }
 
-        myStruct = immutableStruct(newMap, annotationsAsJavaStrings());
+        BaseSymbol[] annotations = myStruct.getAnnotations();
+        myStruct = immutableStruct(newMap, annotations);
         myWraps = null;
 
         return myStruct;
@@ -268,7 +256,8 @@ final class SyntaxStruct
             }
         }
 
-        return immutableStruct(newMap, annotationsAsJavaStrings());
+        BaseSymbol[] annotations = myStruct.getAnnotations();
+        return immutableStruct(newMap, annotations);
     }
 
 
@@ -283,8 +272,9 @@ final class SyntaxStruct
 
         // Make a copy of the map, then mutate it to replace children
         // as necessary.
+        Evaluator eval = expander.getEvaluator();
         Map<String, Object> newMap =
-            ((NonNullImmutableStruct) myStruct).copyMap(expander.getEvaluator());
+            ((NonNullImmutableStruct) myStruct).copyMap(eval);
 
         for (Map.Entry<String, Object> entry : newMap.entrySet())
         {
@@ -320,8 +310,8 @@ final class SyntaxStruct
 
 
         // Wraps have been pushed down so the copy doesn't need them.
-        ImmutableStruct s =
-            immutableStruct(newMap, annotationsAsJavaStrings());
+        BaseSymbol[] annotations = myStruct.getAnnotations();
+        ImmutableStruct s = immutableStruct(newMap, annotations);
         return new SyntaxStruct(getLocation(), s);
     }
 
@@ -348,9 +338,12 @@ final class SyntaxStruct
     CompiledForm doCompile(final Evaluator eval, final Environment env)
         throws FusionException
     {
+        // Annotations on this form are not handled here.
+        assert ! myStruct.isAnnotated();
+
         assert myWraps == null;
 
-        if (isAnyNull())
+        if (((BaseValue)myStruct).isAnyNull())
         {
             return new CompiledConstant(NULL_STRUCT);
         }
@@ -363,6 +356,9 @@ final class SyntaxStruct
 
         final String[]       fieldNames = new String[size];
         final CompiledForm[] fieldForms = new CompiledForm[size];
+
+        final Object[]       constFields = new Object[size];
+        final Object    notConstSentinel = new Object();
 
         StructFieldVisitor visitor = new StructFieldVisitor()
         {
@@ -377,6 +373,10 @@ final class SyntaxStruct
 
                 fieldNames[i] = name;
                 fieldForms[i] = form;
+
+                constFields[i] = (form instanceof CompiledConstant
+                                    ? ((CompiledConstant) form).getValue()
+                                    : notConstSentinel);
                 i++;
                 return null;
             }
@@ -384,7 +384,22 @@ final class SyntaxStruct
 
         myStruct.visitFields(eval, visitor);
 
-        return new CompiledStruct(fieldNames, fieldForms);
+        boolean allConstant = true;
+        for (int i = 0; i < size; i++)
+        {
+            allConstant &= (constFields[i] != notConstSentinel);
+        }
+
+        if (allConstant)
+        {
+            return new CompiledConstant(immutableStruct(fieldNames,
+                                                        constFields,
+                                                        BaseSymbol.EMPTY_ARRAY));
+        }
+        else
+        {
+            return new CompiledStruct(fieldNames, fieldForms);
+        }
     }
 
 

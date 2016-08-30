@@ -1,4 +1,4 @@
-;; Copyright (c) 2014 Amazon.com, Inc.  All rights reserved.
+;; Copyright (c) 2014-2016 Amazon.com, Inc.  All rights reserved.
 
 #lang racket
 
@@ -9,6 +9,10 @@
 
 (define RACKET #t)
 
+(define-syntax only_in (make-rename-transformer #'only-in))
+
+(define-syntax set (make-rename-transformer #'set!))
+
 (define === equal?)
 
 (define-syntax lets (make-rename-transformer #'let*))
@@ -17,6 +21,8 @@
 (define pair cons)
 (define head car)
 (define tail cdr)
+
+(define is_procedure procedure?)
 
 
 ;; Syntax
@@ -33,11 +39,11 @@
 (define syntax_track_origin  syntax-track-origin)
 (define syntax_unwrap        syntax-e)
 
-;; TODO WORKAROUND FUSION-47 Should use interned symbol and remove this.
+;; Deprecated as of R23
 (define (syntax_origin stx)
   (syntax-property stx 'origin))
 
-(define UNSET_STX_PROP_VALUE #f)
+(define UNSET_STX_PROP_VALUE #f) ; Fusion uses void for unset properties.
 
 
 ;; Testing
@@ -45,3 +51,14 @@
 (define-syntax check_true  (make-rename-transformer #'check-true))
 (define-syntax check_false (make-rename-transformer #'check-false))
 (define-syntax check_same  (make-rename-transformer #'check-eq?))
+(define-syntax check_pred  (make-rename-transformer #'check-pred))
+
+(define-syntax-rule (expect_syntax_exn expr)
+  (check-exn exn:fail:syntax?
+    (lambda ()
+      (eval (quote expr)))))
+
+(define-syntax-rule (expect_variable_exn expr)
+  (check-exn exn:fail:contract:variable?
+    (lambda ()
+      (eval (quote expr)))))

@@ -1,4 +1,4 @@
-// Copyright (c) 2013-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2013-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -6,8 +6,8 @@ import static com.amazon.fusion.FusionBool.falseBool;
 import static com.amazon.fusion.FusionBool.makeBool;
 import static com.amazon.fusion.FusionBool.trueBool;
 import static com.amazon.fusion.FusionString.makeString;
+import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
 import com.amazon.fusion.FusionBool.BaseBool;
-import com.amazon.fusion.FusionText.BaseText;
 import com.amazon.ion.IonException;
 import com.amazon.ion.IonType;
 import com.amazon.ion.IonValue;
@@ -15,6 +15,9 @@ import com.amazon.ion.IonWriter;
 import com.amazon.ion.ValueFactory;
 import com.amazon.ion.util.IonTextUtils;
 import java.io.IOException;
+import java.lang.ref.WeakReference;
+import java.util.Arrays;
+import java.util.WeakHashMap;
 
 
 final class FusionSymbol
@@ -23,12 +26,101 @@ final class FusionSymbol
 
 
     abstract static class BaseSymbol
-        extends BaseText
+        // WORKAROUND: Static import causes compile failure on jdk1.7.0_80
+        extends FusionText.BaseText
     {
+        static final BaseSymbol[] EMPTY_ARRAY = new BaseSymbol[0];
+
         private BaseSymbol() {}
 
+
+        /**
+         * NOT FOR APPLICATION USE!
+         *
+         * @param value must not be empty but may be null to make
+         * {@code null.symbol}.
+         */
+        static BaseSymbol internSymbol(String value)
+        {
+            if (value == null) return NULL_SYMBOL;
+
+            if (value.isEmpty())
+            {
+                throw new IllegalArgumentException("Cannot make an empty symbol");
+            }
+
+            ActualSymbol sym = new ActualSymbol(value);
+
+            // Prevent other threads from touching the intern table.
+            // This doesn't prevent the GC from removing entries!
+            synchronized (ourActualSymbols)
+            {
+                WeakReference<ActualSymbol> ref = ourActualSymbols.get(sym);
+                if (ref != null)
+                {
+                    // There's a chance that the entry for a string will exist but
+                    // the weak reference has been cleared.
+                    ActualSymbol interned = ref.get();
+                    if (interned != null) return interned;
+                }
+
+                ref = new WeakReference<>(sym);
+                ourActualSymbols.put(sym, ref);
+
+                return sym;
+            }
+        }
+
+        /**
+         * NOT FOR APPLICATION USE!
+         */
+        static BaseSymbol[] internSymbols(String[] names)
+        {
+            int len = names.length;
+            if (len == 0) return EMPTY_ARRAY;
+
+            BaseSymbol[] syms = new BaseSymbol[len];
+            for (int i = 0; i < len; i++)
+            {
+                syms[i] = internSymbol(names[i]);
+            }
+            return syms;
+        }
+
+
+        /**
+         * Returns an equivalent symbol, stripped of any annotations.
+         */
+        BaseSymbol strip()
+        {
+            return this;
+        }
+
+        static void stripSymbolsInPlace(BaseSymbol[] symbols)
+        {
+            for (int i = 0; i < symbols.length; i++)
+            {
+                symbols[i] = symbols[i].strip();
+            }
+        }
+
+
+        static String[] unsafeSymbolsToJavaStrings(Object[] fusionSymbols)
+        {
+            int len = fusionSymbols.length;
+            if (len == 0) return EMPTY_STRING_ARRAY;
+
+            String[] strs = new String[len];
+            for (int i = 0; i < len; i++)
+            {
+                strs[i] = ((BaseSymbol) fusionSymbols[i]).stringValue();
+            }
+            return strs;
+        }
+
+
         @Override
-        BaseSymbol annotate(Evaluator eval, String[] annotations)
+        BaseSymbol annotate(Evaluator eval, BaseSymbol[] annotations)
         {
             return FusionSymbol.annotate(this, annotations);
         }
@@ -51,6 +143,12 @@ final class FusionSymbol
             }
 
             return falseBool(eval);
+        }
+
+        boolean isNonEmpty()
+        {
+            String value = stringValue();
+            return (value != null && value.length() != 0);
         }
 
         private boolean isKeyword()
@@ -156,7 +254,10 @@ final class FusionSymbol
     }
 
 
-    private static class ActualSymbol
+    /**
+     * An interned, unannotated, non-null symbol.
+     */
+    private static final class ActualSymbol
         extends BaseSymbol
     {
         private final String myContent;
@@ -165,6 +266,28 @@ final class FusionSymbol
         {
             assert content != null;
             myContent = content;
+        }
+
+        @Override
+        public boolean equals(Object other)
+        {
+            // We can't optimize this to be a trivial == comparison, since
+            // equal instances will exist during symbol creation while we
+            // search the intern table for an extant instance.
+
+            if (this == other) return true;
+            if (other instanceof ActualSymbol)
+            {
+                ActualSymbol that = (ActualSymbol) other;
+                return myContent.equals(that.myContent);
+            }
+            return false;
+        }
+
+        @Override
+        public int hashCode()
+        {
+            return myContent.hashCode();
         }
 
         @Override
@@ -204,17 +327,16 @@ final class FusionSymbol
     }
 
 
-    private static class AnnotatedSymbol
+    private static final class AnnotatedSymbol
         extends BaseSymbol
-        implements Annotated
     {
         /** Not null or empty */
-        final String[] myAnnotations;
+        final BaseSymbol[] myAnnotations;
 
-        /** Not null, and not AnnotatedBool */
+        /** Not null, and not AnnotatedSymbol */
         final BaseSymbol  myValue;
 
-        private AnnotatedSymbol(String[] annotations, BaseSymbol value)
+        private AnnotatedSymbol(BaseSymbol[] annotations, BaseSymbol value)
         {
             assert annotations.length != 0;
             myAnnotations = annotations;
@@ -222,15 +344,46 @@ final class FusionSymbol
         }
 
         @Override
-        public String[] annotationsAsJavaStrings()
+        public boolean equals(Object other)
+        {
+            if (this == other) return true;
+            if (other instanceof AnnotatedSymbol)
+            {
+                AnnotatedSymbol that = (AnnotatedSymbol) other;
+                if (this.myValue == that.myValue) // Since they are interned
+                {
+                    // TODO optimize to use identity equality on the symbols
+                    return Arrays.equals(myAnnotations, that.myAnnotations);
+                }
+            }
+            return false;
+        }
+
+        @Override
+        public int hashCode()
+        {
+            int result = 1;
+            result = 31 * result + myValue.hashCode();
+            result = 31 * result + Arrays.hashCode(myAnnotations);
+            return result;
+        }
+
+        @Override
+        boolean isAnnotated()
+        {
+            return true;
+        }
+
+        @Override
+        BaseSymbol[] getAnnotations()
         {
             return myAnnotations;
         }
 
         @Override
-        BaseSymbol annotate(Evaluator eval, String[] annotations)
+        BaseSymbol annotate(Evaluator eval, BaseSymbol[] annotations)
         {
-            return FusionSymbol.annotate(myValue, annotations);
+            return myValue.annotate(eval, annotations);
         }
 
         @Override
@@ -263,7 +416,7 @@ final class FusionSymbol
         {
             IonValue iv = myValue.copyToIonValue(factory,
                                                  throwOnConversionFailure);
-            iv.setTypeAnnotations(myAnnotations);
+            iv.setTypeAnnotations(getAnnotationsAsJavaStrings());
             return iv;
         }
 
@@ -271,7 +424,7 @@ final class FusionSymbol
         void ionize(Evaluator eval, IonWriter out)
             throws IOException, IonException, FusionException, IonizeFailure
         {
-            out.setTypeAnnotations(myAnnotations);
+            out.setTypeAnnotations(getAnnotationsAsJavaStrings());
             myValue.ionize(eval, out);
         }
 
@@ -291,6 +444,31 @@ final class FusionSymbol
 
     private static final BaseSymbol NULL_SYMBOL  = new NullSymbol();
 
+    /**
+     * Interning table for unannotated, non-null symbols.
+     * <p>
+     * Each entry's key is the same instance as the referrent of the
+     * {@link WeakReference}, so the entry will be retained at least as long as
+     * the symbol is reachable.
+     */
+    private static final
+    WeakHashMap<ActualSymbol, WeakReference<ActualSymbol>>
+        ourActualSymbols = new WeakHashMap<>(256);
+
+    /**
+     * Interning table for annotated symbols.
+     */
+    private static final
+    WeakHashMap<AnnotatedSymbol, WeakReference<AnnotatedSymbol>>
+        ourAnnotatedSymbols = new WeakHashMap<>(256);
+
+    // TODO Perhaps add expungeStaleEntries() to force GC of intern tables.
+    // Because WeakHashMap only purges entries on access, we could end up with
+    // a bunch of garbage in there after code compilation is done, and unless
+    // new symbols are instantiated there won't be any access to the map and no
+    // garbage released. Perhaps it's worth expunging the map (via size())
+    // after significant processing events like compiling code.
+
 
     /**
      * @param value must not be empty but may be null to make
@@ -300,25 +478,36 @@ final class FusionSymbol
      */
     static BaseSymbol makeSymbol(Evaluator eval, String value)
     {
-        if (value == null) return NULL_SYMBOL;
-
-        if (value.isEmpty())
-        {
-            throw new IllegalArgumentException("Cannot make an empty symbol");
-        }
-
-        return new ActualSymbol(value);
+        return BaseSymbol.internSymbol(value);
     }
 
 
     private static BaseSymbol annotate(BaseSymbol unannotated,
-                                       String[] annotations)
+                                       BaseSymbol[] annotations)
     {
         assert ! (unannotated instanceof AnnotatedSymbol);
 
         if (annotations.length == 0) return unannotated;
 
-        return new AnnotatedSymbol(annotations, unannotated);
+        AnnotatedSymbol sym = new AnnotatedSymbol(annotations, unannotated);
+
+        synchronized (ourAnnotatedSymbols)
+        {
+            WeakReference<AnnotatedSymbol> ref = ourAnnotatedSymbols.get(sym);
+            if (ref != null)
+            {
+                // There's a chance that the entry for a string will exist but
+                // the weak reference has been cleared.
+                AnnotatedSymbol interned = ref.get();
+                if (interned != null) return interned;
+            }
+
+            // We don't have an interned symbol, so intern the one we've made.
+            ref = new WeakReference<>(sym);
+            ourAnnotatedSymbols.put(sym, ref);
+        }
+
+        return sym;
     }
 
 
@@ -335,7 +524,7 @@ final class FusionSymbol
                                  String    value)
     {
         BaseSymbol base = makeSymbol(eval, value);
-        return annotate(base, annotations);
+        return annotate(base, BaseSymbol.internSymbols(annotations));
     }
 
 
@@ -352,7 +541,7 @@ final class FusionSymbol
                                            String[] annotations)
     {
         BaseSymbol base = (BaseSymbol) fusionSymbol;
-        return base.annotate(eval, annotations);
+        return base.annotate(eval, BaseSymbol.internSymbols(annotations));
     }
 
 
@@ -402,6 +591,15 @@ final class FusionSymbol
             return unsafeSymbolToJavaString(eval, value);
         }
         return null;
+    }
+
+
+    static String[] unsafeSymbolsToJavaStrings(Evaluator eval,
+                                               Object[]  fusionSymbols)
+        throws FusionException
+
+    {
+        return BaseSymbol.unsafeSymbolsToJavaStrings(fusionSymbols);
     }
 
 
@@ -493,13 +691,6 @@ final class FusionSymbol
     static final class IsSymbolProc
         extends Procedure1
     {
-        IsSymbolProc()
-        {
-            //    "                                                                               |
-            super("Determines whether a `value` is of type `symbol`, returning `true` or `false`.",
-                  "value");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object arg)
             throws FusionException
@@ -511,23 +702,13 @@ final class FusionSymbol
 
 
     static final class ToStringProc
-        extends Procedure
+        extends Procedure1
     {
-        ToStringProc()
-        {
-            //    "                                                                               |
-            super("Converts a `symbol` to a string with the same text. Returns `null.string` when\n"
-                + "given `null.symbol`.",
-                  "symbol");
-        }
-
         @Override
-        Object doApply(Evaluator eval, Object[] args)
+        Object doApply(Evaluator eval, Object arg)
             throws FusionException
         {
-            checkArityExact(args);
-
-            String input = checkNullableArg(this, 0, args);
+            String input = checkNullableSymbolArg(eval, this, 0, arg);
             return makeString(eval, input);
         }
     }

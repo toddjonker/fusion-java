@@ -1,4 +1,4 @@
-// Copyright (c) 2013-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2013-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -6,10 +6,12 @@ import static com.amazon.fusion.FusionBool.falseBool;
 import static com.amazon.fusion.FusionBool.makeBool;
 import static com.amazon.fusion.FusionBool.trueBool;
 import static com.amazon.fusion.FusionIo.safeWriteToString;
+import static com.amazon.fusion.FusionSymbol.BaseSymbol.internSymbols;
 import static com.amazon.fusion.SimpleSyntaxValue.makeSyntax;
 import static java.math.RoundingMode.CEILING;
 import static java.math.RoundingMode.FLOOR;
 import com.amazon.fusion.FusionBool.BaseBool;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import com.amazon.ion.Decimal;
 import com.amazon.ion.IonException;
 import com.amazon.ion.IonType;
@@ -23,9 +25,11 @@ import java.math.BigInteger;
 import java.math.MathContext;
 
 /**
+ * Utilities for working with Fusion numbers.
  *
+ * @see FusionValue
  */
-final class FusionNumber
+public final class FusionNumber
 {
     private FusionNumber() {}
 
@@ -34,6 +38,12 @@ final class FusionNumber
         extends BaseValue
     {
         private BaseNumber() {}
+
+        @Override
+        final boolean isAnnotatable()
+        {
+            return true;
+        }
 
         int truncateToJavaInt()
         {
@@ -129,9 +139,10 @@ final class FusionNumber
         private BaseInt() {}
 
         @Override
-        BaseInt annotate(Evaluator eval, String[] annotations)
+        BaseInt annotate(Evaluator eval, BaseSymbol[] annotations)
         {
-            return FusionNumber.annotate(this, annotations);
+            if (annotations.length == 0) return this;
+            return new AnnotatedInt(annotations, this);
         }
 
         @Override
@@ -447,15 +458,14 @@ final class FusionNumber
 
     private static class AnnotatedInt
         extends BaseInt
-        implements Annotated
     {
         /** Not null or empty */
-        final String[] myAnnotations;
+        final BaseSymbol[] myAnnotations;
 
-        /** Not null, and not AnnotatedBool */
+        /** Not null, and not AnnotatedInt */
         final BaseInt  myValue;
 
-        private AnnotatedInt(String[] annotations, BaseInt value)
+        private AnnotatedInt(BaseSymbol[] annotations, BaseInt value)
         {
             assert annotations.length != 0;
             myAnnotations = annotations;
@@ -463,13 +473,19 @@ final class FusionNumber
         }
 
         @Override
-        public String[] annotationsAsJavaStrings()
+        boolean isAnnotated()
+        {
+            return true;
+        }
+
+        @Override
+        public BaseSymbol[] getAnnotations()
         {
             return myAnnotations;
         }
 
         @Override
-        BaseInt annotate(Evaluator eval, String[] annotations)
+        BaseInt annotate(Evaluator eval, BaseSymbol[] annotations)
         {
             return myValue.annotate(eval, annotations);
         }
@@ -529,7 +545,7 @@ final class FusionNumber
         {
             IonValue iv = myValue.copyToIonValue(factory,
                                                  throwOnConversionFailure);
-            iv.setTypeAnnotations(myAnnotations);
+            iv.setTypeAnnotations(getAnnotationsAsJavaStrings());
             return iv;
         }
 
@@ -537,7 +553,7 @@ final class FusionNumber
         void ionize(Evaluator eval, IonWriter out)
             throws IOException, IonException, FusionException, IonizeFailure
         {
-            out.setTypeAnnotations(myAnnotations);
+            out.setTypeAnnotations(getAnnotationsAsJavaStrings());
             myValue.ionize(eval, out);
         }
 
@@ -561,9 +577,10 @@ final class FusionNumber
         private BaseDecimal() {}
 
         @Override
-        BaseDecimal annotate(Evaluator eval, String[] annotations)
+        BaseDecimal annotate(Evaluator eval, BaseSymbol[] annotations)
         {
-            return FusionNumber.annotate(this, annotations);
+            if (annotations.length == 0) return this;
+            return new AnnotatedDecimal(annotations, this);
         }
 
         @Override
@@ -815,15 +832,14 @@ final class FusionNumber
 
     private static class AnnotatedDecimal
         extends BaseDecimal
-        implements Annotated
     {
         /** Not null or empty */
-        final String[] myAnnotations;
+        final BaseSymbol[] myAnnotations;
 
-        /** Not null, and not AnnotatedBool */
+        /** Not null, and not AnnotatedDecimal */
         final BaseDecimal  myValue;
 
-        private AnnotatedDecimal(String[] annotations, BaseDecimal value)
+        private AnnotatedDecimal(BaseSymbol[] annotations, BaseDecimal value)
         {
             assert annotations.length != 0;
             myAnnotations = annotations;
@@ -831,13 +847,19 @@ final class FusionNumber
         }
 
         @Override
-        public String[] annotationsAsJavaStrings()
+        boolean isAnnotated()
+        {
+            return true;
+        }
+
+        @Override
+        public BaseSymbol[] getAnnotations()
         {
             return myAnnotations;
         }
 
         @Override
-        BaseDecimal annotate(Evaluator eval, String[] annotations)
+        BaseDecimal annotate(Evaluator eval, BaseSymbol[] annotations)
         {
             return myValue.annotate(eval, annotations);
         }
@@ -893,7 +915,7 @@ final class FusionNumber
         {
             IonValue iv = myValue.copyToIonValue(factory,
                                                  throwOnConversionFailure);
-            iv.setTypeAnnotations(myAnnotations);
+            iv.setTypeAnnotations(getAnnotationsAsJavaStrings());
             return iv;
         }
 
@@ -901,7 +923,7 @@ final class FusionNumber
         void ionize(Evaluator eval, IonWriter out)
             throws IOException, IonException, FusionException, IonizeFailure
         {
-            out.setTypeAnnotations(myAnnotations);
+            out.setTypeAnnotations(getAnnotationsAsJavaStrings());
             myValue.ionize(eval, out);
         }
 
@@ -934,9 +956,10 @@ final class FusionNumber
             throws FusionException;
 
         @Override
-        BaseFloat annotate(Evaluator eval, String[] annotations)
+        BaseFloat annotate(Evaluator eval, BaseSymbol[] annotations)
         {
-            return FusionNumber.annotate(this, annotations);
+            if (annotations.length == 0) return this;
+            return new AnnotatedFloat(annotations, this);
         }
     }
 
@@ -1218,15 +1241,14 @@ final class FusionNumber
 
     private static class AnnotatedFloat
         extends BaseFloat
-        implements Annotated
     {
         /** Not null or empty */
-        final String[] myAnnotations;
+        final BaseSymbol[] myAnnotations;
 
-        /** Not null, and not AnnotatedBool */
+        /** Not null, and not AnnotatedFloat */
         final BaseFloat  myValue;
 
-        private AnnotatedFloat(String[] annotations, BaseFloat value)
+        private AnnotatedFloat(BaseSymbol[] annotations, BaseFloat value)
         {
             assert annotations.length != 0;
             myAnnotations = annotations;
@@ -1234,15 +1256,21 @@ final class FusionNumber
         }
 
         @Override
-        public String[] annotationsAsJavaStrings()
+        boolean isAnnotated()
+        {
+            return true;
+        }
+
+        @Override
+        public BaseSymbol[] getAnnotations()
         {
             return myAnnotations;
         }
 
         @Override
-        BaseFloat annotate(Evaluator eval, String[] annotations)
+        BaseFloat annotate(Evaluator eval, BaseSymbol[] annotations)
         {
-            return FusionNumber.annotate(myValue, annotations);
+            return myValue.annotate(eval, annotations);
         }
 
         @Override
@@ -1352,7 +1380,7 @@ final class FusionNumber
         {
             IonValue iv = myValue.copyToIonValue(factory,
                                                  throwOnConversionFailure);
-            iv.setTypeAnnotations(myAnnotations);
+            iv.setTypeAnnotations(getAnnotationsAsJavaStrings());
             return iv;
         }
 
@@ -1360,7 +1388,7 @@ final class FusionNumber
         void ionize(Evaluator eval, IonWriter out)
             throws IOException, IonException, FusionException, IonizeFailure
         {
-            out.setTypeAnnotations(myAnnotations);
+            out.setTypeAnnotations(getAnnotationsAsJavaStrings());
             myValue.ionize(eval, out);
         }
 
@@ -1430,17 +1458,6 @@ final class FusionNumber
     }
 
 
-    private static BaseInt annotate(BaseInt unannotated,
-                                    String[] annotations)
-    {
-        assert ! (unannotated instanceof AnnotatedInt);
-
-        if (annotations.length == 0) return unannotated;
-
-        return new AnnotatedInt(annotations, unannotated);
-    }
-
-
     /**
      * @param annotations must not be null and must not contain elements
      * that are null or empty. This method assumes ownership of the array
@@ -1451,7 +1468,7 @@ final class FusionNumber
     static BaseInt makeInt(Evaluator eval, String[] annotations, long value)
     {
         BaseInt base = makeInt(eval, value);
-        return annotate(base, annotations);
+        return base.annotate(eval, internSymbols(annotations));
     }
 
 
@@ -1468,7 +1485,7 @@ final class FusionNumber
                            BigInteger value)
     {
         BaseInt base = makeInt(eval, value);
-        return annotate(base, annotations);
+        return base.annotate(eval, internSymbols(annotations));
     }
 
 
@@ -1485,7 +1502,7 @@ final class FusionNumber
                                      String[] annotations)
     {
         BaseInt base = (BaseInt) fusionInt;
-        return base.annotate(eval, annotations);
+        return base.annotate(eval, internSymbols(annotations));
     }
 
 
@@ -1508,17 +1525,6 @@ final class FusionNumber
     }
 
 
-    private static BaseDecimal annotate(BaseDecimal unannotated,
-                                        String[] annotations)
-    {
-        assert ! (unannotated instanceof AnnotatedDecimal);
-
-        if (annotations.length == 0) return unannotated;
-
-        return new AnnotatedDecimal(annotations, unannotated);
-    }
-
-
     /**
      * @param value may be null to make {@code null.decimal}. An instance of
      * {@link Decimal} should be used to create a negative zero value.
@@ -1530,7 +1536,7 @@ final class FusionNumber
                                    BigDecimal value)
     {
         BaseDecimal base = makeDecimal(eval, value);
-        return annotate(base, annotations);
+        return base.annotate(eval, internSymbols(annotations));
     }
 
 
@@ -1547,7 +1553,7 @@ final class FusionNumber
                                              String[] annotations)
     {
         BaseDecimal base = (BaseDecimal) fusionDecimal;
-        return base.annotate(eval, annotations);
+        return base.annotate(eval, internSymbols(annotations));
     }
 
 
@@ -1578,17 +1584,6 @@ final class FusionNumber
     }
 
 
-    private static BaseFloat annotate(BaseFloat unannotated,
-                                      String[]  annotations)
-    {
-        assert ! (unannotated instanceof AnnotatedFloat);
-
-        if (annotations.length == 0) return unannotated;
-
-        return new AnnotatedFloat(annotations, unannotated);
-    }
-
-
     /**
      * @param annotations must not be null and must not contain elements
      * that are null or empty. This method assumes ownership of the array
@@ -1601,7 +1596,7 @@ final class FusionNumber
                                double    value)
     {
         BaseFloat base = makeFloat(eval, value);
-        return annotate(base, annotations);
+        return base.annotate(eval, internSymbols(annotations));
     }
 
 
@@ -1618,7 +1613,7 @@ final class FusionNumber
                                Double    value)
     {
         BaseFloat base = makeFloat(eval, value);
-        return annotate(base, annotations);
+        return base.annotate(eval, internSymbols(annotations));
     }
 
 
@@ -1635,13 +1630,27 @@ final class FusionNumber
                                          String[]  annotations)
     {
         BaseFloat base = (BaseFloat) fusionFloat;
-        return base.annotate(eval, annotations);
+        return base.annotate(eval, internSymbols(annotations));
     }
 
 
     //========================================================================
     // Predicates
 
+
+    /**
+     * Determines whether a Fusion value is an int, decimal, or float.
+     *
+     * @param top the top-level that was the source of the value.
+     * @param value the value to test.
+     *
+     * @throws FusionException
+     */
+    public static boolean isNumber(TopLevel top, Object value)
+        throws FusionException
+    {
+        return (value instanceof BaseNumber);
+    }
 
     static boolean isNumber(Evaluator eval, Object value)
         throws FusionException
@@ -1650,6 +1659,14 @@ final class FusionNumber
     }
 
 
+    /**
+     * Determines whether a Fusion value is an int.
+     *
+     * @param top the top-level that was the source of the value.
+     * @param value the value to test.
+     *
+     * @throws FusionException
+     */
     public static boolean isInt(TopLevel top, Object value)
         throws FusionException
     {
@@ -1663,6 +1680,14 @@ final class FusionNumber
     }
 
 
+    /**
+     * Determines whether a Fusion value is a decimal.
+     *
+     * @param top the top-level that was the source of the value.
+     * @param value the value to test.
+     *
+     * @throws FusionException
+     */
     public static boolean isDecimal(TopLevel top, Object value)
         throws FusionException
     {
@@ -1676,6 +1701,20 @@ final class FusionNumber
     }
 
 
+    /**
+     * Determines whether a Fusion value is an int or decimal.
+     *
+     * @param top the top-level that was the source of the value.
+     * @param value the value to test.
+     *
+     * @throws FusionException
+     */
+    public static boolean isIntOrDecimal(TopLevel top, Object value)
+        throws FusionException
+    {
+        return (value instanceof BaseInt || value instanceof BaseDecimal);
+    }
+
     static boolean isIntOrDecimal(Evaluator eval, Object value)
         throws FusionException
     {
@@ -1683,6 +1722,14 @@ final class FusionNumber
     }
 
 
+    /**
+     * Determines whether a Fusion value is a float.
+     *
+     * @param top the top-level that was the source of the value.
+     * @param value the value to test.
+     *
+     * @throws FusionException
+     */
     public static boolean isFloat(TopLevel top, Object value)
         throws FusionException
     {
@@ -1701,6 +1748,9 @@ final class FusionNumber
 
 
     /**
+     * Converts a Fusion int to its equivalent Java {@code int} representation,
+     * trucating the value if necessary.
+     *
      * @param fusionInt must be a non-null int.
      */
     static int unsafeTruncateIntToJavaInt(Evaluator eval, Object fusionInt)
@@ -1720,8 +1770,16 @@ final class FusionNumber
     }
 
 
-    static BigInteger unsafeIntToJavaBigInteger(TopLevel top,
-                                                Object   fusionInt)
+    /**
+     * Converts a Fusion int to its equivalent {@link BigInteger} value.
+     *
+     * @param top the top-level that was the source of the value.
+     * @param fusionInt must be a Fusion int.
+     *   <b>Any other type of value will cause a crash.</b>
+     * @return {@code null} when given {@code null.int}.
+     */
+    public static BigInteger unsafeIntToJavaBigInteger(TopLevel top,
+                                                       Object   fusionInt)
         throws FusionException
     {
         return ((BaseInt) fusionInt).truncateToBigInteger();
@@ -1735,7 +1793,15 @@ final class FusionNumber
     }
 
 
-    static double unsafeFloatToDouble(TopLevel top, Object fusionFloat)
+    /**
+     * Converts a Fusion float to its equivalent Java {@code double} value.
+     *
+     * @param top the top-level that was the source of the value.
+     * @param fusionFloat must be a non-null Fusion float.
+     *   <b>Any other type of value will cause a crash.</b>
+     */
+    public static double unsafeFloatToJavaDouble(TopLevel top,
+                                                 Object   fusionFloat)
         throws FusionException
     {
         return ((BaseFloat) fusionFloat).primitiveDoubleValue();
@@ -1748,8 +1814,22 @@ final class FusionNumber
     }
 
 
-    static BigDecimal unsafeNumberToBigDecimal(TopLevel top,
-                                               Object   fusionNumber)
+    /**
+     * Converts a Fusion number to its equivalent Java {@link BigDecimal}
+     * value.
+     *
+     * @param top the top-level that was the source of the value.
+     * @param fusionNumber must be a Fusion int, decimal, or float.
+     *   <b>Any other type of value will cause a crash.</b>
+     * @return {@code null} when given {@code null.int}, {@code null.decimal},
+     *   or {@code null.float}.
+     * @throws NumberFormatException if {@code fusionNumber} is a special
+     *   float ({@code NaN}, {@code +inf}, or {@code -inf}).
+     *   <b>This is a crash of the Fusion runtime and indicates a defect in the
+     *   calling code.</b>
+     */
+    public static BigDecimal unsafeNumberToJavaBigDecimal(TopLevel top,
+                                                          Object   fusionNumber)
         throws FusionException
     {
         return ((BaseNumber) fusionNumber).toBigDecimal();
@@ -1975,6 +2055,62 @@ final class FusionNumber
             throw who.argFailure(expectation, argNum, args);
         }
         return f.primitiveDoubleValue();
+    }
+
+
+    //========================================================================
+    // Number Procedure Helpers - Can be Decimal, Float or Int.
+
+
+    /**
+     * @param expectation must not be null.
+     * @return may be null
+     */
+    static BigDecimal checkNumberArgToJavaBigDecimal(Evaluator eval,
+                                      Procedure who,
+                                      String    expectation,
+                                      int       argNum,
+                                      Object... args)
+        throws FusionException, ArgumentException
+    {
+        Object arg = args[argNum];
+        if (arg instanceof BaseNumber)
+        {
+            return ((BaseNumber) arg).toBigDecimal();
+        }
+
+        throw who.argFailure(expectation, argNum, args);
+    }
+
+    static BigDecimal checkNullableNumberArgToJavaBigDecimal(Evaluator eval,
+                                              Procedure who,
+                                              int       argNum,
+                                              Object... args)
+        throws FusionException, ArgumentException
+    {
+        String expectation = "nullable number";
+        BigDecimal result = checkNumberArgToJavaBigDecimal(eval, who, expectation, argNum, args);
+        return result;
+    }
+
+
+    /**
+     * @return not null
+     */
+    static BigDecimal checkActualNumberArgToJavaBigDecimal(Evaluator eval,
+                                              Procedure who,
+                                              int       argNum,
+                                              Object... args)
+        throws FusionException, ArgumentException
+    {
+        String expectation = "non-null number";
+        BigDecimal result =
+           checkNumberArgToJavaBigDecimal(eval, who, expectation, argNum, args);
+        if (result == null)
+        {
+            throw who.argFailure(expectation, argNum, args);
+        }
+        return result;
     }
 
 

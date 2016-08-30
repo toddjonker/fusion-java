@@ -1,9 +1,12 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2015 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionIo.safeWriteToString;
 import static com.amazon.fusion.FusionList.immutableList;
+import com.amazon.fusion.FusionList.BaseList;
+import com.amazon.fusion.FusionSexp.BaseSexp;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 
 final class QuasiSyntaxForm
     extends QuasiBaseForm
@@ -45,7 +48,8 @@ final class QuasiSyntaxForm
         throws FusionException
     {
         SourceLocation location    = originalStx.getLocation();
-        String[]       annotations = originalStx.annotationsAsJavaStrings();
+        BaseSexp sexp = (BaseSexp) originalStx.unwrap(eval);
+        BaseSymbol[] annotations = sexp.getAnnotations();
         return new CompiledQuasiSyntaxSexp(location, annotations, children);
     }
 
@@ -57,7 +61,8 @@ final class QuasiSyntaxForm
         throws FusionException
     {
         SourceLocation location    = originalStx.getLocation();
-        String[] annotations = originalStx.annotationsAsJavaStrings();
+        BaseList list = (BaseList) originalStx.unwrap(eval);
+        BaseSymbol[] annotations = list.getAnnotations();
         return new CompiledQuasiSyntaxList(location, annotations, children);
     }
 
@@ -69,11 +74,11 @@ final class QuasiSyntaxForm
         implements CompiledForm
     {
         private final SourceLocation myLocation;
-        private final String[]       myAnnotations;
+        private final BaseSymbol[]   myAnnotations;
         private final CompiledForm[] myChildForms;
 
         CompiledQuasiSyntaxSexp(SourceLocation location,
-                                String[]       annotations,
+                                BaseSymbol[]   annotations,
                                 CompiledForm[] childForms)
         {
             assert childForms.length != 0;
@@ -108,11 +113,11 @@ final class QuasiSyntaxForm
         implements CompiledForm
     {
         private final SourceLocation myLocation;
-        private final String[]       myAnnotations;
+        private final BaseSymbol[]   myAnnotations;
         private final CompiledForm[] myChildForms;
 
         CompiledQuasiSyntaxList(SourceLocation location,
-                                String[]       annotations,
+                                BaseSymbol[]   annotations,
                                 CompiledForm[] childForms)
         {
             myLocation    = location;

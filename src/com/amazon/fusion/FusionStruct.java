@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -14,6 +14,7 @@ import static com.amazon.fusion.FusionIterator.iterate;
 import static com.amazon.fusion.FusionList.checkNullableListArg;
 import static com.amazon.fusion.FusionList.unsafeJavaIterate;
 import static com.amazon.fusion.FusionSymbol.makeSymbol;
+import static com.amazon.fusion.FusionSymbol.BaseSymbol.internSymbols;
 import static com.amazon.fusion.FusionText.checkNonEmptyTextArg;
 import static com.amazon.fusion.FusionText.textToJavaString;
 import static com.amazon.fusion.FusionText.unsafeTextToJavaString;
@@ -25,6 +26,7 @@ import com.amazon.fusion.FusionBool.BaseBool;
 import com.amazon.fusion.FusionCollection.BaseCollection;
 import com.amazon.fusion.FusionCompare.EqualityTier;
 import com.amazon.fusion.FusionIterator.AbstractIterator;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import com.amazon.ion.IonException;
 import com.amazon.ion.IonStruct;
 import com.amazon.ion.IonType;
@@ -49,15 +51,15 @@ final class FusionStruct
 
     static final NullStruct      NULL_STRUCT  = new NullStruct();
     static final NonNullImmutableStruct EMPTY_STRUCT =
-        new NonNullImmutableStruct(EMPTY_MAP, EMPTY_STRING_ARRAY);
+        new NonNullImmutableStruct(EMPTY_MAP, BaseSymbol.EMPTY_ARRAY);
 
     //========================================================================
     // Constructors
 
     static Object structFromIonStruct(Evaluator eval, IonStruct struct)
     {
-        String[] annotations = struct.getTypeAnnotations();
-        // TODO FUSION-47 intern annotation text
+        String[] annStrings = struct.getTypeAnnotations();
+        BaseSymbol[] annotations = internSymbols(annStrings);
 
         // There's no benefit to being lazy injecting null.struct or {}.
         if (struct.isNullValue())
@@ -81,30 +83,28 @@ final class FusionStruct
     }
 
 
+    static NullStruct nullStruct(Evaluator eval, BaseSymbol[] annotations)
+    {
+        if (annotations.length == 0) return NULL_STRUCT;
+        return new NullStruct(annotations);
+    }
+
     static NullStruct nullStruct(Evaluator eval, String[] annotations)
     {
-        if (annotations.length == 0)
-        {
-            return NULL_STRUCT;
-        }
-
-        return new NullStruct(annotations);
+        if (annotations.length == 0) return NULL_STRUCT;
+        return new NullStruct(internSymbols(annotations));
     }
 
 
     static NonNullImmutableStruct immutableStruct(Map<String, Object> map)
     {
-        if (map.size() == 0)
-        {
-            return EMPTY_STRUCT;
-        }
-
-        return new NonNullImmutableStruct(map, EMPTY_STRING_ARRAY);
+        if (map.size() == 0) return EMPTY_STRUCT;
+        return new NonNullImmutableStruct(map, BaseSymbol.EMPTY_ARRAY);
     }
 
 
     static NonNullImmutableStruct immutableStruct(Map<String, Object> map,
-                                                  String[] anns)
+                                                  BaseSymbol[] anns)
     {
         if (map.size() == 0)
         {
@@ -119,10 +119,16 @@ final class FusionStruct
         return new NonNullImmutableStruct(map, anns);
     }
 
+    static NonNullImmutableStruct immutableStruct(Map<String, Object> map,
+                                                  String[] anns)
+    {
+        return immutableStruct(map, internSymbols(anns));
+    }
+
 
     static NonNullImmutableStruct immutableStruct(String[] names,
                                                   Object[] values,
-                                                  String[] anns)
+                                                  BaseSymbol[] anns)
     {
         Map<String, Object> map;
         if (names.length == 0)
@@ -147,6 +153,13 @@ final class FusionStruct
         }
 
         return new NonNullImmutableStruct(map, anns);
+    }
+
+    static NonNullImmutableStruct immutableStruct(String[] names,
+                                                  Object[] values,
+                                                  String[] anns)
+    {
+        return immutableStruct(names, values, internSymbols(anns));
     }
 
 
@@ -177,12 +190,12 @@ final class FusionStruct
         throws FusionException
     {
         return new MutableStruct(new HashMap<String, Object>(),
-                                 EMPTY_STRING_ARRAY);
+                                 BaseSymbol.EMPTY_ARRAY);
     }
 
     static MutableStruct mutableStruct(Map<String, Object> map)
     {
-        return new MutableStruct(map, EMPTY_STRING_ARRAY);
+        return new MutableStruct(map, BaseSymbol.EMPTY_ARRAY);
     }
 
 
@@ -207,7 +220,7 @@ final class FusionStruct
             }
         }
 
-        return new MutableStruct(map, anns);
+        return new MutableStruct(map, internSymbols(anns));
     }
 
 
@@ -509,7 +522,13 @@ final class FusionStruct
 
     static interface BaseStruct
     {
-        String[] annotationsAsJavaStrings();
+        boolean isAnnotated()
+            throws FusionException;
+
+        boolean isAnnotatable()
+            throws FusionException;
+
+        BaseSymbol[] getAnnotations();
 
         void ionize(Evaluator eval, IonWriter out)
             throws IOException, IonException, FusionException, IonizeFailure;
@@ -593,7 +612,7 @@ final class FusionStruct
     {
         NullStruct() {}
 
-        NullStruct(String[] annotations)
+        NullStruct(BaseSymbol[] annotations)
         {
             super(annotations);
         }
@@ -639,7 +658,7 @@ final class FusionStruct
         }
 
         @Override
-        Object annotate(Evaluator eval, String[] annotations)
+        Object annotate(Evaluator eval, BaseSymbol[] annotations)
             throws FusionException
         {
             return new NullStruct(annotations);
@@ -783,7 +802,7 @@ final class FusionStruct
         public void ionize(Evaluator eval, IonWriter out)
             throws IOException, FusionException
         {
-            out.setTypeAnnotations(myAnnotations);
+            out.setTypeAnnotations(getAnnotationsAsJavaStrings());
             out.writeNull(IonType.STRUCT);
         }
 
@@ -793,7 +812,7 @@ final class FusionStruct
             throws FusionException
         {
             IonStruct is = factory.newNullStruct();
-            is.setTypeAnnotations(myAnnotations);
+            is.setTypeAnnotations(getAnnotationsAsJavaStrings());
             return is;
         }
     }
@@ -823,7 +842,7 @@ final class FusionStruct
          * @param map must not be null. It is not copied; a reference is
          * retained.
          */
-        private MapBasedStruct(Map<String, Object> map, String[] anns)
+        private MapBasedStruct(Map<String, Object> map, BaseSymbol[] anns)
         {
             super(anns);
             assert map != null;
@@ -832,7 +851,7 @@ final class FusionStruct
             updateSize();
         }
 
-        private MapBasedStruct(String[] annotations, int size)
+        private MapBasedStruct(BaseSymbol[] annotations, int size)
         {
             super(annotations);
             myMap = new HashMap<>();
@@ -866,7 +885,7 @@ final class FusionStruct
         }
 
         abstract MapBasedStruct makeSimilar(Map<String, Object> map,
-                                            String[] annotations);
+                                            BaseSymbol[] annotations);
 
         MapBasedStruct makeSimilar(Map<String, Object> map)
         {
@@ -986,7 +1005,7 @@ final class FusionStruct
         }
 
         @SuppressWarnings("serial")
-        private static final class StripFailure extends RuntimeException
+        private static final class VisitFailure extends RuntimeException
         {
         }
 
@@ -1007,24 +1026,23 @@ final class FusionStruct
                 public Object visit(String name, Object value)
                     throws FusionException
                 {
-                    SyntaxValue stripped =
+                    SyntaxValue converted =
                         Syntax.datumToSyntaxMaybe(eval, value, context, loc);
-                    if (stripped == null)
+                    if (converted == null)
                     {
                         // Hit something that's not syntax-able
-                        throw new StripFailure();
+                        throw new VisitFailure();
                     }
-                    return stripped;
+                    return converted;
                 }
             };
 
             try
             {
                 ImmutableStruct datum = transformFields(eval, visitor);
-                SyntaxValue stx = SyntaxStruct.make(eval, loc, datum);
-                return Syntax.applyContext(eval, context, stx);
+                return SyntaxStruct.make(eval, loc, datum);
             }
-            catch (StripFailure e)  // This is crazy.
+            catch (VisitFailure e)  // This is crazy.
             {
                 return null;
             }
@@ -1312,7 +1330,7 @@ final class FusionStruct
         public void ionize(Evaluator eval, IonWriter out)
             throws IOException, FusionException
         {
-            out.setTypeAnnotations(myAnnotations);
+            out.setTypeAnnotations(getAnnotationsAsJavaStrings());
 
             out.stepIn(IonType.STRUCT);
             for (Map.Entry<String, Object> entry : myMap.entrySet())
@@ -1349,7 +1367,7 @@ final class FusionStruct
             throws FusionException
         {
             IonStruct is = factory.newEmptyStruct();
-            is.setTypeAnnotations(myAnnotations);
+            is.setTypeAnnotations(getAnnotationsAsJavaStrings());
 
             for (Map.Entry<String, Object> entry : myMap.entrySet())
             {
@@ -1391,12 +1409,12 @@ final class FusionStruct
          * @param annotations
          */
         public NonNullImmutableStruct(Map<String, Object> map,
-                                      String[] annotations)
+                                      BaseSymbol[] annotations)
         {
             super(map, annotations);
         }
 
-        private NonNullImmutableStruct(String[] annotations, int size)
+        private NonNullImmutableStruct(BaseSymbol[] annotations, int size)
         {
             super(annotations, size);
         }
@@ -1409,13 +1427,13 @@ final class FusionStruct
 
         @Override
         MapBasedStruct makeSimilar(Map<String, Object> map,
-                                   String[] annotations)
+                                   BaseSymbol[] annotations)
         {
             return immutableStruct(map, annotations);
         }
 
         @Override
-        Object annotate(Evaluator eval, String[] annotations)
+        Object annotate(Evaluator eval, BaseSymbol[] annotations)
             throws FusionException
         {
             return makeSimilar(getMap(eval), annotations);
@@ -1463,7 +1481,7 @@ final class FusionStruct
     {
         private IonStruct myIonStruct;
 
-        public LazyInjectingStruct(String[] annotations, IonStruct struct)
+        public LazyInjectingStruct(BaseSymbol[] annotations, IonStruct struct)
         {
             super(annotations, struct.size());
             myIonStruct = struct;
@@ -1551,20 +1569,20 @@ final class FusionStruct
         extends MapBasedStruct
     {
         public MutableStruct(Map<String, Object> map,
-                             String[] annotations)
+                             BaseSymbol[] annotations)
         {
             super(map, annotations);
         }
 
         @Override
         MapBasedStruct makeSimilar(Map<String, Object> map,
-                                   String[] annotations)
+                                   BaseSymbol[] annotations)
         {
             return new MutableStruct(map, annotations);
         }
 
         @Override
-        Object annotate(Evaluator eval, String[] annotations)
+        Object annotate(Evaluator eval, BaseSymbol[] annotations)
             throws FusionException
         {
             return makeSimilar(copyMap(eval), annotations);
@@ -1708,13 +1726,6 @@ final class FusionStruct
     static final class IsImmutableStructProc
         extends Procedure1
     {
-        IsImmutableStructProc()
-        {
-            //    "                                                                               |
-            super("Determines whether `value` is an immutable struct, returning `true` or `false`.",
-                  "value");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object value)
             throws FusionException
@@ -1729,13 +1740,6 @@ final class FusionStruct
     static final class IsMutableStructProc
         extends Procedure1
     {
-        IsMutableStructProc()
-        {
-            //    "                                                                               |
-            super("Determines whether `value` is a mutable struct, returning `true` or `false`.",
-                  "value");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object value)
             throws FusionException
@@ -1748,22 +1752,15 @@ final class FusionStruct
 
 
     static final class UnsafeStructHasKeyProc
-        extends Procedure
+        extends Procedure2
     {
-        UnsafeStructHasKeyProc()
-        {
-            //    "                                                                               |
-            super("UNSUPPORTED.  `name` must be text.",
-                  "struct", "name");
-        }
-
         @Override
-        Object doApply(Evaluator eval, Object[] args)
+        Object doApply(Evaluator eval, Object s, Object k)
             throws FusionException
         {
-            BaseStruct s = (BaseStruct) args[0];
-            String key = unsafeTextToJavaString(eval, args[1]);
-            return makeBool(eval, s.hasKey(eval, key));
+            BaseStruct struct = (BaseStruct) s;
+            String key = unsafeTextToJavaString(eval, k);
+            return makeBool(eval, struct.hasKey(eval, key));
         }
     }
 
@@ -1772,16 +1769,6 @@ final class FusionStruct
     static final class UnsafeStructRefProc
         extends Procedure
     {
-        UnsafeStructRefProc()
-        {
-            //    "                                                                               |
-            super("Returns the value associated with `name` in `struct`. The `name` must be a\n" +
-                  "non-null string or symbol.  If no field exists with the name, the `default` is\n" +
-                  "used: if it is a procedure, it's applied to no arguments and the result is\n" +
-                  "returned, otherwise the `default` is returned as-is.",
-                  "struct", "name", "default");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object[] args)
             throws FusionException
@@ -1797,13 +1784,6 @@ final class FusionStruct
     static final class UnsafeStructPutProc
         extends Procedure
     {
-        UnsafeStructPutProc()
-        {
-            //    "                                                                               |
-            super("*UNSUPPORTED!*",
-                  "struct", "key", "value");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object[] args)
             throws FusionException
@@ -1818,13 +1798,6 @@ final class FusionStruct
     static final class UnsafeStructPutMProc
         extends Procedure
     {
-        UnsafeStructPutMProc()
-        {
-            //    "                                                                               |
-            super("*UNSUPPORTED!*",
-                  "struct", "key", "value");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object[] args)
             throws FusionException
@@ -1896,15 +1869,6 @@ final class FusionStruct
     static final class UnsafeStructIteratorProc
         extends Procedure1
     {
-        UnsafeStructIteratorProc()
-        {
-            //    "                                                                               |
-            super("Returns an iterator over the content of `struct`. Calls to `iterator_next` will\n" +
-                  "return two results representing a single field: the field's name (as a symbol)\n" +
-                  "and the field's value.",
-                  "struct");
-        }
-
         @Override
         Object doApply(final Evaluator eval, Object struct)
             throws FusionException
@@ -1925,11 +1889,6 @@ final class FusionStruct
     abstract static class BaseStructProc
         extends Procedure
     {
-        BaseStructProc(String doc, String... argNames)
-        {
-            super(doc, argNames);
-        }
-
         void checkArityEven(Object... args)
             throws FusionException
         {
@@ -1971,16 +1930,6 @@ final class FusionStruct
     static final class StructProc
         extends BaseStructProc
     {
-        StructProc()
-        {
-            //    "                                                                               |
-            super("Constructs an immutable, non-null struct from alternating strings and values.\n" +
-                  "Each `name` is a non-empty string or symbol denoting a field name, and the\n" +
-                  "following `value` is the field's value.  Names may be repeated to produce\n" +
-                  "repeated (multi-mapped) fields.",
-                  "name", "value", DOTDOTDOT, DOTDOTDOT);
-        }
-
         @Override
         Object makeIt(String[] names, Object[] values)
             throws FusionException
@@ -1994,16 +1943,6 @@ final class FusionStruct
     static final class MutableStructProc
         extends BaseStructProc
     {
-        MutableStructProc()
-        {
-            //    "                                                                               |
-            super("Constructs a mutable, non-null struct from alternating strings and values.\n" +
-                  "Each `name` is a non-empty string or symbol denoting a field name, and the\n" +
-                  "following `value` is the field's value.  Names may be repeated to produce\n" +
-                  "repeated (multi-mapped) fields.",
-                  "name", "value", DOTDOTDOT, DOTDOTDOT);
-        }
-
         @Override
         Object makeIt(String[] names, Object[] values)
             throws FusionException
@@ -2017,15 +1956,6 @@ final class FusionStruct
     static final class StructMergeProc
         extends Procedure2
     {
-        StructMergeProc()
-        {
-            //    "                                                                               |
-            super("Returns a struct that has all the name-value elements of both arguments.  This\n" +
-                  "will result in repeated fields if the names overlap or if one of the arguments\n" +
-                  "has repeats. The result has the same type as the first argument.",
-                  "struct1", "struct2");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object struct1, Object struct2)
             throws FusionException
@@ -2040,16 +1970,6 @@ final class FusionStruct
     static final class StructMergeMProc
         extends Procedure2
     {
-        StructMergeMProc()
-        {
-            //    "                                                                               |
-            super("Returns a struct that has all the name-value elements of both arguments,\n" +
-                  "mutating the first argument when possible. This will result in repeated fields\n" +
-                  "if the names overlap or if one of the arguments has repeats.  The result has\n" +
-                  "the same type as the first argument.",
-                  "struct1", "struct2");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object struct1, Object struct2)
             throws FusionException
@@ -2066,16 +1986,6 @@ final class FusionStruct
     static final class StructMerge1Proc
         extends Procedure2
     {
-        StructMerge1Proc()
-        {
-            //    "                                                                               |
-            super("Functionally merges the mappings of `struct1` and `struct2`, removing repeated\n" +
-                  "fields. Mappings from `struct2` will replace those from `struct1` with the\n" +
-                  "same key. If there are repeated fields, one is selected arbitrarily.\n" +
-                  "The result has the same type as the first argument.",
-                  "struct1", "struct2");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object struct1, Object struct2)
             throws FusionException
@@ -2090,17 +2000,6 @@ final class FusionStruct
     static final class StructMerge1MProc
         extends Procedure2
     {
-        StructMerge1MProc()
-        {
-            //    "                                                                               |
-            super("Merges the mappings of `struct1` and `struct2`, removing repeated fields and\n" +
-                  "mutating the first argument when possible. Mappings from `struct2` will\n" +
-                  "replace those from `struct1` with the same key.  If there are repeated fields,\n" +
-                  "one is selected arbitrarily. The result has the same type as the first\n" +
-                  "argument.",
-                  "struct1", "struct2");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object struct1, Object struct2)
             throws FusionException
@@ -2117,13 +2016,6 @@ final class FusionStruct
     static abstract class AbstractZipProc
         extends Procedure
     {
-        AbstractZipProc(String docBody)
-        {
-            //    "                                                                               |
-            super(docBody,
-                  "names", "values");
-        }
-
         final Map<String,Object> _doApply(Evaluator eval, Object[] args)
             throws FusionException
         {
@@ -2159,19 +2051,6 @@ final class FusionStruct
     static final class StructZipProc
         extends AbstractZipProc
     {
-        StructZipProc()
-        {
-            //    "                                                                               |
-            super("Constructs an immutable struct from a list of field names and a list of values.\n" +
-                  "If the lists have unequal lengths, only the first _n_ elements will be used\n" +
-                  "where _n_ is the shorter length.\n" +
-                  "The names must be non-empty strings or symbols.\n" +
-                  "\n" +
-                  "    (struct_zip [\"f\", \"g\"] [1, 2])  => {f:1,g:2}\n" +
-                  "    (struct_zip [\"f\", \"f\"] [1, 2])  => {f:1,f:2}\n" +
-                  "    (struct_zip [\"f\"] [1, 2])       => {f:1}");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object[] args)
             throws FusionException
@@ -2184,19 +2063,6 @@ final class FusionStruct
     static final class MutableStructZipProc
         extends AbstractZipProc
     {
-        MutableStructZipProc()
-        {
-            //    "                                                                               |
-            super("Constructs a mutable struct from a list of field names and a list of values.\n" +
-                  "If the lists have unequal lengths, only the first _n_ elements will be used\n" +
-                  "where _n_ is the shorter length.\n" +
-                  "The names must be non-empty strings or symbols..\n" +
-                  "\n" +
-                  "    (mutable_struct_zip [\"f\", \"g\"] [1, 2])  => {f:1,g:2}\n" +
-                  "    (mutable_struct_zip [\"f\", \"f\"] [1, 2])  => {f:1,f:2}\n" +
-                  "    (mutable_struct_zip [\"f\"] [1, 2])       => {f:1}");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object[] args)
             throws FusionException
@@ -2210,11 +2076,6 @@ final class FusionStruct
     abstract static class BaseKeysProc
         extends Procedure
     {
-        BaseKeysProc(String doc, String... argNames)
-        {
-            super(doc, argNames);
-        }
-
         abstract Object doIt(Evaluator eval, Object struct, String[] keys)
             throws FusionException;
 
@@ -2241,15 +2102,6 @@ final class FusionStruct
     static final class RemoveKeysProc
         extends BaseKeysProc
     {
-        RemoveKeysProc()
-        {
-            //    "                                                                               |
-            super("Returns a struct derived from `struct` without fields with the given `name`s.\n" +
-                  "If the input is `null.struct` then the result is `null.struct`.  The result\n" +
-                  "will have the same annotations as `struct`.",
-                  "struct", "name", DOTDOTDOT);
-        }
-
         @Override
         Object doIt(Evaluator eval, Object struct, String[] keys)
             throws FusionException
@@ -2263,16 +2115,6 @@ final class FusionStruct
     static final class RemoveKeysMProc
         extends BaseKeysProc
     {
-        RemoveKeysMProc()
-        {
-            //    "                                                                               |
-            super("Returns a struct similar to `struct` without fields with the given `name`s.\n" +
-                  "The result may share structure with the input, which may be mutated.\n" +
-                  "If the input is `null.struct` then the result is `null.struct`.  The result\n" +
-                  "will have the same annotations as `struct`.",
-                  "struct", "name", DOTDOTDOT);
-        }
-
         @Override
         Object doIt(Evaluator eval, Object struct, String[] keys)
             throws FusionException
@@ -2286,15 +2128,6 @@ final class FusionStruct
     static final class RetainKeysProc
         extends BaseKeysProc
     {
-        RetainKeysProc()
-        {
-            //    "                                                                               |
-            super("Returns a struct derived from `struct` with _only_ fields with the given\n" +
-                  "`name`s.  If the input is `null.struct` then the result is `null.struct`.  The\n" +
-                  "result will have the same annotations as `struct`.",
-                  "struct", "name", DOTDOTDOT);
-        }
-
         @Override
         Object doIt(Evaluator eval, Object struct, String[] keys)
             throws FusionException
@@ -2308,16 +2141,6 @@ final class FusionStruct
     static final class RetainKeysMProc
         extends BaseKeysProc
     {
-        RetainKeysMProc()
-        {
-            //    "                                                                               |
-            super("Returns a struct similar to `struct` with _only_ fields with the given\n" +
-                  "`name`s. The result may share structure with the input, which may be mutated.\n" +
-                  "If the input is `null.struct` then the result is `null.struct`. The result\n" +
-                  "will have the same annotations as `struct`.",
-                  "struct", "name", DOTDOTDOT);
-        }
-
         @Override
         Object doIt(Evaluator eval, Object struct, String[] keys)
             throws FusionException

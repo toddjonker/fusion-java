@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -22,10 +22,10 @@ abstract class QuasiBaseForm
         super("template", "...");
 
         SyntaxSymbol id = (SyntaxSymbol) qIdentifier;
-        myQBinding = id.resolve();
+        myQBinding = id.resolve().target();
 
         id = (SyntaxSymbol) uIdentifier;
-        myUBinding = id.resolve();
+        myUBinding = id.resolve().target();
     }
 
 
@@ -78,7 +78,7 @@ abstract class QuasiBaseForm
 
         SyntaxValue[] children = stx.extract(eval);
 
-        Binding binding = stx.firstBindingMaybe(eval);
+        Binding binding = stx.firstTargetBinding(eval);
         if (myUBinding == binding)
         {
             check(eval, stx).arityExact(2);
@@ -89,7 +89,7 @@ abstract class QuasiBaseForm
                 children[1] = expander.expandExpression(env, subform);
 
                 // TODO accept annotations on unquote/unsyntax form?
-                if (stx.annotationsAsJavaStrings().length != 0)
+                if (FusionValue.isAnnotated(eval, stx.unwrap(eval)))
                 {
                     String message =
                         "Annotations not accepted on this form";
@@ -217,12 +217,12 @@ abstract class QuasiBaseForm
         // Look for an (unquote ...) or (unsyntax ...) form
         if (size == 2)
         {
-            Binding binding = stx.firstBindingMaybe(eval);
+            Binding binding = stx.firstTargetBinding(eval);
             if (myUBinding == binding)
             {
                 if (depth == 0)
                 {
-                    assert stx.annotationsAsJavaStrings().length == 0;
+                    assert ! FusionValue.isAnnotated(eval, stx.unwrap(eval));
                     SyntaxValue unquotedSyntax = stx.get(eval, 1);
                     CompiledForm unquotedForm =
                         eval.compile(env, unquotedSyntax);

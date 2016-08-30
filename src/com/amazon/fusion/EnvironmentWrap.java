@@ -1,19 +1,20 @@
-// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import java.util.Iterator;
 import java.util.Set;
 
 /**
  * Syntax wrap that adds all bindings from a specific environment.
  */
-class EnvironmentRenameWrap
+class EnvironmentWrap
     extends SyntaxWrap
 {
     private final Environment myEnvironment;
 
-    EnvironmentRenameWrap(Environment environment)
+    EnvironmentWrap(Environment environment)
     {
         myEnvironment = environment;
     }
@@ -24,9 +25,9 @@ class EnvironmentRenameWrap
     }
 
     @Override
-    Binding resolve(String name,
+    Binding resolve(BaseSymbol name,
                     Iterator<SyntaxWrap> moreWraps,
-                    Set<Integer> returnMarks)
+                    Set<MarkWrap> returnMarks)
     {
         Binding b;
         if (moreWraps.hasNext())
@@ -39,17 +40,11 @@ class EnvironmentRenameWrap
             }
         }
 
+        // The identifier doesn't have a binding outside of this environment,
+        // so look for one here.
         Binding subst = myEnvironment.substituteFree(name, returnMarks);
         return subst;
     }
-
-
-    @Override
-    Iterator<SyntaxWrap> iterator()
-    {
-        return null;
-    }
-
 
     @Override
     public String toString()

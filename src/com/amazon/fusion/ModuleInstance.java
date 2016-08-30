@@ -1,13 +1,16 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
-import com.amazon.fusion.ModuleNamespace.ModuleBinding;
-import com.amazon.fusion.Namespace.NsBinding;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
+import com.amazon.fusion.ModuleNamespace.DefinedProvidedBinding;
+import com.amazon.fusion.ModuleNamespace.ModuleDefinedBinding;
+import com.amazon.fusion.ModuleNamespace.ProvidedBinding;
+import com.amazon.fusion.Namespace.NsDefinedBinding;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Set;
 
@@ -27,7 +30,7 @@ final class ModuleInstance
      * Not all of these bindings are for this module; names that are imported
      * and exported have their bindings passed through.
      */
-    private final Map<String,ModuleBinding> myProvidedBindings;
+    private final Map<BaseSymbol,ProvidedBinding> myProvidedBindings;
 
 
     private ModuleInstance(ModuleIdentity identity,
@@ -39,7 +42,9 @@ final class ModuleInstance
         myIdentity = identity;
         myDocs     = docs;
         myNamespace = namespace;
-        myProvidedBindings = new HashMap<String,ModuleBinding>(bindingCount);
+
+        // Use object identity since symbols are interned.
+        myProvidedBindings = new IdentityHashMap<>(bindingCount);
 
         inferName(identity.toString());
     }
@@ -48,34 +53,34 @@ final class ModuleInstance
      * Creates a module that {@code provide}s the given bindings.
      */
     ModuleInstance(ModuleIdentity identity, ModuleStore namespace,
-                   Collection<NsBinding> bindings)
+                   Collection<NsDefinedBinding> bindings)
         throws FusionException
     {
         this(identity, /* docs */ null, namespace, bindings.size());
 
-        for (NsBinding binding : bindings)
+        for (NsDefinedBinding binding : bindings)
         {
-            String name = binding.getName();
-
-            myProvidedBindings.put(name, (ModuleBinding) binding);
+            BaseSymbol name = binding.getName();
+            ProvidedBinding out =
+                new DefinedProvidedBinding((ModuleDefinedBinding) binding);
+            myProvidedBindings.put(name, out);
         }
     }
 
     /**
      * Creates a module that {@code provide}s the given bindings.
      */
-    ModuleInstance(ModuleIdentity  identity,
-                   String          docs,
-                   ModuleStore     namespace,
-                   String[]        providedNames,
-                   ModuleBinding[] providedBindings)
+    ModuleInstance(ModuleIdentity    identity,
+                   String            docs,
+                   ModuleStore       namespace,
+                   ProvidedBinding[] providedBindings)
         throws FusionException
     {
-        this(identity, docs, namespace, providedNames.length);
+        this(identity, docs, namespace, providedBindings.length);
 
-        for (int i = 0; i < providedNames.length; i++)
+        for (ProvidedBinding binding : providedBindings)
         {
-            myProvidedBindings.put(providedNames[i], providedBindings[i]);
+            myProvidedBindings.put(binding.getName(), binding);
         }
     }
 
@@ -98,7 +103,12 @@ final class ModuleInstance
 
     //========================================================================
 
-    Set<String> providedNames()
+    Collection<ProvidedBinding> providedBindings()
+    {
+        return Collections.unmodifiableCollection(myProvidedBindings.values());
+    }
+
+    Set<BaseSymbol> providedNames()
     {
         return Collections.unmodifiableSet(myProvidedBindings.keySet());
     }
@@ -107,7 +117,15 @@ final class ModuleInstance
     /**
      * @return null if the name isn't provided by this module.
      */
-    ModuleBinding resolveProvidedName(String name)
+    ProvidedBinding resolveProvidedName(String name)
+    {
+        return resolveProvidedName(BaseSymbol.internSymbol(name));
+    }
+
+    /**
+     * @return null if the name isn't provided by this module.
+     */
+    ProvidedBinding resolveProvidedName(BaseSymbol name)
     {
         return myProvidedBindings.get(name);
     }
@@ -120,7 +138,7 @@ final class ModuleInstance
     {
         BindingDoc doc = null;
 
-        ModuleBinding binding = resolveProvidedName(name);
+        ModuleDefinedBinding binding = resolveProvidedName(name).target();
 
         doc = documentProvidedName(binding);
         if (doc == null)
@@ -156,7 +174,7 @@ final class ModuleInstance
         return doc;
     }
 
-    BindingDoc documentProvidedName(ModuleBinding binding)
+    BindingDoc documentProvidedName(ModuleDefinedBinding binding)
     {
         BindingDoc doc;
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 (module procedure "/fusion/private/builtins"
 
@@ -114,11 +114,13 @@ always returns `v`.
       (lambda rest v)))
 
 
+
   (defpub_syntax thunk
     '''
     (thunk body ...+)
 
 Returns a zero-argument procedure that evaluates the `body` forms.
+Equivalent to `(lambda () body ...)`.
     '''
     (lambda (stx)
       (let [(body (unsafe_pair_tail (syntax_unwrap stx)))]

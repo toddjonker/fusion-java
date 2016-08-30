@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -9,8 +9,11 @@ import static com.amazon.fusion.FusionString.makeString;
 import static com.amazon.fusion.FusionString.stringToJavaString;
 import static com.amazon.fusion.FusionString.unsafeStringToJavaString;
 import static com.amazon.fusion.GlobalState.DEFINE;
+import static com.amazon.fusion.GlobalState.LAMBDA;
 import static com.amazon.fusion.SimpleSyntaxValue.makeSyntax;
-import com.amazon.fusion.Namespace.NsBinding;
+import com.amazon.fusion.FusionString.BaseString;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
+import com.amazon.fusion.Namespace.NsDefinedBinding;
 
 final class DefineForm
     extends SyntacticForm
@@ -113,7 +116,7 @@ final class DefineForm
         assert bodyLen > 0;
 
         SyntaxValue[] lambda = new SyntaxValue[2 + bodyLen];
-        lambda[0] = expander.getGlobalState().myKernelLambdaIdentifier;
+        lambda[0] = eval.getGlobalState().kernelBoundIdentifier(eval, LAMBDA);
         lambda[1] = SyntaxSexp.make(eval, procFormals);
         for (int p = 2, i = bodyStart; i < defineArity; p++, i++)
         {
@@ -125,16 +128,15 @@ final class DefineForm
         newDefineElts[1] = procName;
         if (hasDoc)
         {
-            String doc = unsafeStringToJavaString(eval, docStx.unwrap(eval));
+            // Prefix the documentation string with the procedure signature.
+            BaseString docStr = (BaseString) docStx.unwrap(eval);
+            String doc = unsafeStringToJavaString(eval, docStr);
             if (! (doc.startsWith("    ") || doc.startsWith("\n    ")))
             {
                 String newDoc = "\n    " + origDefineElts[1] + "\n" + doc;
-                docStx =
-                    makeSyntax(eval,
-                               docStx.getLocation(),
-                               makeString(eval,
-                                          docStx.annotationsAsJavaStrings(),
-                                          newDoc));
+                BaseSymbol[] annotations = docStr.getAnnotations();
+                docStr = makeString(eval, newDoc).annotate(eval, annotations);
+                docStx = makeSyntax(eval, docStx.getLocation(), docStr);
             }
 
             newDefineElts[2] = docStx;
@@ -170,6 +172,13 @@ final class DefineForm
         // when using the original stx, so we know the error trace will
         // correctly refer to the original syntax.
         check.requiredIdentifier(1);
+
+        // https://docs.racket-lang.org/reference/define.html says:
+        //   At the top level, the top-level binding for id is created after
+        //   evaluating expr, if it does not exist already, and the top-level
+        //   mapping of id (in the namespace linked with the compiled
+        //   definition) is set to the binding at the same time.
+        // This works differently from our predefine(), used at module level.
 
         int bodyPos;
         SyntaxValue maybeDoc = children[2];
@@ -212,7 +221,7 @@ final class DefineForm
             binding.compileDefine(eval, env, identifier, valueForm);
 
         if (arity != 3
-            && binding instanceof NsBinding
+            && binding instanceof NsDefinedBinding
             && eval.firstContinuationMark(COLLECT_DOCS_MARK) != null)
         {
             // We have documentation. Sort of.
@@ -221,7 +230,7 @@ final class DefineForm
                                             null, // kind
                                             null, // usage
                                             stringToJavaString(eval, docString));
-            int address = ((NsBinding) binding).myAddress;
+            int address = ((NsDefinedBinding) binding).myAddress;
             env.namespace().setDoc(address, doc);
         }
 

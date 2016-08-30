@@ -1,9 +1,9 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionNumber.makeInt;
-import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 
 
 final class FusionCollection
@@ -17,24 +17,35 @@ final class FusionCollection
 
     abstract static class BaseCollection
         extends BaseValue
-        implements Annotated
     {
         /** Not null */
-        final String[] myAnnotations;
+        final BaseSymbol[] myAnnotations;
 
         BaseCollection()
         {
-            myAnnotations = EMPTY_STRING_ARRAY;
+            myAnnotations = BaseSymbol.EMPTY_ARRAY;
         }
 
-        BaseCollection(String[] annotations)
+        BaseCollection(BaseSymbol[] annotations)
         {
             assert annotations != null;
             myAnnotations = annotations;
         }
 
         @Override
-        public String[] annotationsAsJavaStrings()
+        public final boolean isAnnotatable()
+        {
+            return true;
+        }
+
+        @Override
+        public final boolean isAnnotated()
+        {
+            return myAnnotations.length != 0;
+        }
+
+        @Override
+        public final BaseSymbol[] getAnnotations()
         {
             return myAnnotations;
         }
@@ -46,20 +57,6 @@ final class FusionCollection
 
     //========================================================================
     // Constructors
-
-    /**
-     * @param collection must be a collection.
-     * @param annotations must not be null and must not contain elements
-     * that are null or empty. This method assumes ownership of the array
-     * and it must not be modified later.
-     */
-    static Object unsafeCollectionAnnotate(Evaluator eval,
-                                           Object collection,
-                                           String[] annotations)
-        throws FusionException
-    {
-        return ((BaseCollection) collection).annotate(eval, annotations);
-    }
 
 
     //========================================================================
@@ -129,15 +126,6 @@ final class FusionCollection
     static final class SizeProc
         extends Procedure1
     {
-        SizeProc()
-        {
-            //    "                                                                               |
-            super("Returns the number of elements in the `collection`.\n" +
-                  "The size of `null.list` (_etc._) is zero.  If `collection` is an improper sexp,\n" +
-                  "an exception is thrown.",
-                  "collection");
-        }
-
         @Override
         Object doApply(Evaluator eval, Object arg)
             throws FusionException

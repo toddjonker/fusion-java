@@ -1,17 +1,10 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 final class SetForm
     extends SyntacticForm
 {
-    SetForm()
-    {
-        super("var value",
-              "Mutates the given `var`iable, assigning it the `value`.");
-    }
-
-
     @Override
     SyntaxValue expand(Expander expander, Environment env, SyntaxSexp stx)
         throws FusionException
@@ -23,9 +16,11 @@ final class SetForm
 
         SyntaxSymbol id = check.requiredIdentifier("variable identifier", 1);
         Binding binding = id.resolve();
-        if (binding instanceof FreeBinding)
+
+        String message = binding.mutationSyntaxErrorMessage();
+        if (message != null)
         {
-            throw check.failure("variable has no binding", id);
+            throw check.failure(message + ": " + id);
         }
 
         SyntaxValue[] children = stx.extract(eval);

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -759,7 +759,7 @@ public class FusionRuntimeBuilder
                     String message =
                         "Value of system property " + property +
                         " is not a Fusion bootstrap repository: " + bootstrap;
-                    throw new IllegalArgumentException(message);
+                    throw new IllegalStateException(message);
                 }
 
                 b.setBootstrapRepository(file);
@@ -780,7 +780,7 @@ public class FusionRuntimeBuilder
                         String message =
                             "Value of system property " + property +
                             " is not a directory: " + path;
-                        throw new IllegalArgumentException(message);
+                        throw new IllegalStateException(message);
                     }
 
                     b.setCoverageDataDirectory(file);
@@ -813,9 +813,13 @@ public class FusionRuntimeBuilder
      * Builds a new runtime based on the current configuration of this builder.
      *
      * @return a new builder instance.
+     *
+     * @throws IllegalStateException if the builder's configuration is
+     * incomplete, inconsistent, or otherwise unusable.
+     * @throws FusionException if there's a problem bootstrapping the runtime.
      */
     public FusionRuntime build()
-        throws FusionException
+        throws IllegalStateException, FusionException
     {
         try
         {
@@ -842,6 +846,9 @@ public class FusionRuntimeBuilder
 
     /**
      * NOT PUBLIC!
+     *
+     * @throws IllegalStateException if the builder's configuration is
+     * incomplete, inconsistent, or otherwise unusable.
      */
     ModuleRepository[] buildModuleRepositories()
     {
@@ -876,13 +883,12 @@ public class FusionRuntimeBuilder
             }
         }
 
-        int size = repos.size();
-        if (size == 0)
+        if (repos.isEmpty())
         {
             throw new IllegalStateException("No repositories have been declared");
         }
 
-        return repos.toArray(new ModuleRepository[size]);
+        return repos.toArray(new ModuleRepository[0]);
     }
 
 

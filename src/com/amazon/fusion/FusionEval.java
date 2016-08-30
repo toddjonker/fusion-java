@@ -1,9 +1,11 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.FusionIo.isEof;
 import static com.amazon.fusion.FusionSyntax.isSyntax;
 import static com.amazon.fusion.FusionVoid.voidValue;
+import static com.amazon.fusion.GlobalState.MODULE;
 import static com.amazon.fusion.StandardReader.readSyntax;
 import static com.amazon.fusion.Syntax.datumToSyntax;
 import com.amazon.ion.IonReader;
@@ -26,7 +28,7 @@ final class FusionEval
         if (stx instanceof SyntaxSexp)
         {
             SyntaxSexp sexp = (SyntaxSexp) stx;
-            Binding binding = sexp.firstBinding(eval);
+            Binding binding = sexp.firstTargetBinding(eval);
             if (binding == eval.getGlobalState().myKernelBeginBinding)
             {
                 return sexp;
@@ -206,7 +208,7 @@ final class FusionEval
                     maybeModule.get(eval, 0);
                 maybeKeyword = (SyntaxSymbol) ns.syntaxIntroduce(maybeKeyword);
                 SyntaxSymbol moduleKeyword =
-                    eval.getGlobalState().myKernelModuleIdentifier;
+                    eval.getGlobalState().kernelBoundIdentifier(eval, MODULE);
                 if (maybeKeyword.freeIdentifierEqual(moduleKeyword))
                 {
                     SyntaxValue[] children = maybeModule.extract(eval);
@@ -323,15 +325,16 @@ final class FusionEval
             public Object doApply(Evaluator eval, Object arg)
                 throws FusionException
             {
-                if (FusionIo.isEof(eval, arg)) return arg;
+                if (! isEof(eval, arg))
+                {
+                    SyntaxValue stx = (SyntaxValue) arg;
 
-                SyntaxValue stx = (SyntaxValue) arg;
+                    stx = enrich(eval, stx);
 
-                stx = enrich(eval, stx);
+                    arg = expandSyntaxTopLevelWithCompileTimeEvals(eval, stx);
+                }
 
-                stx = expandSyntaxTopLevelWithCompileTimeEvals(eval, stx);
-
-                return eval.bounceTailCall(receiver, stx);
+                return eval.bounceTailCall(receiver, arg);
             }
         };
 

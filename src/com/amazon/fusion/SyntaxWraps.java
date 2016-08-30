@@ -1,7 +1,8 @@
-// Copyright (c) 2012-2013 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
@@ -10,6 +11,7 @@ import java.util.Set;
 
 final class SyntaxWraps
 {
+    /** Not null. */
     private final SyntaxWrap[] myWraps;
 
     static SyntaxWraps make(SyntaxWrap initialWrap)
@@ -69,24 +71,24 @@ final class SyntaxWraps
     /**
      * @return not null.
      */
-    public Set<Integer> computeMarks()
+    public Set<MarkWrap> computeMarks()
     {
-        Set<Integer> marks = null;
+        Set<MarkWrap> marks = null;
 
         for (SyntaxWrap wrap : myWraps)
         {
             if (wrap instanceof MarkWrap)
             {
-                int mark = ((MarkWrap)wrap).getMark();
+                MarkWrap mark = (MarkWrap) wrap;
 
                 if (marks == null)
                 {
-                    marks = new HashSet<Integer>();
+                    marks = new HashSet<>();
                     marks.add(mark);
                 }
-                else if (! marks.remove(mark))
+                else if (! marks.add(mark))
                 {
-                    marks.add(mark);
+                    marks.remove(mark);
                 }
             }
         }
@@ -99,101 +101,37 @@ final class SyntaxWraps
     final boolean hasMarks(Evaluator eval)
     {
         // We have to walk all wraps to match up cancelling pairs of marks.
-        Set<Integer> marks = computeMarks();
-        return ! marks.isEmpty();
+        return ! computeMarks().isEmpty();
     }
 
 
     /**
-     * @return null is equivalent to a {@link FreeBinding}.
+     * @return null is equivalent to a {@link FreeBinding}, and either may be
+     * returned.
      */
-    Binding resolve(String name)
+    Binding resolve(BaseSymbol name)
     {
-        Iterator<SyntaxWrap> i =
-            new SplicingIterator(Arrays.asList(myWraps).iterator());
-        Set<Integer> marks = new HashSet<Integer>();
+        if (myWraps.length == 0) return null;
 
-        if (i.hasNext())
-        {
-            SyntaxWrap wrap = i.next();
-            return wrap.resolve(name, i, marks);
-        }
+        Iterator<SyntaxWrap> i = Arrays.asList(myWraps).iterator();
 
-        return null;
+        SyntaxWrap wrap = i.next();
+        Set<MarkWrap> marks = new HashSet<>();
+        return wrap.resolve(name, i, marks);
     }
 
     /**
-     * @return null is equivalent to a {@link FreeBinding}.
+     * @return null is equivalent to a {@link FreeBinding}, and either may be
+     * returned.
      */
-    Binding resolveTop(String name)
+    Binding resolveTop(BaseSymbol name)
     {
-        Iterator<SyntaxWrap> i =
-            new SplicingIterator(Arrays.asList(myWraps).iterator());
-        Set<Integer> marks = new HashSet<Integer>();
+        if (myWraps.length == 0) return null;
 
-        if (i.hasNext())
-        {
-            SyntaxWrap wrap = i.next();
-            return wrap.resolveTop(name, i, marks);
-        }
+        Iterator<SyntaxWrap> i = Arrays.asList(myWraps).iterator();
 
-        return null;
-    }
-
-    private static final class SplicingIterator
-        implements Iterator<SyntaxWrap>
-    {
-        private final Iterator<SyntaxWrap> myOuterWraps;
-        private Iterator<SyntaxWrap> mySplicedWraps;
-
-        private SplicingIterator(Iterator<SyntaxWrap> outerWraps)
-        {
-            myOuterWraps = outerWraps;
-        }
-
-        @Override
-        public boolean hasNext()
-        {
-            if (mySplicedWraps != null)
-            {
-                boolean hasNext = mySplicedWraps.hasNext();
-                if (hasNext) return true;
-                mySplicedWraps = null;
-            }
-
-            // This assumes the final outer-wrap isn't an empty composite!
-            // See below for more.
-            return myOuterWraps.hasNext();
-        }
-
-        @Override
-        public SyntaxWrap next()
-        {
-            SyntaxWrap next;
-            if (mySplicedWraps == null)
-            {
-                next = myOuterWraps.next();
-                Iterator<SyntaxWrap> spliced = next.iterator();
-                if (spliced == null)
-                {
-                    return next;
-                }
-
-                // If this isn't true, then hasNext above is wrong!
-                assert spliced.hasNext();
-                mySplicedWraps = spliced;
-            }
-
-            next = mySplicedWraps.next();
-            assert next.iterator() == null;
-
-            return next;
-        }
-
-        @Override
-        public void remove()
-        {
-            throw new UnsupportedOperationException();
-        }
+        SyntaxWrap wrap = i.next();
+        Set<MarkWrap> marks = new HashSet<>();
+        return wrap.resolveTop(name, i, marks);
     }
 }
