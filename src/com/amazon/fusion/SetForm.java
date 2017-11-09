@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -32,14 +32,9 @@ final class SetForm
 
 
     @Override
-    CompiledForm compile(Evaluator eval, Environment env, SyntaxSexp stx)
+    CompiledForm compile(Compiler comp, Environment env, SyntaxSexp stx)
         throws FusionException
     {
-        CompiledForm valueForm = eval.compile(env, stx.get(eval, 2));
-
-        SyntaxSymbol id = (SyntaxSymbol) stx.get(eval, 1);
-        Binding binding = id.getBinding();
-
-        return binding.compileSet(eval, env, valueForm);
+        return comp.compileSet(env, stx);
     }
 }

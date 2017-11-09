@@ -1,19 +1,16 @@
-// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
-import static com.amazon.fusion.BindingDoc.COLLECT_DOCS_MARK;
 import static com.amazon.fusion.FusionSexp.isSexp;
 import static com.amazon.fusion.FusionString.isString;
 import static com.amazon.fusion.FusionString.makeString;
-import static com.amazon.fusion.FusionString.stringToJavaString;
 import static com.amazon.fusion.FusionString.unsafeStringToJavaString;
 import static com.amazon.fusion.GlobalState.DEFINE;
 import static com.amazon.fusion.GlobalState.LAMBDA;
 import static com.amazon.fusion.SimpleSyntaxValue.makeSyntax;
 import com.amazon.fusion.FusionString.BaseString;
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
-import com.amazon.fusion.Namespace.NsDefinedBinding;
 
 final class DefineForm
     extends SyntacticForm
@@ -208,32 +205,24 @@ final class DefineForm
 
 
     @Override
-    CompiledForm compile(Evaluator eval, Environment env, SyntaxSexp stx)
+    void evalCompileTimePart(Compiler comp,
+                             TopLevelNamespace topNs,
+                             SyntaxSexp topStx)
         throws FusionException
     {
-        int arity = stx.size();
-        SyntaxValue valueSource = stx.get(eval, arity-1);
-        CompiledForm valueForm = eval.compile(env, valueSource);
+        Evaluator eval = comp.getEvaluator();
+        SyntaxSymbol identifier = (SyntaxSymbol) topStx.get(eval, 1);
+        topNs.predefine(identifier, identifier);
+    }
 
-        SyntaxSymbol identifier = (SyntaxSymbol) stx.get(eval, 1);
-        Binding binding = identifier.resolve();
-        CompiledForm compiled =
-            binding.compileDefine(eval, env, identifier, valueForm);
 
-        if (arity != 3
-            && binding instanceof NsDefinedBinding
-            && eval.firstContinuationMark(COLLECT_DOCS_MARK) != null)
-        {
-            // We have documentation. Sort of.
-            Object docString = stx.get(eval, 2).unwrap(eval);
-            BindingDoc doc = new BindingDoc(identifier.stringValue(),
-                                            null, // kind
-                                            null, // usage
-                                            stringToJavaString(eval, docString));
-            int address = ((NsDefinedBinding) binding).myAddress;
-            env.namespace().setDoc(address, doc);
-        }
+    //========================================================================
 
-        return compiled;
+
+    @Override
+    CompiledForm compile(Compiler comp, Environment env, SyntaxSexp stx)
+        throws FusionException
+    {
+        return comp.compileDefine(env, stx);
     }
 }

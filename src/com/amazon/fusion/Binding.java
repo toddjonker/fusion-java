@@ -1,12 +1,14 @@
-// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import com.amazon.fusion.LocalEnvironment.LocalBinding;
+import com.amazon.fusion.ModuleNamespace.ModuleDefinedBinding;
 import com.amazon.fusion.ModuleNamespace.ProvidedBinding;
 import com.amazon.fusion.Namespace.NsDefinedBinding;
 import com.amazon.fusion.Namespace.RequiredBinding;
+import com.amazon.fusion.TopLevelNamespace.TopLevelDefinedBinding;
 
 /**
  * Bindings are used during expansion and compilation to identify a specific
@@ -37,7 +39,7 @@ import com.amazon.fusion.Namespace.RequiredBinding;
  *     perhaps renaming the variable along the way.
  *     <ul>
  *       <li>{@link ProvidedBinding}s refer to module-level defined
- *         bindings.
+ *         bindings, or to required binding.
  *       </li>
  *       <li>{@link RequiredBinding}s refer to provided bindings.
  *       </li>
@@ -52,6 +54,11 @@ import com.amazon.fusion.Namespace.RequiredBinding;
 abstract class Binding
 {
     abstract BaseSymbol getName();
+
+    /**
+     * @return null if {@link FreeBinding}.
+     */
+    abstract BindingSite getBindingSite();
 
     /**
      * Determines whether this is a {@link FreeBinding} with the given name.
@@ -84,7 +91,15 @@ abstract class Binding
         return target() == other.target();
     }
 
-    ProvidedBinding provideAs(BaseSymbol name)
+    /**
+     * Derives a binding that exports this one.
+     *
+     * @param name the exported name; may be different from {@link #getName()}.
+     * @param idLocation the location, in a {@code provide} form, of the
+     *   exported identifier. May be null if the name isn't explicitly given
+     *   in the form, as in {@code (provide (all_defined_out))}.
+     */
+    ProvidedBinding provideAs(BaseSymbol name, SourceLocation idLocation)
     {
         throw new IllegalStateException("This kind of binding can't be exported");
     }
@@ -108,30 +123,48 @@ abstract class Binding
     }
 
 
-    CompiledForm compileDefine(Evaluator eval,
-                               Environment env,
-                               SyntaxSymbol id,
-                               CompiledForm valueForm)
-        throws FusionException
+    abstract Object visit(Visitor v) throws FusionException;
+
+    static abstract class Visitor
     {
-        throw new IllegalStateException("Unexpected `define` context.");
+        Object visit(Binding b) throws FusionException
+        {
+            throw new IllegalStateException("No visitor for " + getClass());
+        }
+
+        Object visit(FreeBinding b) throws FusionException
+        {
+            return visit((Binding) b);
+        }
+
+        Object visit(LocalBinding b) throws FusionException
+        {
+            return visit((Binding) b);
+        }
+
+        Object visit(NsDefinedBinding b) throws FusionException
+        {
+            return visit((Binding) b);
+        }
+
+        Object visit(TopLevelDefinedBinding b) throws FusionException
+        {
+            return visit((NsDefinedBinding) b);
+        }
+
+        Object visit(ModuleDefinedBinding b) throws FusionException
+        {
+            return visit((NsDefinedBinding) b);
+        }
+
+        Object visit(ProvidedBinding b) throws FusionException
+        {
+            return visit((Binding) b);
+        }
+
+        Object visit(RequiredBinding b) throws FusionException
+        {
+            return visit((Binding) b);
+        }
     }
-
-
-    /** Compile a reference to the variable denoted by this binding. */
-    abstract CompiledForm compileReference(Evaluator eval,
-                                           Environment env)
-        throws FusionException;
-
-    /** Compile a #%top reference. */
-    abstract CompiledForm compileTopReference(Evaluator eval,
-                                              Environment env,
-                                              SyntaxSymbol id)
-        throws FusionException;
-
-    /** Compile a mutation of the variable denoted by this binding. */
-    abstract CompiledForm compileSet(Evaluator eval,
-                                     Environment env,
-                                     CompiledForm valueForm)
-        throws FusionException;
 }

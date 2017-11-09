@@ -1,7 +1,9 @@
-// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.BindingSite.makeDefineBindingSite;
+import static com.amazon.fusion.BindingSite.makeImportBindingSite;
 import static com.amazon.fusion.FusionIo.safeWriteToString;
 import static com.amazon.fusion.FusionVoid.voidValue;
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
@@ -81,14 +83,16 @@ abstract class Namespace
     abstract class NsDefinedBinding
         extends NsBinding
     {
-        private final BaseSymbol myName;
-        private final String     myDebugName;
+        private final BaseSymbol  myName;
+        private final String      myDebugName;
+        private final BindingSite mySite;
         final int myAddress;
 
         NsDefinedBinding(SyntaxSymbol identifier, int address)
         {
             myName      = identifier.getName();
             myDebugName = identifier.debugString();
+            mySite      = makeDefineBindingSite(identifier.getLocation());
             myAddress   = address;
         }
 
@@ -96,6 +100,12 @@ abstract class Namespace
         final BaseSymbol getName()
         {
             return myName;
+        }
+
+        @Override
+        BindingSite getBindingSite()
+        {
+            return mySite;
         }
 
         final String getDebugName()
@@ -116,34 +126,6 @@ abstract class Namespace
             return Namespace.this.myModuleId == ns.myModuleId;
         }
 
-        final CompiledForm compileLocalTopReference(Evaluator   eval,
-                                                    Environment env)
-            throws FusionException
-        {
-            assert this.isOwnedBy(env.namespace())
-                : "NsDefn for " + getDebugName() + " is in "
-                    + Namespace.this
-                    + " but the compilation environment is under "
-                    + env.namespace();
-            return new CompiledTopVariableReference(myAddress);
-        }
-
-        @Override
-        final CompiledForm compileSet(Evaluator eval, Environment env,
-                                      CompiledForm valueForm)
-            throws FusionException
-        {
-            throw new IllegalStateException("Mutation should have been rejected");
-        }
-
-        CompiledForm compileDefineSyntax(Evaluator eval,
-                                         Environment env,
-                                         CompiledForm valueForm)
-        {
-            String name = getName().stringValue();
-            return new CompiledTopDefineSyntax(name, myAddress, valueForm);
-        }
-
         @Override
         public boolean equals(Object other)
         {
@@ -162,22 +144,25 @@ abstract class Namespace
 
 
     /**
-     * A binding added to a namepace via {@code require} or a language
+     * A binding added to a namespace via {@code require} or a language
      * declaration.
      */
     abstract static class RequiredBinding
         extends NsBinding
     {
-        private final BaseSymbol myName;
-        private final String     myDebugName;
-        final ProvidedBinding myTarget;
+        private final BaseSymbol      myName;
+        private final String          myDebugName;
+        private final SourceLocation  myLoc;
+        private final ProvidedBinding myProvide;
+        private BindingSite           mySite;
 
-        RequiredBinding(SyntaxSymbol identifier, ProvidedBinding target)
+        RequiredBinding(SyntaxSymbol identifier, ProvidedBinding provide)
         {
-            assert target != null;
+            assert provide != null;
             myName      = identifier.getName();
             myDebugName = identifier.debugString();
-            myTarget = target;
+            myLoc       = identifier.getLocation();
+            myProvide   = provide;
         }
 
         @Override
@@ -186,52 +171,44 @@ abstract class Namespace
             return myName;
         }
 
+        @Override
+        BindingSite getBindingSite()
+        {
+            if (mySite == null)
+            {
+                mySite = makeImportBindingSite(myLoc,
+                                               myProvide.getBindingSite());
+            }
+            return mySite;
+        }
+
         final String getDebugName()
         {
             return myDebugName;
         }
 
+        /** Gets the binding that was {@code provide}d. */
+        final ProvidedBinding getProvided()
+        {
+            return myProvide;
+        }
+
         @Override
         final ModuleDefinedBinding target()
         {
-            return myTarget.target();
+            return myProvide.target();
         }
 
         @Override
         final Object lookup(Namespace ns)
         {
-            return myTarget.lookup(ns);
+            return myProvide.lookup(ns);
         }
 
         @Override
         final String mutationSyntaxErrorMessage()
         {
              return "cannot mutate an imported variable";
-        }
-
-        @Override
-        final CompiledForm compileDefine(Evaluator eval, Environment env,
-                                         SyntaxSymbol id, CompiledForm valueForm)
-            throws FusionException
-        {
-            return myTarget.compileDefine(eval, env, id, valueForm);
-        }
-
-        @Override
-        final CompiledForm compileReference(Evaluator eval, Environment env)
-            throws FusionException
-        {
-            return myTarget.compileReference(eval, env);
-        }
-
-        @Override
-        final CompiledForm compileSet(Evaluator eval, Environment env,
-                                      CompiledForm valueForm)
-            throws FusionException
-        {
-            // This isn't currently reachable, but it's an easy safeguard.
-            String message = "Mutation of imported binding is not allowed";
-            throw new ContractException(message);
         }
 
         @Override
@@ -744,34 +721,6 @@ abstract class Namespace
     }
 
 
-
-    abstract CompiledForm compileDefine(Evaluator eval,
-                                        FreeBinding binding,
-                                        SyntaxSymbol id,
-                                        CompiledForm valueForm)
-        throws FusionException;
-
-    abstract CompiledForm compileDefine(Evaluator eval,
-                                        TopLevelDefinedBinding binding,
-                                        SyntaxSymbol id,
-                                        CompiledForm valueForm)
-        throws FusionException;
-
-    abstract CompiledForm compileDefine(Evaluator eval,
-                                        ModuleDefinedBinding binding,
-                                        SyntaxSymbol id,
-                                        CompiledForm valueForm)
-        throws FusionException;
-
-
-    /**
-     * Compile a free variable reference.  These are allowed at top-level but
-     * not within a module.
-     */
-    abstract CompiledForm compileFreeTopReference(SyntaxSymbol identifier)
-        throws FusionException;
-
-
     /**
      * Looks for a definition's value in this namespace, ignoring imports.
      *
@@ -864,7 +813,7 @@ abstract class Namespace
 
             id = myRequiredModules.size();
             myRequiredModules.put(moduleId, id);
-            myRequiredModuleStores.add(module.getNamespace());
+            myRequiredModuleStores.add(module.getStore());
         }
         return id;
     }
@@ -934,6 +883,33 @@ abstract class Namespace
         BindingDoc[] docs = myBindingDocs.toArray(BindingDoc.EMPTY_ARRAY);
         myBindingDocs = null;
         return docs;
+    }
+
+
+    //========================================================================
+    // Visitation
+
+
+    abstract Object visit(Visitor v) throws FusionException;
+
+
+    static abstract class Visitor
+    {
+        Object accept(Namespace ns) throws FusionException
+        {
+            String msg = "Visitor doesn't accept " + getClass();
+            throw new IllegalStateException(msg);
+        }
+
+        Object accept(TopLevelNamespace ns) throws FusionException
+        {
+            return accept((Namespace) ns);
+        }
+
+        Object accept(ModuleNamespace ns) throws FusionException
+        {
+            return accept((Namespace) ns);
+        }
     }
 
 
@@ -1008,11 +984,11 @@ abstract class Namespace
     }
 
 
-    private static final class CompiledTopDefineSyntax
+    static final class CompiledTopDefineSyntax
         extends CompiledTopDefine
     {
-        private CompiledTopDefineSyntax(String name, int address,
-                                        CompiledForm valueForm)
+        CompiledTopDefineSyntax(String name, int address,
+                                CompiledForm valueForm)
         {
             super(name, address, valueForm);
         }

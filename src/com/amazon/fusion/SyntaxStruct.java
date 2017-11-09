@@ -1,19 +1,14 @@
-// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
-import static com.amazon.fusion.FusionStruct.EMPTY_STRUCT;
-import static com.amazon.fusion.FusionStruct.NULL_STRUCT;
 import static com.amazon.fusion.FusionStruct.immutableStruct;
-import static com.amazon.fusion.FusionStruct.structImplAdd;
 import com.amazon.fusion.FusionStruct.ImmutableStruct;
 import com.amazon.fusion.FusionStruct.NonNullImmutableStruct;
-import com.amazon.fusion.FusionStruct.StructFieldVisitor;
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import com.amazon.ion.IonException;
 import com.amazon.ion.IonWriter;
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.Map;
 
 final class SyntaxStruct
@@ -66,6 +61,13 @@ final class SyntaxStruct
 
 
     //========================================================================
+
+
+    @Override
+    Object visit(Visitor v) throws FusionException
+    {
+        return v.accept(this);
+    }
 
 
     @Override
@@ -328,113 +330,5 @@ final class SyntaxStruct
         throws IOException, FusionException
     {
         myStruct.write(eval, out);
-    }
-
-
-    //========================================================================
-
-
-    @Override
-    CompiledForm doCompile(final Evaluator eval, final Environment env)
-        throws FusionException
-    {
-        // Annotations on this form are not handled here.
-        assert ! myStruct.isAnnotated();
-
-        assert myWraps == null;
-
-        if (((BaseValue)myStruct).isAnyNull())
-        {
-            return new CompiledConstant(NULL_STRUCT);
-        }
-
-        int size = myStruct.size();
-        if (size == 0)
-        {
-            return new CompiledConstant(EMPTY_STRUCT);
-        }
-
-        final String[]       fieldNames = new String[size];
-        final CompiledForm[] fieldForms = new CompiledForm[size];
-
-        final Object[]       constFields = new Object[size];
-        final Object    notConstSentinel = new Object();
-
-        StructFieldVisitor visitor = new StructFieldVisitor()
-        {
-            int i = 0;
-
-            @Override
-            public Object visit(String name, Object value)
-                throws FusionException
-            {
-                SyntaxValue child = (SyntaxValue) value;
-                CompiledForm form = eval.compile(env, child);
-
-                fieldNames[i] = name;
-                fieldForms[i] = form;
-
-                constFields[i] = (form instanceof CompiledConstant
-                                    ? ((CompiledConstant) form).getValue()
-                                    : notConstSentinel);
-                i++;
-                return null;
-            }
-        };
-
-        myStruct.visitFields(eval, visitor);
-
-        boolean allConstant = true;
-        for (int i = 0; i < size; i++)
-        {
-            allConstant &= (constFields[i] != notConstSentinel);
-        }
-
-        if (allConstant)
-        {
-            return new CompiledConstant(immutableStruct(fieldNames,
-                                                        constFields,
-                                                        BaseSymbol.EMPTY_ARRAY));
-        }
-        else
-        {
-            return new CompiledStruct(fieldNames, fieldForms);
-        }
-    }
-
-
-    //========================================================================
-
-
-    private static final class CompiledStruct
-        implements CompiledForm
-    {
-        private final String[]       myFieldNames;
-        private final CompiledForm[] myFieldForms;
-
-        CompiledStruct(String[] fieldNames, CompiledForm[] fieldForms)
-        {
-            myFieldNames = fieldNames;
-            myFieldForms = fieldForms;
-        }
-
-        @Override
-        public Object doEval(Evaluator eval, Store store)
-            throws FusionException
-        {
-            HashMap<String, Object> map = new HashMap<String, Object>();
-
-            for (int i = 0; i < myFieldNames.length; i++)
-            {
-                CompiledForm form = myFieldForms[i];
-                Object value = eval.eval(store, form);
-
-                String fieldName = myFieldNames[i];
-
-                structImplAdd(map, fieldName, value);
-            }
-
-            return immutableStruct(map);
-        }
     }
 }

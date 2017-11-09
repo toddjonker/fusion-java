@@ -1,4 +1,4 @@
-// Copyright (c) 2013-2015 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2013-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -73,18 +73,22 @@ class SimpleSyntaxValue
     }
 
 
+    //========================================================================
+
+
+    @Override
+    Object visit(Visitor v) throws FusionException
+    {
+        return v.accept(this);
+    }
+
+
     @Override
     SyntaxValue copyReplacingProperties(Object[] properties)
     {
         return new SimpleSyntaxValue(getLocation(), properties, myDatum);
     }
 
-    @Override
-    CompiledForm doCompile(Evaluator eval, Environment env)
-        throws FusionException
-    {
-        return new CompiledConstant(myDatum);
-    }
 
     @Override
     Object unwrap(Evaluator eval)

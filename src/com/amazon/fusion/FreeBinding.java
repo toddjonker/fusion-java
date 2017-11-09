@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -19,6 +19,13 @@ final class FreeBinding
     public BaseSymbol getName()
     {
         return myName;
+    }
+
+
+    @Override
+    BindingSite getBindingSite()
+    {
+        return null;
     }
 
 
@@ -53,42 +60,10 @@ final class FreeBinding
 
 
     @Override
-    CompiledForm compileDefine(Evaluator eval,
-                               Environment env,
-                               SyntaxSymbol id,
-                               CompiledForm valueForm)
-        throws FusionException
+    Object visit(Visitor v) throws FusionException
     {
-        return env.namespace().compileDefine(eval, this, id, valueForm);
+        return v.visit(this);
     }
-
-    @Override
-    public CompiledForm compileReference(Evaluator eval, Environment env)
-        throws FusionException
-    {
-        String message =
-            "Free binding shouldn't make it to compilation: " + this;
-        throw new IllegalStateException(message);
-    }
-
-    @Override
-    public CompiledForm compileTopReference(Evaluator eval, Environment env,
-                                            SyntaxSymbol id)
-        throws FusionException
-    {
-        return env.namespace().compileFreeTopReference(id);
-    }
-
-    @Override
-    public CompiledForm compileSet(Evaluator eval, Environment env,
-                                   CompiledForm valueForm)
-        throws FusionException
-    {
-        String message =
-            "Free binding shouldn't make it to compilation: " + this;
-        throw new IllegalStateException(message);
-    }
-
 
     @Override
     public boolean equals(Object other)

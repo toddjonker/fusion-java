@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2015 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -299,11 +299,6 @@ abstract class SyntaxValue
     }
 
 
-    /** Don't call directly! Go through the evaluator. */
-    abstract CompiledForm doCompile(Evaluator eval, Environment env)
-        throws FusionException;
-
-
     /**
      * Unwraps syntax, returning plain values. Only one layer is unwrapped, so
      * if this is a container, the result will contain syntax objects.
@@ -334,5 +329,57 @@ abstract class SyntaxValue
     SyntaxValue makeOriginalSyntax(Evaluator eval, SourceLocation loc)
     {
         throw new IllegalStateException("Cannot wrap syntax as syntax");
+    }
+
+
+    //========================================================================
+    // Visitation
+
+
+    abstract Object visit(Visitor v) throws FusionException;
+
+
+    static abstract class Visitor
+    {
+        Object accept(SyntaxValue stx) throws FusionException
+        {
+            String msg = "Visitor doesn't accept " + getClass();
+            throw new IllegalStateException(msg);
+        }
+
+        Object accept(SimpleSyntaxValue stx) throws FusionException
+        {
+            return accept((SyntaxValue) stx);
+        }
+
+        Object accept(SyntaxSymbol stx) throws FusionException
+        {
+            return accept((SyntaxText) stx);
+        }
+
+        Object accept(SyntaxKeyword stx) throws FusionException
+        {
+            return accept((SyntaxText) stx);
+        }
+
+        Object accept(SyntaxContainer stx) throws FusionException
+        {
+            return accept((SyntaxValue) stx);
+        }
+
+        Object accept(SyntaxList stx) throws FusionException
+        {
+            return accept((SyntaxSequence) stx);
+        }
+
+        Object accept(SyntaxSexp stx) throws FusionException
+        {
+            return accept((SyntaxSequence) stx);
+        }
+
+        Object accept(SyntaxStruct stx) throws FusionException
+        {
+            return accept((SyntaxContainer) stx);
+        }
     }
 }

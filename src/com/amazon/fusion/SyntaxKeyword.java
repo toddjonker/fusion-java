@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -42,6 +42,13 @@ final class SyntaxKeyword
 
 
     @Override
+    Object visit(Visitor v) throws FusionException
+    {
+        return v.accept(this);
+    }
+
+
+    @Override
     SyntaxValue doExpand(Expander eval, Environment env)
         throws SyntaxException
     {
@@ -65,16 +72,5 @@ final class SyntaxKeyword
     {
         // TODO __ ??
         super.ionize(eval, writer);
-    }
-
-
-    //========================================================================
-
-
-    @Override
-    CompiledForm doCompile(Evaluator eval, Environment env)
-        throws FusionException
-    {
-        throw new IllegalStateException("Should not get here");
     }
 }

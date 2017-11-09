@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -15,6 +15,8 @@ import static com.amazon.ion.util.IonTextUtils.printString;
 import com.amazon.fusion.Namespace.RequireRenameMapping;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 
 /**
@@ -22,7 +24,7 @@ import java.util.Arrays;
  * imports: if a library module adds a binding thats already used by a user
  * module, there can be a conflict introduced by a new release of the library.
  * The same problem exists with Java code using {@code import *}, and the
- * recommended preventative measure is the same: robust modules should declare
+ * recommended preventive measure is the same: robust modules should declare
  * their imported names explicitly using {@code only_in}, rather than using the
  * default "import everything" behavior.
  */
@@ -44,6 +46,8 @@ final class RequireForm
               "  * A string or symbol containing a [module path][]; all names `provide`d by\n" +
               "    the referenced module are imported.\n" +
               "  * [`only_in`][only_in] enumerates a set of names to import.\n" +
+              "  * [`prefix_in`][prefix_in] provides a prefix to imported bindings.\n" +
+              "  * [`rename_in`][rename_in] renames specified bindings.\n" +
               "\n" +
               "Within a module, `require` declarations are processed before other forms,\n" +
               "regardless of their order within the module source, and imported bindings are\n" +
@@ -58,7 +62,9 @@ final class RequireForm
               "existing top-level definition.\n" +
               "\n" +
               "[module path]: module.html#ref\n" +
-              "[only_in]:     fusion/module.html#only_in\n");
+              "[only_in]:     fusion/module.html#only_in\n" +
+              "[prefix_in]:   fusion/module.html#prefix_in\n" +
+              "[rename_in]:   fusion/module.html#rename_in\n");
         myModuleNameResolver = moduleNameResolver;
     }
 
@@ -129,18 +135,13 @@ final class RequireForm
 
         GlobalState globalState = eval.getGlobalState();
 
-        SyntaxSymbol specId = spec.firstIdentifier(eval);
         Binding b = spec.firstTargetBinding(eval);
         if (b == globalState.myKernelOnlyInBinding)
         {
             int arity = check.arityAtLeast(2);
 
             SyntaxValue[] children = spec.extract(eval);
-            children[0] =
-                syntaxTrackOrigin(eval,
-                                  SyntaxSymbol.make(eval, specId.getLocation(),
-                                                    makeSymbol(eval, "only")),
-                                  spec, specId);
+            children[0] = expandRequireSpecNameToPrimitiveImportName(eval, spec, "only");
 
             // TODO This should visit the module (run its phase-1 code)
             //      but not instantiate it.
@@ -162,10 +163,72 @@ final class RequireForm
 
             expandedSpecs.add(SyntaxSexp.make(eval, children));
         }
+        else if (b == globalState.myKernelPrefixInBinding)
+        {
+            check.arityExact(3);
+
+            SyntaxValue[] children = spec.extract(eval);
+            children[0] = expandRequireSpecNameToPrimitiveImportName(eval, spec, "prefix");
+
+            children[1] = check.requiredIdentifier("prefix id", 1);
+
+            String path = check.requiredText(eval, "module path", 2);
+            checkValidModulePath(eval, check, path);
+
+            expandedSpecs.add(SyntaxSexp.make(eval, children));
+        }
+        else if (b == globalState.myKernelRenameInBinding)
+        {
+            int arity = check.arityAtLeast(2);
+
+            SyntaxSymbol renamePrimitiveSymbol =
+                    expandRequireSpecNameToPrimitiveImportName(eval, spec, "rename");
+
+            String path = check.requiredText(eval, "module path", 1);
+            checkValidModulePath(eval, check, path);
+
+            final Set<String> localIdsSoFar = new HashSet<>();
+            for (int i = 2; i < arity; i++)
+            {
+                SyntaxSexp renamePair = check.requiredSexp("(local_id exported_id)", i);
+
+                SyntaxChecker renamePairChecker = new SyntaxChecker(eval, renamePair);
+                renamePairChecker.arityExact(2);
+
+                // In Racket,
+                // the rename sub-form has the identifiers in reverse order compared to rename-in.
+                SyntaxSymbol exportedId = renamePairChecker.requiredIdentifier("exported_id", 0);
+                SyntaxSymbol localId = renamePairChecker.requiredIdentifier("local_id", 1);
+
+                if (!localIdsSoFar.add(localId.stringValue())) {
+                    throw check.failure("rename_in pair specified duplicate local_id: " + localId,
+                                        spec);
+                }
+                expandedSpecs.add(SyntaxSexp.make(eval,
+                                                  renamePrimitiveSymbol,
+                                                  spec.get(eval, 1), // module path
+                                                  localId,
+                                                  exportedId));
+            }
+        }
         else
         {
             throw requireCheck.failure("invalid require-spec");
         }
+    }
+
+    private SyntaxSymbol expandRequireSpecNameToPrimitiveImportName(Evaluator eval,
+                                                                    SyntaxSexp spec,
+                                                                    String primitiveImportName)
+            throws FusionException
+    {
+        SyntaxSymbol specId = spec.firstIdentifier(eval);
+        return syntaxTrackOrigin(eval,
+                                 SyntaxSymbol.make(eval,
+                                                   specId.getLocation(),
+                                                   makeSymbol(eval, primitiveImportName)),
+                                 spec,
+                                 specId);
     }
 
     private void checkValidModulePath(Evaluator     eval,
@@ -185,9 +248,27 @@ final class RequireForm
 
 
     @Override
-    CompiledForm compile(Evaluator eval, Environment env, SyntaxSexp stx)
+    void evalCompileTimePart(Compiler comp,
+                             TopLevelNamespace topNs,
+                             SyntaxSexp topStx)
         throws FusionException
     {
+        CompiledForm compiledForm = compile(comp, topNs, topStx);
+
+        // TODO This needs to visit, not instantiate, modules.
+        comp.getEvaluator().eval(topNs, compiledForm);
+    }
+
+
+    //========================================================================
+
+
+    @Override
+    CompiledForm compile(Compiler comp, Environment env, SyntaxSexp stx)
+        throws FusionException
+    {
+        Evaluator eval = comp.getEvaluator();
+
         // We resolve the name at compile-time, noting that for `require`
         // the form is immediately evaluated. I don't want to think about what
         // would happen if resolving at runtime gave a different result.
@@ -211,7 +292,7 @@ final class RequireForm
             try
             {
                 compiledSpecs[i] =
-                    compileSpec(eval, baseModule, check, requireSym, spec);
+                    compileSpec(eval, env, baseModule, check, requireSym, spec);
             }
             catch (FusionException e)
             {
@@ -224,6 +305,7 @@ final class RequireForm
     }
 
     private CompiledRequireSpec compileSpec(Evaluator eval,
+                                            Environment env,
                                             ModuleIdentity baseModule,
                                             SyntaxChecker requireCheck,
                                             SyntaxSymbol lexicalContext,
@@ -251,6 +333,44 @@ final class RequireForm
                             new RequireRenameMapping(id, id.getName());
                     }
 
+                    return new CompiledPartialRequire(moduleId, mappings);
+                }
+                case "prefix":
+                {
+                    SyntaxSymbol prefixId = (SyntaxSymbol) sexp.get(eval, 1);
+
+                    ModuleIdentity moduleId =
+                            myModuleNameResolver.resolve(eval,
+                                                         baseModule,
+                                                         sexp.get(eval, 2),
+                                                         true);
+
+                    ModuleInstance moduleInstance =
+                            env.namespace().getRegistry().instantiate(eval, moduleId);
+
+                    int idCount = moduleInstance.providedBindings().size();
+                    RequireRenameMapping[] mappings = new RequireRenameMapping[idCount];
+                    int i = 0;
+                    for (FusionSymbol.BaseSymbol providedName : moduleInstance.providedNames())
+                    {
+                        String newBindingName = prefixId.stringValue() + providedName.stringValue();
+                        SyntaxSymbol newBindingSymbol = SyntaxSymbol.make(eval, newBindingName);
+                        mappings[i] = new RequireRenameMapping(newBindingSymbol, providedName);
+                        i++;
+                    }
+                    return new CompiledPartialRequire(moduleId, mappings);
+                }
+                case "rename":
+                {
+                    ModuleIdentity moduleId =
+                            myModuleNameResolver.resolve(eval,
+                                                         baseModule,
+                                                         sexp.get(eval, 1),
+                                                         true);
+                    SyntaxSymbol localId = (SyntaxSymbol) sexp.get(eval, 2);
+                    SyntaxSymbol exportedId = (SyntaxSymbol) sexp.get(eval, 3);
+                    RequireRenameMapping[] mappings =
+                            { new RequireRenameMapping(localId, exportedId.getName()) };
                     return new CompiledPartialRequire(moduleId, mappings);
                 }
                 default:
@@ -289,7 +409,7 @@ final class RequireForm
         }
 
         @Override
-        CompiledForm compile(Evaluator eval, Environment env, SyntaxSexp stx)
+        CompiledForm compile(Compiler comp, Environment env, SyntaxSexp stx)
             throws FusionException
         {
             throw new IllegalStateException("Shouldn't be compiled");
@@ -306,6 +426,34 @@ final class RequireForm
             super("module_path id ...",
                   "A `require` clause that imports only the given `id`s from a module.\n" +
                   "If an `id` is not provided by the module, a syntax error is reported.\n" +
+                  "\n" +
+                  "This form can only appear within `require`.");
+        }
+    }
+
+    static final class PrefixInForm
+            extends AbstractRequireClauseForm
+    {
+        PrefixInForm()
+        {
+            super("prefix_id module_path",
+                  "A `require` clause that adjusts each identifier" +
+                  " to be bound by prefixing it with `prefix_id`.\n" +
+                  "The lexical context of the `prefix_id` is ignored," +
+                  " and instead preserved from the identifiers before prefixing.\n" +
+                  "\n" +
+                  "This form can only appear within `require`.");
+        }
+    }
+
+    static final class RenameInForm
+            extends AbstractRequireClauseForm
+    {
+        RenameInForm()
+        {
+            super("module_path (exported_id local_id) ...",
+                  "A `require` clause that imports each `exported_id` using the name `local_id`.\n" +
+                  "If an `exported_id` is not provided by the module, a syntax error is reported.\n" +
                   "\n" +
                   "This form can only appear within `require`.");
         }

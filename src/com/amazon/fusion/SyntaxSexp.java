@@ -1,8 +1,7 @@
-// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
-import static com.amazon.fusion.FusionIo.safeWrite;
 import static com.amazon.fusion.FusionList.unsafeListToSexp;
 import static com.amazon.fusion.FusionSexp.immutableSexp;
 import static com.amazon.fusion.FusionSexp.isEmptySexp;
@@ -15,12 +14,9 @@ import static com.amazon.fusion.FusionSexp.unsafePairDot;
 import static com.amazon.fusion.FusionSexp.unsafePairHead;
 import static com.amazon.fusion.FusionSexp.unsafePairTail;
 import static com.amazon.fusion.FusionSexp.unsafeSexpSize;
-import static com.amazon.fusion.LetValuesForm.compilePlainLet;
 import com.amazon.fusion.FusionSexp.BaseSexp;
 import com.amazon.fusion.FusionSexp.ImmutablePair;
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
-import com.amazon.fusion.LambdaForm.CompiledLambdaBase;
-import com.amazon.fusion.LambdaForm.CompiledLambdaExact;
 import com.amazon.ion.IonWriter;
 import java.io.IOException;
 import java.util.IdentityHashMap;
@@ -54,6 +50,13 @@ final class SyntaxSexp
         super(loc);
         assert sexp != null;
         mySexp = sexp;
+    }
+
+
+    @Override
+    Object visit(Visitor v) throws FusionException
+    {
+        return v.accept(this);
     }
 
 
@@ -514,12 +517,11 @@ final class SyntaxSexp
                 assert expander.expand(env, first) == first;
                 // else the next stmt must change
 
-                // TODO FUSION-207 tail expand
-
                 // We use the same expansion context as we already have.
                 // Don't need to replace the sexp since we haven't changed it.
                 SyntaxValue expandedExpr = expander.expand(env, form, this);
                 return expandedExpr;
+                // TODO FUSION-207 Needs tail-call optimization.
             }
         }
 
@@ -591,132 +593,5 @@ final class SyntaxSexp
         }
 
         return this;
-    }
-
-
-    //========================================================================
-
-
-    @Override
-    CompiledForm doCompile(Evaluator eval, Environment env)
-        throws FusionException
-    {
-        SyntaxValue first = get(eval, 0);
-        if (first instanceof SyntaxSymbol)
-        {
-            SyntacticForm form = ((SyntaxSymbol) first).resolveSyntaxMaybe(env);
-
-            // NOTE: Failure to get a binding indicates use of a built-in
-            // syntactic form that's defined (probably via java_new) in the
-            // same module. That's not supported! Such modules need to be
-            // broken apart to meet this requirement.  This won't affect
-            // users unless we open the whole compiler APIs so they can add
-            // new "built-in" syntax.
-
-            if (form != null)
-            {
-                // We found a static top-level syntax binding!
-                // Continue the compilation process.
-                // TODO bounce the tail-call?
-
-                return form.compile(eval, env, this);
-            }
-        }
-
-        CompiledForm procForm = eval.compile(env, first);
-        CompiledForm[] argForms = eval.compile(env, this, 1);
-
-        if (procForm instanceof CompiledLambdaExact)
-        {
-            CompiledLambdaBase lambda = (CompiledLambdaBase) procForm;
-            if (lambda.myArgNames.length != argForms.length)
-            {
-                String message =
-                    "procedure expects " + lambda.myArgNames.length +
-                    " arguments but application has " + argForms.length +
-                    " expressions";
-                 throw new SyntaxException("procedure application", message,
-                                           this);
-            }
-
-            return compilePlainLet(argForms, lambda.myBody);
-        }
-
-        return new CompiledPlainApp(getLocation(), procForm, argForms);
-    }
-
-
-    //========================================================================
-
-
-    private static final class CompiledPlainApp
-        implements CompiledForm
-    {
-        private final SourceLocation myLocation;
-        private final CompiledForm   myProcForm;
-        private final CompiledForm[] myArgForms;
-
-        CompiledPlainApp(SourceLocation location,
-                         CompiledForm   procForm,
-                         CompiledForm[] argForms)
-        {
-            myLocation = location;
-            myProcForm = procForm;
-            myArgForms = argForms;
-        }
-
-        @Override
-        public Object doEval(Evaluator eval, Store store)
-            throws FusionException
-        {
-            Object proc = eval.eval(store, myProcForm, myLocation);
-
-            int argCount = myArgForms.length;
-
-            Object[] args;
-            if (argCount == 0)
-            {
-                args = FusionUtils.EMPTY_OBJECT_ARRAY;
-            }
-            else
-            {
-                args = new Object[argCount];
-                for (int i = 0; i < argCount; i++)
-                {
-                    args[i] = eval.eval(store, myArgForms[i], myLocation);
-                }
-            }
-
-            Procedure p;
-            try
-            {
-                p = (Procedure) proc;
-            }
-            catch (ClassCastException e)
-            {
-                StringBuilder b = new StringBuilder();
-                b.append("Application expected procedure, given: ");
-                safeWrite(eval, b, proc);
-                if (args.length == 0)
-                {
-                    b.append("\nNo arguments were provided.");
-                }
-                else
-                {
-                    b.append("\nArguments were: ");
-                    for (int i = 0; i < args.length; i++)
-                    {
-                        b.append("\n  ");
-                        safeWrite(eval, b, args[i]);
-                    }
-                }
-
-                FusionException fe = new FusionException(b.toString());
-                fe.addContext(myLocation);
-                throw fe;
-            }
-
-            return eval.bounceTailCall(myLocation, p, args);
-        }
     }
 }

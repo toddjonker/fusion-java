@@ -26,7 +26,9 @@ final class GlobalState
     static final String LAMBDA          = "lambda";
     static final String MODULE          = "module";
     static final String ONLY_IN         = "only_in";
+    static final String PREFIX_IN       = "prefix_in";
     static final String PROVIDE         = "provide";
+    static final String RENAME_IN       = "rename_in";
     static final String RENAME_OUT      = "rename_out";
     static final String REQUIRE         = "require";
 
@@ -43,7 +45,9 @@ final class GlobalState
     final Binding myKernelDefineSyntaxBinding;
     final Binding myKernelOnlyInBinding;
     final Binding myKernelModuleBinding;
+    final Binding myKernelPrefixInBinding;
     final Binding myKernelProvideBinding;
+    final Binding myKernelRenameInBinding;
     final Binding myKernelRenameOutBinding;
     final Binding myKernelRequireBinding;
 
@@ -67,8 +71,10 @@ final class GlobalState
         myKernelDefineSyntaxBinding  = kernelBinding(DEFINE_SYNTAX);
         myKernelModuleBinding        = kernelBinding(MODULE);
         myKernelOnlyInBinding        = kernelBinding(ONLY_IN);
+        myKernelPrefixInBinding      = kernelBinding(PREFIX_IN);
         myKernelProvideBinding       = kernelBinding(PROVIDE);
         myKernelRequireBinding       = kernelBinding(REQUIRE);
+        myKernelRenameInBinding      = kernelBinding(RENAME_IN);
         myKernelRenameOutBinding     = kernelBinding(RENAME_OUT);
     }
 
@@ -123,8 +129,10 @@ final class GlobalState
         ns.define("load", new LoadProc(loadHandler));
         ns.define(MODULE, new ModuleForm(resolver, currentModuleDeclareName));
         ns.define(ONLY_IN, new RequireForm.OnlyInForm());
+        ns.define(PREFIX_IN, new RequireForm.PrefixInForm());
         ns.define(PROVIDE, new ProvideForm());
         ns.define(REQUIRE, new RequireForm(resolver));
+        ns.define(RENAME_IN, new RequireForm.RenameInForm());
         ns.define(RENAME_OUT, new ProvideForm.RenameOutForm());
 
 

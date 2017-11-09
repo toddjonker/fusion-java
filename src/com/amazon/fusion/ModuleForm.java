@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -230,9 +230,7 @@ final class ModuleForm
                     {
                         expanded = expander.expand(moduleNamespace, expanded);
                         // TODO this is getting compiled twice
-                        CompiledForm compiled =
-                            eval.compile(moduleNamespace, expanded);
-                        eval.eval(moduleNamespace, compiled);
+                        eval.evalExpandedStx(moduleNamespace, expanded);
                     }
                     catch (FusionException e)
                     {
@@ -246,9 +244,9 @@ final class ModuleForm
                     try
                     {
                         expanded = expander.expand(moduleNamespace, expanded);
-                        CompiledForm compiled =
-                            eval.compile(moduleNamespace, expanded);
-                        eval.eval(moduleNamespace, compiled);
+                        // TODO This needs to visit, not instantiate, modules.
+                        // TODO this is getting compiled twice
+                        eval.evalExpandedStx(moduleNamespace, expanded);
                     }
                     catch (FusionException e)
                     {
@@ -350,11 +348,33 @@ final class ModuleForm
     }
 
 
+    //========================================================================
+
+
     @Override
-    CompiledForm compile(Evaluator eval, Environment envOutsideModule,
+    void evalCompileTimePart(Compiler comp,
+                             TopLevelNamespace topNs,
+                             SyntaxSexp topStx)
+        throws FusionException
+    {
+        CompiledForm compiledForm = compile(comp, topNs, topStx);
+
+        // Evaluation of `module` simply registers it. We don't want to visit
+        // or instantiate the module here; a later `require` would visit it.
+        comp.getEvaluator().eval(topNs, compiledForm);
+    }
+
+
+    //========================================================================
+
+
+    @Override
+    CompiledForm compile(Compiler comp, Environment envOutsideModule,
                          SyntaxSexp moduleStx)
         throws FusionException
     {
+        Evaluator eval = comp.getEvaluator();
+
         Object moduleDatum = moduleStx.unwrap(eval);
 
         // TODO We repeat work here that was done during expansion.
@@ -430,7 +450,8 @@ final class ModuleForm
                 break;
             }
 
-            CompiledForm compiled = eval.compile(moduleNamespace, form);
+            CompiledForm compiled =
+                comp.compileExpression(moduleNamespace, form);
             otherForms.add(compiled);
         }
 
@@ -486,6 +507,14 @@ final class ModuleForm
         private final List<ProvidedBinding>   myBindings      = new ArrayList<>();
 
 
+        /**
+         * Exports an identifier/binding, as in {@code (provide exportId)}.
+         * This creates a new {@code ProvidedBinding} at the location of the
+         * {@code exportId}.
+         *
+         * @param exportId the identifier to be exported.
+         * @param binding the binding to be exported.
+         */
         private void addBinding(SyntaxChecker check,
                                 SyntaxSymbol  exportId,
                                 Binding       binding)
@@ -502,7 +531,7 @@ final class ModuleForm
                 throw check.failure(message, exportId);
             }
 
-            ProvidedBinding provided = binding.provideAs(name);
+            ProvidedBinding provided = binding.provideAs(name, exportId.getLocation());
             assert name == provided.getName();
 
             myBindings.add(provided);
@@ -526,26 +555,30 @@ final class ModuleForm
                 Object clauseObj = unsafePairHead(eval, formDatum);
                 if (clauseObj instanceof SyntaxSymbol)
                 {
-                    SyntaxSymbol localId = (SyntaxSymbol) clauseObj;
-                    addBinding(check, localId, localId.getBinding());
+                    // (provide insideId)
+                    SyntaxSymbol insideId = (SyntaxSymbol) clauseObj;
+                    addBinding(check, insideId, insideId.getBinding());
                 }
                 else
                 {
+                    // (provide (FORM ...))
                     SyntaxSexp clauseStx = (SyntaxSexp) clauseObj;
                     SyntaxSymbol formName = clauseStx.firstIdentifier(eval);
                     switch (formName.getName().stringValue())
                     {
                         case "all_defined":
                         {
+                            // Expansion of all_defined_out provides the
+                            // individual symbols before this marker.
                             break;
                         }
                         case "rename":
                         {
-                            SyntaxSymbol localId = (SyntaxSymbol)
+                            SyntaxSymbol insideId = (SyntaxSymbol)
                                 clauseStx.get(eval, 1);
-                            addBinding(check,
-                                       (SyntaxSymbol) clauseStx.get(eval, 2),
-                                       localId.getBinding());
+                            SyntaxSymbol outsideId = (SyntaxSymbol)
+                                clauseStx.get(eval, 2);
+                            addBinding(check, outsideId, insideId.getBinding());
                             break;
                         }
                         default:
@@ -668,7 +701,7 @@ final class ModuleForm
             {
                 ModuleInstance module =
                     registry.instantiate(eval, myRequiredModules[i]);
-                stores[i] = module.getNamespace();
+                stores[i] = module.getStore();
             }
 
             return stores;

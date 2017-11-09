@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -566,41 +566,30 @@ class Evaluator
     }
 
 
-
-    CompiledForm compile(Environment env, SyntaxValue source)
-        throws FusionException
+    Compiler makeCompiler()
     {
-        return source.doCompile(this, env);
+        return new Compiler(this);
     }
 
-    /**
-     * @return not null, but perhaps {@link CompiledForm#EMPTY_ARRAY}.
-     */
-    CompiledForm[] compile(Environment env, SyntaxSequence source,
-                           int from, int to)
+    final CompiledForm compile(Environment env, SyntaxValue source)
         throws FusionException
     {
-        int size = to - from;
-
-        if (size == 0) return CompiledForm.EMPTY_ARRAY;
-
-        CompiledForm[] forms = new CompiledForm[size];
-        for (int i = from; i < to; i++)
-        {
-            SyntaxValue form = source.get(this, i);
-            forms[i - from] = compile(env, form);
-        }
-
-        return forms;
+        Compiler comp = makeCompiler();
+        return comp.compileExpression(env, source);
     }
 
-    /**
-     * @return not null, but perhaps {@link CompiledForm#EMPTY_ARRAY}.
-     */
-    CompiledForm[] compile(Environment env, SyntaxSequence source, int from)
+    final Object evalExpandedStx(Namespace ns, SyntaxValue expanded)
         throws FusionException
     {
-        return compile(env, source, from, source.size());
+        CompiledForm compiled = compile(ns, expanded);
+        return eval(ns, compiled);
+    }
+
+    void evalCompileTimePart(TopLevelNamespace topNs, SyntaxValue topStx)
+        throws FusionException
+    {
+        Compiler comp = makeCompiler();
+        comp.evalCompileTimePart(topNs, topStx);
     }
 
 

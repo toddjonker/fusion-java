@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -47,6 +47,13 @@ final class SyntaxList
         super(loc);
         assert isImmutableList(eval, datum);
         myImmutableList = datum;
+    }
+
+
+    @Override
+    Object visit(Visitor v) throws FusionException
+    {
+        return v.accept(this);
     }
 
 
@@ -329,80 +336,5 @@ final class SyntaxList
 
         BaseSymbol[] annotations = myImmutableList.getAnnotations();
         return immutableList(eval, annotations, children);
-    }
-
-
-    //========================================================================
-
-
-    @Override
-    CompiledForm doCompile(Evaluator eval, Environment env)
-        throws FusionException
-    {
-        // Annotations on this form are not handled here.
-        assert ! myImmutableList.isAnnotated();
-
-        if (myImmutableList.isAnyNull())
-        {
-            return new CompiledConstant(myImmutableList);
-        }
-
-        boolean allConstant = true;
-
-        int len = size();
-        CompiledForm[] children = new CompiledForm[len];
-        for (int i = 0; i < len; i++)
-        {
-            SyntaxValue elementExpr = get(eval, i);
-            CompiledForm child = eval.compile(env, elementExpr);
-            children[i] = child;
-
-            allConstant &= (child instanceof CompiledConstant);
-        }
-
-        if (allConstant)
-        {
-            Object[] constChildren = new Object[len];
-            for (int i = 0; i < len; i++)
-            {
-                constChildren[i] = ((CompiledConstant) children[i]).getValue();
-            }
-
-            return new CompiledConstant(immutableList(eval, constChildren));
-        }
-        else
-        {
-            return new CompiledList(children);
-        }
-
-    }
-
-
-    //========================================================================
-
-
-    private static final class CompiledList
-        implements CompiledForm
-    {
-        private final CompiledForm[] myChildForms;
-
-        CompiledList(CompiledForm[] childForms)
-        {
-            myChildForms = childForms;
-        }
-
-        @Override
-        public Object doEval(Evaluator eval, Store store)
-            throws FusionException
-        {
-            int len = myChildForms.length;
-            Object[] children = new Object[len];
-            for (int i = 0; i < len; i++)
-            {
-                children[i] = eval.eval(store, myChildForms[i]);
-            }
-
-            return immutableList(eval, children);
-        }
     }
 }

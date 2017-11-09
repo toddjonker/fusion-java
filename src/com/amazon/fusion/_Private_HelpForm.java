@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -110,16 +110,10 @@ public final class _Private_HelpForm
 
 
     @Override
-    CompiledForm compile(Evaluator eval, Environment env, SyntaxSexp stx)
+    CompiledForm compile(Compiler comp, Environment env, SyntaxSexp stx)
         throws FusionException
     {
-        int arity = stx.size();
-
-        CompiledForm[] children = new CompiledForm[arity - 1];
-        for (int i = 1; i < arity; i++)
-        {
-            children[i-1] = eval.compile(env, stx.get(eval, i));
-        }
+        CompiledForm[] children = comp.compileExpressions(env, stx, 1);
         return new CompiledHelp(children);
     }
 

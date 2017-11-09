@@ -1,10 +1,9 @@
-// Copyright (c) 2013-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2013-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionVoid.voidValue;
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
-import com.amazon.fusion.ModuleNamespace.ModuleDefinedBinding;
 import com.amazon.fusion.ModuleNamespace.ProvidedBinding;
 import java.util.Iterator;
 import java.util.Set;
@@ -66,38 +65,9 @@ final class TopLevelNamespace
 
 
         @Override
-        public CompiledForm compileReference(Evaluator eval, Environment env)
-            throws FusionException
+        Object visit(Visitor v) throws FusionException
         {
-            return compileLocalTopReference(eval, env);
-        }
-
-        @Override
-        public CompiledForm compileTopReference(Evaluator eval,
-                                                Environment env,
-                                                SyntaxSymbol id)
-            throws FusionException
-        {
-            return new CompiledTopVariableReference(myAddress);
-        }
-
-        @Override
-        CompiledForm compileDefine(Evaluator eval,
-                                   Environment env,
-                                   SyntaxSymbol id,
-                                   CompiledForm valueForm)
-            throws FusionException
-        {
-            return env.namespace().compileDefine(eval, this, id, valueForm);
-        }
-
-        @Override
-        CompiledForm compileDefineSyntax(Evaluator eval,
-                                         Environment env,
-                                         CompiledForm valueForm)
-        {
-            // TODO FUSION-192 This should bind after evaluation, as 'define'.
-            return super.compileDefineSyntax(eval, env, valueForm);
+            return v.visit(this);
         }
 
         @Override
@@ -184,14 +154,9 @@ final class TopLevelNamespace
         }
 
         @Override
-        public CompiledForm compileTopReference(Evaluator eval,
-                                                Environment env,
-                                                SyntaxSymbol id)
-            throws FusionException
+        Object visit(Visitor v) throws FusionException
         {
-            String message =
-                "#%top not implemented for required binding: " + this;
-            throw new IllegalStateException(message);
+            return v.visit(this);
         }
 
         @Override
@@ -223,6 +188,13 @@ final class TopLevelNamespace
 
 
     @Override
+    Object visit(Visitor v) throws FusionException
+    {
+        return v.accept(this);
+    }
+
+
+    @Override
     NsDefinedBinding newDefinedBinding(SyntaxSymbol identifier, int address)
     {
         return new TopLevelDefinedBinding(identifier, address);
@@ -237,54 +209,10 @@ final class TopLevelNamespace
     }
 
 
-    @Override
-    CompiledForm compileDefine(Evaluator eval,
-                               FreeBinding binding,
-                               SyntaxSymbol id,
-                               CompiledForm valueForm)
-        throws FusionException
-    {
-        return new CompiledFreeDefine(id, valueForm);
-    }
-
-
-    @Override
-    CompiledForm compileDefine(Evaluator eval,
-                               TopLevelDefinedBinding binding,
-                               SyntaxSymbol id,
-                               CompiledForm valueForm)
-        throws FusionException
-    {
-        // We can't trust the identifier in the binding, since it may have
-        // resolved to an id with a different set of marks.
-        return new CompiledFreeDefine(id, valueForm);
-    }
-
-
-    @Override
-    CompiledForm compileDefine(Evaluator eval,
-                               ModuleDefinedBinding binding,
-                               SyntaxSymbol id,
-                               CompiledForm valueForm)
-        throws FusionException
-    {
-        // The lexical context of the bound identifier resolves to some module.
-        // We'll use a top-level binding instead.
-        return new CompiledFreeDefine(id, valueForm);
-    }
-
-
-    @Override
-    CompiledForm compileFreeTopReference(SyntaxSymbol identifier)
-    {
-        return new CompiledFreeVariableReference(identifier);
-    }
-
-
     //========================================================================
     // Compiled Forms
 
-    private static final class CompiledFreeDefine
+    static final class CompiledFreeDefine
         implements CompiledForm
     {
         private final SyntaxSymbol myId;
@@ -338,7 +266,7 @@ final class TopLevelNamespace
      * This uses a rare safe instance of the double-checked locking idiom:
      * http://www.cs.umd.edu/~pugh/java/memoryModel/DoubleCheckedLocking.html
      */
-    private static final class CompiledFreeVariableReference
+    static final class CompiledFreeVariableReference
         implements CompiledForm
     {
         private SyntaxSymbol myId;

@@ -1,12 +1,8 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
-import static com.amazon.fusion.BindingDoc.COLLECT_DOCS_MARK;
 import static com.amazon.fusion.FusionString.isString;
-import static com.amazon.fusion.FusionString.stringToJavaString;
-import com.amazon.fusion.BindingDoc.Kind;
-import com.amazon.fusion.Namespace.NsDefinedBinding;
 
 final class DefineSyntaxForm
     extends SyntacticForm
@@ -73,30 +69,23 @@ final class DefineSyntaxForm
 
 
     @Override
-    CompiledForm compile(Evaluator eval, Environment env, SyntaxSexp stx)
+    void evalCompileTimePart(Compiler comp,
+                             TopLevelNamespace topNs,
+                             SyntaxSexp topStx)
         throws FusionException
     {
-        int arity = stx.size();
-        SyntaxValue valueSource = stx.get(eval, arity-1);
-        CompiledForm valueForm = eval.compile(env, valueSource);
+        CompiledForm compiledForm = compile(comp, topNs, topStx);
+        comp.getEvaluator().eval(topNs, compiledForm);
+    }
 
-        SyntaxSymbol identifier = (SyntaxSymbol) stx.get(eval, 1);
-        NsDefinedBinding binding = (NsDefinedBinding) identifier.getBinding();
-        CompiledForm compiled =
-            binding.compileDefineSyntax(eval, env, valueForm);
 
-        if (arity != 3
-            && eval.firstContinuationMark(COLLECT_DOCS_MARK) != null)
-        {
-            // We have documentation. Sort of.
-            Object docString = stx.get(eval, 2).unwrap(eval);
-            BindingDoc doc = new BindingDoc(identifier.stringValue(),
-                                            Kind.SYNTAX,
-                                            null, // usage
-                                            stringToJavaString(eval, docString));
-            env.namespace().setDoc(binding.myAddress, doc);
-        }
+    //========================================================================
 
-        return compiled;
+
+    @Override
+    CompiledForm compile(Compiler comp, Environment env, SyntaxSexp stx)
+        throws FusionException
+    {
+        return comp.compileDefineSyntax(env, stx);
     }
 }

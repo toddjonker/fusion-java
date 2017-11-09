@@ -1,7 +1,8 @@
-// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.BindingSite.makeLocalBindingSite;
 import static com.amazon.fusion.FusionVoid.voidValue;
 import static com.amazon.ion.util.IonTextUtils.printQuotedSymbol;
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
@@ -19,9 +20,10 @@ final class LocalEnvironment
     {
         static final LocalBinding[] EMPTY_ARRAY = new LocalBinding[0];
 
-        private final SyntaxSymbol myIdentifier;
-        private final int          myDepth;
-        private final int          myAddress;
+        private final SyntaxSymbol       myIdentifier;
+                final int                myDepth;
+                final int                myAddress;
+        private final BindingSite        mySite;
 
         private LocalBinding(SyntaxSymbol identifier, int depth, int address)
         {
@@ -29,12 +31,19 @@ final class LocalEnvironment
             myIdentifier = identifier;
             myDepth      = depth;
             myAddress    = address;
+            mySite       = makeLocalBindingSite(identifier.getLocation());
         }
 
         @Override
         BaseSymbol getName()
         {
             return myIdentifier.getName();
+        }
+
+        @Override
+        BindingSite getBindingSite()
+        {
+            return mySite;
         }
 
         @Override
@@ -54,41 +63,10 @@ final class LocalEnvironment
 
 
         @Override
-        CompiledForm compileReference(Evaluator eval, Environment env)
-            throws FusionException
+        Object visit(Visitor v) throws FusionException
         {
-            int rib = env.getDepth() - myDepth;
-            if (rib == 0)
-            {
-                return new CompiledImmediateVariableReference(myAddress);
-            }
-            return new CompiledLocalVariableReference(rib, myAddress);
+            return v.visit(this);
         }
-
-        @Override
-        CompiledForm compileTopReference(Evaluator eval,
-                                         Environment env,
-                                         SyntaxSymbol id)
-            throws FusionException
-        {
-            String message =
-                "#%top not implemented for local binding: " + this;
-            throw new SyntaxException("#%top", message, id);
-        }
-
-        @Override
-        CompiledForm compileSet(Evaluator eval, Environment env,
-                                CompiledForm valueForm)
-            throws FusionException
-        {
-            int rib = env.getDepth() - myDepth;
-            if (rib == 0)
-            {
-                return new CompiledImmediateVariableSet(myAddress, valueForm);
-            }
-            return new CompiledLocalVariableSet(rib, myAddress, valueForm);
-        }
-
 
         @Override
         public boolean equals(Object other)
@@ -266,7 +244,7 @@ final class LocalEnvironment
 
 
     /** Reference to a var in the immediately-enclosing environment. */
-    private static final class CompiledImmediateVariableReference
+    static final class CompiledImmediateVariableReference
         implements CompiledForm
     {
         private final int myAddress;
@@ -288,7 +266,7 @@ final class LocalEnvironment
     }
 
 
-    private static final class CompiledLocalVariableReference
+    static final class CompiledLocalVariableReference
         implements CompiledForm
     {
         private final int myRib;
@@ -313,7 +291,7 @@ final class LocalEnvironment
     }
 
 
-    private static final class CompiledImmediateVariableSet
+    static final class CompiledImmediateVariableSet
         implements CompiledForm
     {
         private final int          myAddress;
@@ -336,7 +314,7 @@ final class LocalEnvironment
     }
 
 
-    private static final class CompiledLocalVariableSet
+    static final class CompiledLocalVariableSet
         implements CompiledForm
     {
         private final int          myRib;

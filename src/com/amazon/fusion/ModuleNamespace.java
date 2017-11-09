@@ -1,11 +1,11 @@
-// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.BindingSite.makeExportBindingSite;
 import static com.amazon.fusion.GlobalState.DEFINE;
 import static com.amazon.fusion.GlobalState.REQUIRE;
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
-import com.amazon.fusion.TopLevelNamespace.TopLevelDefinedBinding;
 import java.util.Iterator;
 import java.util.Set;
 
@@ -21,21 +21,41 @@ final class ModuleNamespace
     static abstract class ProvidedBinding
         extends Binding
     {
-        private final BaseSymbol myName;
+        private final BaseSymbol     myName;
+        private final SourceLocation myLoc;
+        private BindingSite          mySite;
 
-        ProvidedBinding(BaseSymbol name)
+        ProvidedBinding(BaseSymbol name, SourceLocation sourceLocation)
         {
             myName = name;
+            myLoc  = sourceLocation;
         }
 
         @Override
         final BaseSymbol getName() { return myName; }
 
         @Override
-        final ProvidedBinding provideAs(BaseSymbol name)
+        BindingSite getBindingSite()
         {
-            return new ImportedProvidedBinding(name, this);
+            if (mySite == null)
+            {
+                mySite = makeExportBindingSite(myLoc, inside().getBindingSite());
+            }
+            return mySite;
         }
+
+        @Override
+        final ProvidedBinding provideAs(BaseSymbol name,
+                                        SourceLocation sourceLocation)
+        {
+            return new ImportedProvidedBinding(name, sourceLocation, this);
+        }
+
+        /**
+         * Gets the binding that's being exported, either a definition or
+         * import.
+         */
+        abstract Binding inside();
 
         @Override
         abstract ModuleDefinedBinding target();
@@ -45,39 +65,6 @@ final class ModuleNamespace
         final Object lookup(Namespace ns)
         {
             return target().lookup(ns);
-        }
-
-        @Override
-        CompiledForm compileDefine(Evaluator eval, Environment env,
-                                   SyntaxSymbol id, CompiledForm valueForm)
-            throws FusionException
-        {
-            return target().compileDefine(eval, env, id, valueForm);
-        }
-
-        @Override
-        final CompiledForm compileReference(Evaluator eval, Environment env)
-            throws FusionException
-        {
-            return target().compileReference(eval, env);
-        }
-
-        @Override
-        final CompiledForm compileTopReference(Evaluator eval, Environment env,
-                                               SyntaxSymbol id)
-            throws FusionException
-        {
-            return target().compileLocalTopReference(eval, env);
-        }
-
-        @Override
-        final CompiledForm compileSet(Evaluator eval, Environment env,
-                                      CompiledForm valueForm)
-            throws FusionException
-        {
-            // This isn't currently reachable, but it's an easy safeguard.
-            String message = "Mutation of imported binding is not allowed";
-            throw new ContractException(message);
         }
     }
 
@@ -90,9 +77,10 @@ final class ModuleNamespace
         private final ModuleDefinedBinding myDefinition;
 
         DefinedProvidedBinding(BaseSymbol name,
+                               SourceLocation sourceLocation,
                                ModuleDefinedBinding binding)
         {
-            super(name);
+            super(name, sourceLocation);
 
             assert binding.target() == binding;
             myDefinition = binding;
@@ -100,7 +88,15 @@ final class ModuleNamespace
 
         DefinedProvidedBinding(ModuleDefinedBinding binding)
         {
-            this(binding.getName(), binding);
+            this(binding.getName(),
+                 binding.getBindingSite().getSourceLocation(),
+                 binding);
+        }
+
+        @Override
+        Binding inside()
+        {
+            return myDefinition;
         }
 
         @Override
@@ -113,6 +109,12 @@ final class ModuleNamespace
         ModuleIdentity getTargetModule()
         {
             return myDefinition.myModuleId;
+        }
+
+        @Override
+        Object visit(Visitor v) throws FusionException
+        {
+            return v.visit(this);
         }
 
         @Override
@@ -131,10 +133,18 @@ final class ModuleNamespace
     {
         private final ProvidedBinding myImport;
 
-        ImportedProvidedBinding(BaseSymbol name, ProvidedBinding imported)
+        ImportedProvidedBinding(BaseSymbol name,
+                                SourceLocation sourceLocation,
+                                ProvidedBinding imported)
         {
-            super(name);
+            super(name, sourceLocation);
             myImport = imported;
+        }
+
+        @Override
+        Binding inside()
+        {
+            return myImport;
         }
 
         @Override
@@ -150,6 +160,12 @@ final class ModuleNamespace
         }
 
         @Override
+        Object visit(Visitor v) throws FusionException
+        {
+            return v.visit(this);
+        }
+
+        @Override
         public String toString()
         {
             return "{{{ImportedProvidedBinding " + getName()
@@ -160,7 +176,7 @@ final class ModuleNamespace
 
     /**
      * Denotes a module-level binding imported into a module via
-     * {@code require}.
+     * {@code require} or a language declaration.
      *
      * @see LanguageBinding
      */
@@ -201,20 +217,16 @@ final class ModuleNamespace
         }
 
         @Override
-        ProvidedBinding provideAs(BaseSymbol name)
+        ProvidedBinding provideAs(BaseSymbol name,
+                                  SourceLocation sourceLocation)
         {
-            return new ImportedProvidedBinding(name, myTarget);
+            return new ImportedProvidedBinding(name, sourceLocation, getProvided());
         }
 
         @Override
-        CompiledForm compileTopReference(Evaluator eval,
-                                         Environment env,
-                                         SyntaxSymbol id)
-            throws FusionException
+        Object visit(Visitor v) throws FusionException
         {
-            String message =
-                "#%top not implemented for required binding: " + this;
-            throw new IllegalStateException(message);
+            return v.visit(this);
         }
 
         @Override
@@ -261,14 +273,9 @@ final class ModuleNamespace
         }
 
         @Override
-        public CompiledForm compileTopReference(Evaluator eval,
-                                                Environment env,
-                                                SyntaxSymbol id)
-            throws FusionException
+        Object visit(Visitor v) throws FusionException
         {
-            String message =
-                "#%top not implemented for language binding: " + this;
-            throw new SyntaxException("#%top", message, id);
+            return v.visit(this);
         }
 
         @Override
@@ -325,9 +332,9 @@ final class ModuleNamespace
         }
 
         @Override
-        ProvidedBinding provideAs(BaseSymbol name)
+        ProvidedBinding provideAs(BaseSymbol name, SourceLocation idLocation)
         {
-            return new DefinedProvidedBinding(name, this);
+            return new DefinedProvidedBinding(name, idLocation, this);
         }
 
         @Override
@@ -342,8 +349,8 @@ final class ModuleNamespace
                     localNamespace.getRegistry().lookup(myModuleId);
                 assert module != null : "Module not found: " + myModuleId;
 
-                ModuleStore ns = module.getNamespace();
-                return ns.lookup(myAddress);
+                ModuleStore store = module.getStore();
+                return store.lookup(myAddress);
             }
 
             // We can't use our address directly, since we may be compiling
@@ -353,16 +360,16 @@ final class ModuleNamespace
 
         Object lookup(ModuleInstance module)
         {
-            ModuleStore ns = module.getNamespace();
+            ModuleStore store = module.getStore();
 
             if (module.getIdentity() != myModuleId)
             {
-                module = ns.getRegistry().lookup(myModuleId);
+                module = store.getRegistry().lookup(myModuleId);
                 assert module != null : "Module not found: " + myModuleId;
-                ns = module.getNamespace();
+                store = module.getStore();
             }
 
-            return ns.lookup(myAddress);
+            return store.lookup(myAddress);
         }
 
         @Override
@@ -372,46 +379,9 @@ final class ModuleNamespace
         }
 
         @Override
-        CompiledForm compileDefine(Evaluator eval,
-                                   Environment env,
-                                   SyntaxSymbol id,
-                                   CompiledForm valueForm)
-            throws FusionException
+        Object visit(Visitor v) throws FusionException
         {
-            return env.namespace().compileDefine(eval, this, id, valueForm);
-        }
-
-        @Override
-        CompiledForm compileTopReference(Evaluator eval,
-                                         Environment env,
-                                         SyntaxSymbol id)
-            throws FusionException
-        {
-            // We should never get here.
-            String message =
-                "#%top not implemented for module binding: " + this;
-            throw new SyntaxException("#%top", message, id);
-        }
-
-        @Override
-        CompiledForm compileReference(Evaluator eval, Environment env)
-            throws FusionException
-        {
-            Namespace localNamespace = env.namespace();
-            if (localNamespace.getModuleId() != myModuleId)
-            {
-                // We have a reference to a binding from another module!
-                // Compiled form must include address of the module since it
-                // won't be the top of the runtime environment chain.
-
-                int moduleAddress =
-                    localNamespace.requiredModuleAddress(myModuleId);
-
-                return new CompiledImportedVariableReference(moduleAddress,
-                                                             myAddress);
-            }
-
-            return compileLocalTopReference(eval, env);
+            return v.visit(this);
         }
 
         @Override
@@ -511,6 +481,13 @@ final class ModuleNamespace
 
 
     @Override
+    Object visit(Visitor v) throws FusionException
+    {
+        return v.accept(this);
+    }
+
+
+    @Override
     NsDefinedBinding newDefinedBinding(SyntaxSymbol identifier, int address)
     {
         return new ModuleDefinedBinding(identifier, address, getModuleId());
@@ -531,52 +508,6 @@ final class ModuleNamespace
                                        ProvidedBinding target)
     {
         return new ModuleRequiredBinding(localId, target);
-    }
-
-
-    @Override
-    CompiledForm compileDefine(Evaluator eval,
-                               FreeBinding binding,
-                               SyntaxSymbol id,
-                               CompiledForm valueForm)
-        throws FusionException
-    {
-        throw new IllegalStateException("Unexpected define in module: "
-                                        + binding);
-    }
-
-
-    @Override
-    CompiledForm compileDefine(Evaluator eval,
-                               TopLevelDefinedBinding binding,
-                               SyntaxSymbol id,
-                               CompiledForm valueForm)
-        throws FusionException
-    {
-        throw new IllegalStateException("Unexpected define in module: "
-                                        + binding);
-    }
-
-
-    @Override
-    CompiledForm compileDefine(Evaluator eval,
-                               ModuleDefinedBinding binding,
-                               SyntaxSymbol id,
-                               CompiledForm valueForm)
-        throws FusionException
-    {
-        String name = binding.getName().stringValue();
-        return new CompiledTopDefine(name, binding.myAddress, valueForm);
-
-    }
-
-
-    @Override
-    CompiledForm compileFreeTopReference(SyntaxSymbol identifier)
-        throws FusionException
-    {
-        throw new IllegalStateException("Unexpected #%top in module: "
-                                        + identifier);
     }
 
 
