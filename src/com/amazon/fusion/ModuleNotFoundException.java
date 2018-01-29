@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2018 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -7,8 +7,8 @@ package com.amazon.fusion;
  * Indicates failure to locate a required module.
  */
 @SuppressWarnings("serial")
-public class ModuleNotFoundException
-    extends FusionException
+public final class ModuleNotFoundException
+    extends FusionErrorException
 {
     ModuleNotFoundException(String message)
     {

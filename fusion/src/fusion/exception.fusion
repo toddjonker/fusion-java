@@ -1,32 +1,208 @@
-// Copyright (c) 2013-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2013-2018 Amazon.com, Inc.  All rights reserved.
 
 (module exception '/fusion/private/kernel'
 
   '''
 Operations for working with exceptions.
 
-At present, Fusion has no support for catching exceptions or for creating
-custom exception types.
+A Fusion "exception" is any value passed to `raise`, which in turn invokes the
+current exception handler on a thread.  While values of any type can be
+`raise`d, all exceptions raised by the Fusion runtime and standard library are
+subtypes of `exn`.  Thrown `exn` values include a continuation trace (_i.e._,
+stack trace) and other information describing the problem.
+
+Exceptions can be understood to have an inheritance hierarchy along these lines:
+
+  * any raised value
+    * `exn`: the base type of all standard exceptions
+      * `error_exn`: exceptions that indicate runtime errors
+          * `contract_error`: failure to satisfy the contract of a procedure or
+            syntax form
+              * `arity_error`: a procedure was called with the wrong number of
+                arguments
+              * `argument_error`: a procedure was called with an invalid
+                argument
+              * `result_error`: a procedure returned an invalid result
+          * `syntax_error`: a syntax form was used incorrectly
+              * `unbound_error`: an identifier has no binding
+      * `break_exn`: the thread was interrupted (not implemented yet)
+
+The various exception types are implicitly constructed and thrown by
+corresponding specializations of `raise`.
+
+Catch exceptions using `with_handlers`, using predicates to match exceptions
+with handlers.
+
+    (with_handlers
+      [(is_result_error   (|e| (displayln "A procedure returned a bad result"))),
+       (is_argument_error (|e| (displayln "A procedure was passed a bad value"))),
+       (is_error_exn      (|e| (displayln "Something else went wrong, rethrowing")
+                               (raise e)))]
+      (do_something_that_raises))
   '''
 
+  (require
+    "/fusion/equality"
+    "/fusion/experimental/syntax"
+    "/fusion/ffi/java"
+    "/fusion/private/bind"
+    "/fusion/private/builtins"
+    "/fusion/private/compare"
+    "/fusion/private/control"
+    "/fusion/private/kernel2"
+    "/fusion/private/raise"
+    "/fusion/private/sexp"
+    "/fusion/string"
+  )
 
-  (provide assert)
-  (define_syntax assert
-    (java_new "com.amazon.fusion.AssertForm"))
+  (provide // from /fusion/private/raise
+    assert
+    raise
+    raise_argument_error
+    raise_arity_error
+    raise_contract_error
+    raise_result_error
+  )
 
-  (provide raise_argument_error)
-  (define raise_argument_error
-    (java_new "com.amazon.fusion.RaiseArgumentErrorProc"))
 
-  (provide raise_arity_error)
-  (define raise_arity_error
-    (java_new "com.amazon.fusion.RaiseArityErrorProc"))
+  (provide call_with_handler)
+  (define call_with_handler
+    '''
+    (call_with_handler handler thunk)
 
-  (provide raise_contract_error)
-  (define raise_contract_error
-    (java_new "com.amazon.fusion.RaiseContractErrorProc"))
+Installs the `handler` then calls the `thunk`.  If `raise` is called while
+the thunk is evaluated, the handler is called with the raised value.
+This happens in tail position with respect to `call_with_handler`.
 
-  (provide raise_result_error)
-  (define raise_result_error
-    (java_new "com.amazon.fusion.RaiseResultErrorProc"))
+The handler must be a procedure that accepts one argument: the raised value.
+
+Most code should use the `with_handlers` syntax form instead of this procedure,
+which is prone to error by using a non-thunk body expression.
+    '''
+    (java_new "com.amazon.fusion.CallWithHandlerProc"))
+
+ (define (sequence_handler preds_and_handlers)  // Argument is a sexp of pairs.
+   (lambda (raised)
+     (let loop [(phs preds_and_handlers)]
+       (if (not (is_pair phs))
+         (raise raised)            // Re-raise the same exception.
+         (let [(ph (head phs))]
+           (if ((head ph) raised)
+             ((tail ph) raised)
+             (loop (tail phs))))))))
+
+
+  (provide with_handlers)
+  (define_syntax with_handlers
+    '''
+    (with_handlers ((pred_expr handler_expr) ...) body ...+)
+
+Evaluates each `pred_expr` (predicate) and `handler_expr` (handler) in order,
+and then the `body` forms.  The predicate and handler expressions must each
+return a procedure that accepts one argument: a raised exception value.
+
+If no exceptions are raised during evaluation of the body, then the result of
+the `with_handlers` form is the result of the last `body` form.
+
+If an exception is raised, then each predicate is applied to the exception
+value. Once a predicate returns a truthy value, then the corresponding handler
+is applied to the exception, and the handler's result becomes the result of
+the entire `with_handlers` form. If the exception is not matched by any
+predicate, then it is re-raised to the continuation of the `with_handlers`
+expression.
+
+Most code should avoid using catch-all predicates like `(lambda (x) true)` that
+match exceptions that should generally not be handled by application code.
+In particular, it will non-`error_exn` exceptions like interrupts, which must
+not be ignored.
+See the [Racket Guide on Exceptions][racket-exn] for more details.
+
+  [racket-exn]: https://docs.racket-lang.org/guide/exns.html
+    '''
+    (let [(ctx (quote_syntax here)),
+          (wrong
+            (lambda (stx)
+              (wrong_syntax stx
+                ''' Bad syntax for with_handlers; usage: '''
+                ''' (with_handlers ((pred-expr handler-expr) ...) body ...+) ''')))]
+      (lambda (stx)
+        (if (< (syntax_size stx) 3)
+          (wrong stx)
+          null)
+        (lets
+          [(orig_args (tail (syntax_unwrap stx))),
+           (body (tail orig_args)),
+           (handler_args (let [(h (syntax_unwrap (head orig_args)))]
+                           (if (is_sexp h) h
+                             (if (is_list h) (apply sexp h)
+                               (wrong stx))))),
+           (ph_exprs
+             (let loop [(phs handler_args)]
+               (if (not (is_pair phs))
+                 (quote ())
+                 (let [(ph (head phs))]
+                   (if (=== 2 (syntax_size ph))
+                     (pair (sexp (quote_syntax pair) (syntax_get ph 0) (syntax_get ph 1))
+                       (loop (tail phs)))
+                     (wrong_syntax ph
+                       '''Bad syntax. Handler must be a pair of predicate and handler expressions.'''))
+                   ))))
+          ]
+          (datum_to_syntax
+            (sexp (quote_syntax call_with_handler)         // (call_with_handler
+              (sexp (quote_syntax sequence_handler)        //   (sequence_handler
+                (pair (quote_syntax sexp) ph_exprs))       //     (sexp (pair P H) ...))
+              (apply sexp (quote_syntax lambda) (quote ()) //   (lambda ()
+                  body))                                   //     body ...+))
+            ctx
+            stx)))))
+
+
+  (define FusionExn     (java_class "com.amazon.fusion.FusionException"))
+  (define FusionUserExn (java_class "com.amazon.fusion.FusionUserException"))
+
+  (provide is_exn)
+  (define (is_exn v)
+    '''
+Determines whether a value is an exception of type `exn`.
+Returns `true` or `false`.
+    '''
+    // This is special-case because we have to filter out non-exception values
+    // that may have been raised.
+    (and   (java_instance_of FusionExn     v)
+      (not (java_instance_of FusionUserExn v))))
+
+
+  (define_syntax generate_predicate
+    (lambda (stx)
+      (lets
+        [(orig_args (syntax_subseq stx 1)),
+         (pred_name (syntax_get orig_args 0)),
+         (exn_name  (syntax_get orig_args 1)),
+         (exn_class (syntax_get orig_args 2)),
+         (docs (string_append
+                 "\n    (" (syntax_unwrap pred_name) " v)\n\n"
+                 "Determines whether a value is an exception of type `"
+                 (syntax_unwrap exn_name)
+                 "`. Returns `true` or `false`."))]
+        (datum_to_syntax
+          (sexp (quote_syntax begin)                            // (begin
+            (sexp (quote_syntax provide) pred_name)             //   (provide NAME)
+            (sexp (quote_syntax define) pred_name               //   (define NAME
+              docs                                              //     docs
+              (quasisyntax
+                (let [(Exn (java_class (unsyntax exn_class)))]  //     (let [(Exn (java_class exn_class))]
+                  (lambda (e)                                   //       (lambda (e)
+                    (java_instance_of Exn e))))))               //         (java_instance_of Exn e)))))
+          (quote_syntax here)
+          stx))))
+
+  (generate_predicate is_error_exn      error_exn      "com.amazon.fusion.FusionErrorException")
+  (generate_predicate is_argument_error argument_error "com.amazon.fusion.ArgumentException")
+  (generate_predicate is_arity_error    arity_error    "com.amazon.fusion.ArityFailure")
+  (generate_predicate is_contract_error contract_error "com.amazon.fusion.ContractException")
+  (generate_predicate is_result_error   result_error   "com.amazon.fusion.ResultFailure")
+  (generate_predicate is_syntax_error   syntax_error   "com.amazon.fusion.SyntaxException")
+  (generate_predicate is_unbound_error  unbound_error  "com.amazon.fusion.UnboundIdentifierException")
+
 )
