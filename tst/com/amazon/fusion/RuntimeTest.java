@@ -85,6 +85,33 @@ public class RuntimeTest
         runtimeBuilder().immutable().setDefaultLanguage("/fusion/base");
     }
 
+    @Test
+    public void testClassloaderRepository()
+        throws Exception
+    {
+        FusionRuntimeBuilder b = runtimeBuilder();
+
+        {
+            FusionRuntime rt = b.build();
+            TopLevel topLevel = rt.makeTopLevel();
+            try
+            {
+                topLevel.requireModule("/cl_test/simple");
+                fail("Expected to not load classloader test module");
+            }
+            catch (ModuleNotFoundException e) {}
+        }
+
+        b = b.withClassloaderRepository(this.getClass(), "/com/amazon/fusion/testrepo/manifest.ion");
+        {
+            FusionRuntime rt = b.build();
+            TopLevel topLevel = rt.makeTopLevel();
+            topLevel.requireModule("/cl_test/simple");
+            Object answer = topLevel.eval("the_answer");
+            checkLong(42L, answer);
+        }
+    }
+
 
     @Test
     public void testDefaultCurrentDirectory()

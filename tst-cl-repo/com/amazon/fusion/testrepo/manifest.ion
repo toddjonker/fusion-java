@@ -1,0 +1,7 @@
+{
+  version: 1,
+  root: "/com/amazon/fusion/testrepo",
+  modules: [
+    "/cl_test/simple",
+  ]
+}
