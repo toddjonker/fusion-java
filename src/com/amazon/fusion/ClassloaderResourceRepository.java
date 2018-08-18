@@ -75,6 +75,10 @@ final class ClassloaderResourceRepository
 
         try(InputStream manifestIn = resourceClass.getResourceAsStream(manifestPath))
         {
+            if (manifestIn == null)
+            {
+                throw new FusionException("No classloader manifest found: " + manifestIn);
+            }
             IonLoader loader = ion.getLoader();
             IonDatagram manifestDatagram = loader.load(manifestIn);
             if (manifestDatagram.size() != 1)

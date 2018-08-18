@@ -112,6 +112,15 @@ public class RuntimeTest
         }
     }
 
+    @Test
+    public void testClassLoaderRepositoryNotFound()
+        throws Exception
+    {
+        FusionRuntimeBuilder b = runtimeBuilder();
+        b = b.withClassloaderRepository(this.getClass(), "/com/amazon/fusion/testrepo/manifest.ion");
+        FusionRuntime rt = b.build();
+    }
+
 
     @Test
     public void testDefaultCurrentDirectory()
