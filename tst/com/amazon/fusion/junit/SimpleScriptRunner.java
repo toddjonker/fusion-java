@@ -1,7 +1,8 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2018 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion.junit;
 
+import com.amazon.fusion.FusionException;
 import com.amazon.fusion.FusionRuntime;
 import com.amazon.fusion.FusionRuntimeBuilder;
 import com.amazon.fusion.TopLevel;
@@ -50,9 +51,7 @@ public class SimpleScriptRunner
         public void evaluate()
             throws Throwable
         {
-            FusionRuntime r = myRunner.myRuntimeBuilder.build();
-            TopLevel t = r.getDefaultTopLevel();
-            t.load(myScript);
+            myRunner.load(myScript);
         }
     }
 
@@ -60,7 +59,7 @@ public class SimpleScriptRunner
     //========================================================================
 
 
-    private final FusionRuntimeBuilder myRuntimeBuilder;
+    private final FusionRuntime myRuntime;
 
 
     public SimpleScriptRunner(Class<?> testClass)
@@ -69,14 +68,23 @@ public class SimpleScriptRunner
         super(testClass);
 
         FusionRuntimeBuilder b = FusionRuntimeBuilder.standard();
+
+        // The former default works in an IDE, the latter overrides it
+        // during scripted builds.
+        b = b.withBootstrapRepository(new File("fusion"));
         b = b.withConfigProperties(testClass, "/fusion.properties");
 
         File tstRepo = new File("ftst/repo");
         b.addRepositoryDirectory(tstRepo);
 
-        myRuntimeBuilder = b.immutable();
+        myRuntime = b.build();
     }
 
+    void load(File script)
+        throws FusionException
+    {
+        myRuntime.makeTopLevel().load(script);
+    }
 
     @Override
     protected List<File> getChildren()
