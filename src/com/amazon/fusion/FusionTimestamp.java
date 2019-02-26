@@ -20,7 +20,9 @@ import static com.amazon.ion.Timestamp.UTC_OFFSET;
 import static com.amazon.ion.Timestamp.createFromUtcFields;
 import static com.amazon.ion.Timestamp.forDay;
 import static com.amazon.ion.Timestamp.forMinute;
+import static com.amazon.ion.Timestamp.forMonth;
 import static com.amazon.ion.Timestamp.forSecond;
+import static com.amazon.ion.Timestamp.forYear;
 import static com.amazon.ion.util.IonTextUtils.isDigit;
 import com.amazon.fusion.FusionBool.BaseBool;
 import com.amazon.fusion.FusionNumber.BaseDecimal;
@@ -564,19 +566,11 @@ final class FusionTimestamp
                 break;
 
             case 2:
-                // TODO: replace deprecated method with forMonth() when available
-                // forMonth(year, month);
-
-                ionTimestamp = createFromUtcFields(Precision.MONTH, year, month, 1, 0, 0, 0, BigDecimal.ZERO, null);
-
+                ionTimestamp = forMonth(year, month);
                 break;
 
             case 1:
-                // TODO: replace deprecated method with forYear() when available
-                // forYear(year);
-
-                ionTimestamp = createFromUtcFields(Precision.YEAR, year, 1, 1, 0, 0, 0, BigDecimal.ZERO, null);
-
+                ionTimestamp = forYear(year);
                 break;
             }
         }
@@ -952,7 +946,7 @@ final class FusionTimestamp
         @Override
         Timestamp add(Timestamp timestamp, int period)
         {
-            return timestamp.addYear(period);
+            return timestamp.adjustYear(period);
         }
     }
 
@@ -962,7 +956,7 @@ final class FusionTimestamp
         @Override
         Timestamp add(Timestamp timestamp, int period)
         {
-            return timestamp.addMonth(period);
+            return timestamp.adjustMonth(period);
         }
     }
 
@@ -972,7 +966,7 @@ final class FusionTimestamp
         @Override
         Timestamp add(Timestamp timestamp, int period)
         {
-            return timestamp.addDay(period);
+            return timestamp.adjustDay(period);
         }
     }
 
@@ -982,7 +976,7 @@ final class FusionTimestamp
         @Override
         Timestamp add(Timestamp timestamp, int period)
         {
-            return timestamp.addHour(period);
+            return timestamp.adjustHour(period);
         }
     }
 
@@ -992,7 +986,7 @@ final class FusionTimestamp
         @Override
         Timestamp add(Timestamp timestamp, int period)
         {
-            return timestamp.addMinute(period);
+            return timestamp.adjustMinute(period);
         }
     }
 
@@ -1002,7 +996,7 @@ final class FusionTimestamp
         @Override
         Timestamp add(Timestamp timestamp, int period)
         {
-            return timestamp.addSecond(period);
+            return timestamp.adjustSecond(period);
         }
     }
 }
