@@ -77,7 +77,7 @@ final class ClassloaderResourceRepository
         {
             if (manifestIn == null)
             {
-                throw new FusionException("No classloader manifest found: " + manifestIn);
+                throw new FusionException("No classloader manifest found: " + manifestPath);
             }
             IonLoader loader = ion.getLoader();
             IonDatagram manifestDatagram = loader.load(manifestIn);
