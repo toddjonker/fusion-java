@@ -1,10 +1,14 @@
-// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2018 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionString.makeString;
 import static com.amazon.fusion.FusionValue.UNDEF;
+import com.amazon.ion.IonReader;
+import com.amazon.ion.IonStruct;
 import com.amazon.ion.IonSystem;
+import java.io.IOException;
+import java.io.InputStream;
 
 /**
  * The core set of objects from that are needed by other parts of the
@@ -108,22 +112,19 @@ final class GlobalState
                                    builder.buildModuleRepositories());
 
         ModuleBuilderImpl ns =
-            new ModuleBuilderImpl(resolver, registry, KERNEL_MODULE_IDENTITY);
+            new ModuleBuilderImpl(resolver, registry, KERNEL_MODULE_IDENTITY,
+                                  kernelDocs(system));
 
         ns.define(ALL_DEFINED_OUT, new ProvideForm.AllDefinedOutForm());
         ns.define(BEGIN, new BeginForm());
 
-        ns.define("current_directory", currentDirectory,
-                  "A [parameter](fusion/parameter.html) holding the thread-local working directory.");
+        ns.define("current_directory", currentDirectory);
         ns.define("current_ion_reader", new CurrentIonReaderParameter());
-        ns.define("current_namespace", currentNamespaceParam,
-                  "A [parameter](fusion/parameter.html) holding the thread-local namespace.  This value has no direct\n" +
-                  "relationship to the namespace lexically enclosing the parameter call.");
+        ns.define("current_namespace", currentNamespaceParam);
 
         ns.define(DEFINE, new DefineForm());
         ns.define(DEFINE_SYNTAX, new DefineSyntaxForm());
-        ns.define(EOF, FusionIo.eof(null),
-                  "A unique value that denotes an end-of-file condition.");
+        ns.define(EOF, FusionIo.eof(null));
         ns.define("java_new", new JavaNewProc());
         ns.define(LAMBDA, new LambdaForm());
         ns.define("load", new LoadProc(loadHandler));
@@ -170,5 +171,19 @@ final class GlobalState
         SyntaxSymbol sym = SyntaxSymbol.make(eval, name);
         sym = sym.copyReplacingBinding(kernelBinding(name));
         return sym;
+    }
+
+    private static IonStruct kernelDocs(IonSystem system)
+    {
+        try (InputStream stream = GlobalState.class.getResourceAsStream("kernel_docs.ion");
+             IonReader reader = system.newReader(stream))
+        {
+            reader.next();
+            return (IonStruct) system.newValue(reader);
+        }
+        catch (IOException e)
+        {
+            throw new Error("Should not happen", e);
+        }
     }
 }
