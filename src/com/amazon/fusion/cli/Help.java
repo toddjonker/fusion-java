@@ -1,13 +1,14 @@
-// Copyright (c) 2005-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2005-2020 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion.cli;
 
 import java.io.IOException;
+import java.io.PrintWriter;
 
 class Help
     extends Command
 {
-    private static final String HELP_ONE_LINER =
+    static final String HELP_ONE_LINER =
         "Describe the usage of this program or its commands.";
 
     private static final String HELP_USAGE =
@@ -18,10 +19,20 @@ class Help
         "descriptions.  If commands are specified, print the full help information\n" +
         "for each one.";
 
-    private final static String APP_HELP_TEXT_INTRO =
-        "Usage: fusion [OPTIONS ...] <command> [ARGS ...]\n" +
+    final static String APP_HELP_TEXT_INTRO =
+        "Usage: fusion [OPTIONS ...] <command> [ARGS ...] [; <command> [ARGS ...]] ...\n" +
         "Type 'fusion help <command>' for help on a specific command.\n\n" +
         "Available commands:\n";
+
+    final static String APP_HELP_TEXT_BODY =
+        "\n" +
+        "Multiple commands can be provided in the same invocation, separated by the\n" +
+        "semicolon character. In most shells this character will need escaping:\n" +
+        "\n" +
+        "    $ fusion require /fusion/io \\; load myscript.fusion\n" +
+        "\n" +
+        "All commands are evaluated, in order, in the same top-level namespace. Thus the\n" +
+        "`require` command above affects the subsequent `load`.";
 
     private final static String FULL_HELP_SEPARATOR =
         "\n                                *      *      *\n\n";
@@ -32,7 +43,7 @@ class Help
 
     Help()
     {
-        super("help", new String[] { "?", "h" });
+        super("help", "?", "h");
         putHelpText(HELP_ONE_LINER, HELP_USAGE, HELP_BODY);
     }
 
@@ -41,36 +52,38 @@ class Help
 
 
     @Override
-    Executor makeExecutor(String[] arguments)
+    Executor makeExecutor(GlobalOptions globals, String[] args)
     {
-        return new Executor(arguments);
+        return new Executor(globals, args);
     }
 
 
     private static class Executor
-        implements Command.Executor
+        extends StdioExecutor
     {
         private final String[] myCommands;
 
-        private Executor(String[] commands)
+        private Executor(GlobalOptions globals, String[] commands)
         {
+            super(globals);
+
             myCommands = commands;
         }
 
 
         @Override
-        public int execute()
+        public int execute(PrintWriter out, PrintWriter err)
             throws UsageException, IOException
         {
-            System.out.println();
+            out.println();
 
             if ((myCommands == null) || (myCommands.length == 0))
             {
-                renderGeneralHelp(System.out);
+                renderGeneralHelp(out);
             }
             else
             {
-                renderCommands(System.out);
+                renderCommands(out);
             }
 
             return 0;
@@ -101,6 +114,7 @@ class Help
 
             table.render(out);
 
+            out.append(APP_HELP_TEXT_BODY);
             out.append(GlobalOptions.HELP);
         }
 

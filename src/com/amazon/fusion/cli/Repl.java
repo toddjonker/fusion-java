@@ -1,16 +1,17 @@
-// Copyright (c) 2012-2018 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2020 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion.cli;
 
-import static com.amazon.fusion.FusionIo.write;
-import static com.amazon.fusion.FusionVoid.isVoid;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import com.amazon.fusion.ExitException;
 import com.amazon.fusion.FusionException;
-import com.amazon.fusion.FusionRuntimeBuilder;
 import com.amazon.fusion.TopLevel;
-import com.amazon.fusion._Private_Trampoline;
 import com.amazon.ion.IonException;
+import java.io.BufferedReader;
 import java.io.Console;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 
 /**
@@ -25,8 +26,10 @@ class Repl
     private static final String HELP_USAGE =
         "repl";
     private static final String HELP_BODY =
-        "Enter the interactive console. Cannot be used when stdin or stdout have been\n" +
-        "redirected.";
+        "Enters the interactive console. Preceding `require`, `eval`, and `load` commands\n" +
+        "share the same namespace.\n" +
+        "\n" +
+        "This command cannot be used when stdin or stdout have been redirected.";
 
 
     Repl()
@@ -39,9 +42,7 @@ class Repl
     //=========================================================================
 
     @Override
-    Executor makeExecutor(GlobalOptions globals,
-                          Object        options,
-                          String[]      args)
+    Executor makeExecutor(GlobalOptions globals, String[] args)
         throws UsageException
     {
         if (args.length != 0)
@@ -49,10 +50,20 @@ class Repl
             return null;  // Evokes a general usage exception
         }
 
+        globals.collectDocumentation();
+
         Console console = System.console();
         if (console == null)
         {
-            throw new UsageException("There is no console available for the REPL.");
+            InputStreamReader isr =
+                new InputStreamReader(globals.stdin(), UTF_8);
+            BufferedReader in = new BufferedReader(isr);
+
+            OutputStreamWriter osw =
+                new OutputStreamWriter(globals.stdout(), UTF_8);
+            PrintWriter out = new PrintWriter(osw);
+
+            return new Executor(globals, in, out);
         }
 
         return new Executor(globals, console);
@@ -62,9 +73,10 @@ class Repl
     private static class Executor
         extends FusionExecutor
     {
-        private       TopLevel      myTopLevel;
-        private final Console       myConsole;
-        private final PrintWriter   myOut;
+        private       TopLevel       myTopLevel;
+        private final Console        myConsole;
+        private final BufferedReader myIn;
+        private final PrintWriter    myOut;
 
 
         Executor(GlobalOptions globals, Console console)
@@ -72,33 +84,41 @@ class Repl
             super(globals);
 
             myConsole = console;
+            myIn      = null;
             myOut     = console.writer();
         }
 
-
-        @Override
-        FusionRuntimeBuilder runtimeBuilder()
-            throws UsageException
+        Executor(GlobalOptions globals, BufferedReader in, PrintWriter out)
         {
-            FusionRuntimeBuilder builder = super.runtimeBuilder();
-            _Private_Trampoline.setDocumenting(builder, true);
-            return builder;
+            super(globals);
+
+            myConsole = null;
+            myIn      = in;
+            myOut     = out;
         }
 
+
         @Override
-        public int execute()
-            throws FusionException, UsageException
+        public int execute(PrintWriter out, PrintWriter err)
+            throws Exception
         {
-            // Bootstrap the runtime before printing the welcome banner, so
-            // that we don't do that when there's usage problems.
-            myTopLevel = runtime().getDefaultTopLevel();
-            myTopLevel.requireModule("/fusion/private/repl");
-
-            welcome();
-
-            while (rep())
+            try
             {
-                // loop!
+                // Bootstrap the runtime before printing the welcome banner, so
+                // that we don't do that when there's usage problems.
+                myTopLevel = runtime().getDefaultTopLevel();
+                myTopLevel.requireModule("/fusion/private/repl");
+
+                welcome();
+
+                while (rep())
+                {
+                    // loop!
+                }
+            }
+            finally
+            {
+                myOut.flush();
             }
 
             return 0;
@@ -115,9 +135,10 @@ class Repl
 
 
         private boolean rep()
+            throws IOException
         {
             blue("$");
-            String line = myConsole.readLine(" ");
+            String line = read();
 
             if (line == null)
             {
@@ -130,7 +151,7 @@ class Repl
             try
             {
                 Object result = myTopLevel.eval(line);
-                print(result);
+                writeResults(myTopLevel, result, myOut);
             }
             catch (ExitException e)
             {
@@ -147,27 +168,19 @@ class Repl
             return true;
         }
 
-
-        private void print(Object v)
-            throws FusionException
+        private String read()
+            throws IOException
         {
-            if (v instanceof Object[])
+            if (myConsole != null)
             {
-                Object[] results = (Object[]) v;
-                for (Object r : results)
-                {
-                    write(myTopLevel, r, myOut);
-                    myOut.println();
-                }
+                return myConsole.readLine(" ");
             }
-            else if (v != null && ! isVoid(myTopLevel, v))
+            else
             {
-                write(myTopLevel, v, myOut);
-                myOut.println();
+                myOut.flush();
+                return myIn.readLine();
             }
         }
-
-
 
         private void blue(String text)
         {

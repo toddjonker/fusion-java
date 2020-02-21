@@ -1,10 +1,13 @@
-// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.ModuleIdentity.isValidAbsoluteModulePath;
 import static com.amazon.fusion._Private_CoverageCollectorImpl.fromDirectory;
+import com.amazon.ion.IonCatalog;
+import com.amazon.ion.system.SimpleCatalog;
 import java.io.File;
+import java.io.OutputStream;
 import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -66,12 +69,27 @@ import java.util.Properties;
  * {@code /fusion} language, but this default is controlled by the
  * configuration declared here.
  *
+ * <h3>Default Ion Catalog</h3>
+ *
+ * An {@link IonCatalog} provides shared symbol tables used to encode and read
+ * Ion binary data streams.  Applications can provide a default catalog that's
+ * populated, or can be populated on-demand, with any necessary shared symbol
+ * tables.  If not configured when {@link #build()} is called, the builder
+ * creates an empty {@link SimpleCatalog}.
+ *
  * <h3>Initial Current Directory</h3>
  *
  * Fusion's {@code current_directory} parameter holds the current working
  * directory used by many IO operations. The runtime can be configured with a
  * specific default value. If not configured when {@link #build()} is called,
  * the builder uses the value of the {@code "user.dir"} system property.
+ *
+ * <h3>Initial Current Output Port</h3>
+ *
+ * Fusion's various output procedures ({@code write}, {@code display},
+ * {@code ionize}, <em>etc.</em>) send their data to a byte-oriented
+ * <em>output port</em>.  By default, this goes to {@link System#out}, but the
+ * runtime can be configured to use another {@link OutputStream}.
  *
  * <h3>Code Coverage Instrumentation<a id="coverage"/></h3>
  *
@@ -121,10 +139,12 @@ public class FusionRuntimeBuilder
     //=========================================================================
 
 
-    private File    myCurrentDirectory;
-    private File    myBootstrapRepository;
-    private File[]  myRepositoryDirectories;
-    private String  myDefaultLanguage = STANDARD_DEFAULT_LANGUAGE;
+    private OutputStream myCurrentOutputPort;
+    private File         myCurrentDirectory;
+    private File         myBootstrapRepository;
+    private File[]       myRepositoryDirectories;
+    private String       myDefaultLanguage = STANDARD_DEFAULT_LANGUAGE;
+    private IonCatalog   myDefaultIonCatalog;
 
     private File                       myCoverageDataDirectory;
     private _Private_CoverageCollector myCollector;
@@ -136,10 +156,12 @@ public class FusionRuntimeBuilder
 
     private FusionRuntimeBuilder(FusionRuntimeBuilder that)
     {
+        this.myCurrentOutputPort     = that.myCurrentOutputPort;
         this.myCurrentDirectory      = that.myCurrentDirectory;
         this.myBootstrapRepository   = that.myBootstrapRepository;
         this.myRepositoryDirectories = that.myRepositoryDirectories;
         this.myDefaultLanguage       = that.myDefaultLanguage;
+        this.myDefaultIonCatalog     = that.myDefaultIonCatalog;
         this.myCoverageDataDirectory = that.myCoverageDataDirectory;
         this.myCollector             = that.myCollector;
         this.myDocumenting           = that.myDocumenting;
@@ -352,12 +374,123 @@ public class FusionRuntimeBuilder
      * @return this builder, if it's mutable; otherwise a new mutable builder.
      *
      * @see #getDefaultLanguage()
-     * @see #withDefaultLanguage(String)
+     * @see #setDefaultLanguage(String)
      */
     public FusionRuntimeBuilder withDefaultLanguage(String absoluteModulePath)
     {
         FusionRuntimeBuilder b = mutable();
         b.setDefaultLanguage(absoluteModulePath);
+        return b;
+    }
+
+
+    //=========================================================================
+
+
+    /**
+     * Gets the default Ion symbol table catalog used with Ion binary data.
+     * By default, this property is null.
+     *
+     * @return an Ion symbol table catalog. May be null, which means the builder
+     * will create a new {@link SimpleCatalog} when {@link #build()} is called.
+     *
+     * @see #setDefaultIonCatalog(IonCatalog)
+     * @see #withDefaultIonCatalog(IonCatalog)
+     */
+    public IonCatalog getDefaultIonCatalog()
+    {
+        return myDefaultIonCatalog;
+    }
+
+
+    /**
+     * Sets the default Ion symbol table catalog used with Ion binary data.
+     *
+     * @param catalog may be null, which causes the builder to create a new
+     * {@link SimpleCatalog} when {@link #build()} is called.
+     *
+     * @see #getDefaultIonCatalog()
+     * @see #withDefaultIonCatalog(IonCatalog)
+     */
+    public void setDefaultIonCatalog(IonCatalog catalog)
+    {
+        mutationCheck();
+
+        myDefaultIonCatalog = catalog;
+    }
+
+
+    /**
+     * Declares the default Ion symbol table catalog used with Ion binary data,
+     * returning a new mutable builder if this is immutable.
+     *
+     * @param catalog may be null, which causes the builder to create a new
+     * {@link SimpleCatalog} when {@link #build()} is called.
+     *
+     * @return this builder, if it's mutable; otherwise a new mutable builder.
+     *
+     * @see #getDefaultIonCatalog()
+     * @see #setDefaultIonCatalog(IonCatalog)
+     */
+    public FusionRuntimeBuilder withDefaultIonCatalog(IonCatalog catalog)
+    {
+        FusionRuntimeBuilder b = mutable();
+        b.setDefaultIonCatalog(catalog);
+        return b;
+    }
+
+
+    //=========================================================================
+
+
+    /**
+     * Gets the default output stream used by various output procedures.
+     * By default, this property is null.
+     *
+     * @return an output stream. May be null, which means the builder
+     * will use {@link System#out}.
+     *
+     * @see #setInitialCurrentOutputPort(OutputStream)
+     * @see #withInitialCurrentOutputPort(OutputStream)
+     */
+    public OutputStream getInitialCurrentOutputPort()
+    {
+        return myCurrentOutputPort;
+    }
+
+
+    /**
+     * Sets the default output stream used by various output procedures.
+     *
+     * @param out may be null, which causes the builder to use
+     * {@link System#out}.
+     *
+     * @see #getInitialCurrentOutputPort()
+     * @see #withInitialCurrentOutputPort(OutputStream)
+     */
+    public void setInitialCurrentOutputPort(OutputStream out)
+    {
+        mutationCheck();
+        myCurrentOutputPort = out;
+    }
+
+
+    /**
+     * Declares the default output stream used by various output procedures,
+     * returning a new mutable builder if this is immutable.
+     *
+     * @param out may be null, which causes the builder to use
+     * {@link System#out}.
+     *
+     * @return this builder, if it's mutable; otherwise a new mutable builder.
+     *
+     * @see #getInitialCurrentOutputPort()
+     * @see #setInitialCurrentOutputPort(OutputStream)
+     */
+    public final FusionRuntimeBuilder withInitialCurrentOutputPort(OutputStream out)
+    {
+        FusionRuntimeBuilder b = mutable();
+        b.setInitialCurrentOutputPort(out);
         return b;
     }
 
@@ -398,14 +531,18 @@ public class FusionRuntimeBuilder
     {
         mutationCheck();
 
-        if (! directory.isAbsolute())
+        if (directory != null)
         {
-            directory = directory.getAbsoluteFile();
-        }
-        if (! directory.isDirectory())
-        {
-            String message = "Argument is not a directory: " + directory;
-            throw new IllegalArgumentException(message);
+            if (! directory.isAbsolute())
+            {
+                directory = directory.getAbsoluteFile();
+            }
+
+            if (! directory.isDirectory())
+            {
+                String message = "Argument is not a directory: " + directory;
+                throw new IllegalArgumentException(message);
+            }
         }
 
         myCurrentDirectory = directory;
@@ -523,7 +660,7 @@ public class FusionRuntimeBuilder
      * bootstrap repository.
      *
      * @see #getBootstrapRepository()
-     * @see #withBootstrapRepository(File)
+     * @see #setBootstrapRepository(File)
      */
     public final FusionRuntimeBuilder withBootstrapRepository(File directory)
     {
@@ -731,6 +868,11 @@ public class FusionRuntimeBuilder
     {
         // Ensure that we don't modify the user's builder.
         FusionRuntimeBuilder b = copy();
+
+        if (b.getInitialCurrentOutputPort() == null)
+        {
+            b.setInitialCurrentOutputPort(System.out);
+        }
 
         if (b.getInitialCurrentDirectory() == null)
         {

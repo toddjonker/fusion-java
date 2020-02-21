@@ -1,10 +1,134 @@
-// Copyright (c) 2013-2018 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2013-2020 Amazon.com, Inc.  All rights reserved.
 
 (module for '/fusion/private/kernel'
 
   '''
-Generic collection "comprehension" forms.
+The `for`-family of syntax forms enables concise, consistent iteration
+over many different varieties of aggregate data types, known as _series_ types.
+The variants differ in how the results are accumulated, but all accept the same
+inputs and traverse them in the same manner.
+
+The basic form is `for` itself:
+
+    (for [(a [1, 2]),
+          (b (sexp "a" "b"))]
+      (displayln (sexp a b)))
+
+Here, `a` and `b` are bound successively to the individual elements of a list
+and a sexp, respectively, then the body (a call to `display`) is evaluated
+with those bindings. Next, `a` and `b` are given fresh storage locations and
+new bindings to the next elements of the series.
+
+Since `for` always returns void, it's used to perform side effects; the example
+above prints two lines:
+
+    (1 "a")
+    (2 "b")
+
+
+For-clauses
+-----------
+
+Common to all `for` variants is the _for-clause_, a syntax fragment that
+declares one or more identifiers and an expression evaluating to a series value.
+Syntactically, these are similar to the binding clauses of the `let`-family of
+binding forms, allowing one or more bound identifiers:
+
+    for-clause := (id series_expr)
+                | ((id ...+) series_expr)
+
+The second form is used with series that produce multiple values:
+
+    (for_list [((name value) { "a": 1, "b": 2 })]
+      (display_to_string name "=" value))
+    =>
+    ["a=1", "b=2"]
+
+In all forms, the `series_expr`s are evaluated once before iteration begins,
+and the result must be a value of one of the series types.  The number of `id`s
+in a for-clause must match the number of values produced by each step of the
+series.
+
+
+Series Types
+------------
+
+A _series_ is a value that can be traversed by the `for` forms.  Traversing a
+series consists of a sequence of steps, and each step produces one or more
+values (consistent through the entire traversal).
+Depending on the type of series, the order in which the series is traversed may
+or may not be predictable.
+
+The following types are usable as series:
+
+  * Sequences (sexps and lists) are traversed in order, producing a single value
+    at each step.
+  * Structs are traversed in an undefined order. Each step produces a single
+    field as two values, the field name as a `symbol`  and the field value.
+  * Iterators produce one or more values as per `iterator_next`.
+
+
+Flat and Nested Traversal
+-------------------------
+
+The family variants come in pairs, starting with `for` or `fors`. When given a
+single for-clause, these behave identically, but given multiple clauses they
+behave differently.
+
+A `for` expression traverses all of its series in lock-step, taking one step on
+each series for each evaluation of the body:
+
+    (for [(a [1, 2]),
+          (b [5, 7])]
+      (display (sexp a b)))
+    =>
+    (1 5)(2 7)
+
+A `fors` expression traverses its series as nested loops, as if each clause
+were given in its own nested `for` expression:
+
+    (fors [(a [1, 2]),
+           (b [5, 7])]
+      (display (sexp a b)))
+    =>
+    (1 5)(1 7)(2 5)(2 7)
+
+This is similar to the distinction between `let` and `lets`, and like those
+forms the bound identifiers have different scopes in the two forms.
   '''
+
+
+/*
+
+Implementation Notes
+====================
+
+This implementation is ported from Racket's, but much has been stripped out.
+For example, Fusion doesn't yet have keywords, so Racket's #:when and #:unless
+clauses aren't supported.  This code is also at a lower level, since we don't
+have syntax-rules and other higher-level macro features.
+In general, though, this attempts to be as closely aligned as possible given
+current implementation constraints.
+
+https://github.com/racket/racket/blob/v6.5/racket/collects/racket/private/for.rkt
+
+
+Today, all values that are comprehended by `for` are wrapped by iterators, but
+the loops can be more efficient by specializing the components produced by
+`make_series` for a particular type.
+
+Racket does this in a way that enables [performance equivalent to hand-written
+loops](https://docs.racket-lang.org/guide/for.html#%28part._for-performance%29)
+when the concrete type is evident in the code.  It has [an abstract type called
+"sequence"](https://docs.racket-lang.org/reference/sequences.html) that drives
+iterations and comprehensions.  (Fusion calls it "series" because "sequence" is
+taken for a different abstract type.)
+
+The `for` macro can then use some simple type inference, or [explicit syntactic
+hints](https://docs.racket-lang.org/guide/for.html#%28part._sequences%29),
+to apply optimizations to the generated code.
+
+*/
 
 
   (require "/fusion/base"
@@ -13,10 +137,23 @@ Generic collection "comprehension" forms.
            "/fusion/experimental/syntax"
            "/fusion/iterator"
            "/fusion/list"
+           "/fusion/number"
            "/fusion/private/bind"
+           "/fusion/private/struct"
+           "/fusion/procedure"
            "/fusion/sexp"
+           "/fusion/string"
            "/fusion/unsafe/list"
-           "/fusion/unsafe/sexp")
+           "/fusion/unsafe/sexp"
+    (rename_in "/fusion/base" (quote Q) (quasiquote QQ) (unquote UQ)))
+
+  (provide
+    for           fors
+    for_fold      fors_fold
+    for_list      fors_list
+    for_sexp      fors_sexp
+    for_struct    fors_struct
+  )
 
 
   (define ctx  // PRIVATE!
@@ -27,96 +164,482 @@ Generic collection "comprehension" forms.
   (define (iterate series)
     (cond
       ((is_iterator series) series)
-      ((is_list     series) (unsafe_list_iterator series))
-      ((is_sexp     series) (unsafe_sexp_iterator series))
-      (true (raise_result_error "for_list" "series" series))))
+      ((is_list     series) (unsafe_list_iterator   series))
+      ((is_sexp     series) (unsafe_sexp_iterator   series))
+      ((is_struct   series) (unsafe_struct_iterator series))
+      (true (raise_result_error "for-clause" "series" series))))
+
+  (define (normalize_ids ids)
+    (if (is_identifier ids)
+      (datum_to_syntax (sexp ids))
+      ids))
+
+  (define (syntax_to_sexp stx)
+    (let [(datum (syntax_unwrap stx))]
+      (if (is_sexp datum)
+        datum
+        (apply sexp datum))))
+
+  (define (clause_ids original clauses_stx)
+    "Given for-clauses, return sexp of identifiers."
+    (let [(ids (|clause|
+                 (syntax_unwrap
+                   (normalize_ids
+                     (binding_ids original clause check_single_or_multi_id)))))]
+      (apply append (sexp)
+        (map ids (syntax_to_sexp clauses_stx)))))
 
 
-'''
-(for_list [     ] BODY)  =>  (stretchy_list (begin BODY))
-
-
-// TODO do we allocate new bindings for each I for each iteration?
-
-(for_list [(I S) ...] BODY)
-  =>
-(let [(iters (map iterate (list S ...)),
-      (result (stretchy_list))]
-  (let loop []
-    (if (all iterator_has_next iters)
-      (let [(I (iterator_next (element iters 0))),
-            ...]
-        (add_m result (begin BODY))
-        loop)
-      result)))
-
-'''
-
-  // TODO FUSION-36 Should allow internal definitions
-  // TODO Optimize for single-series case.
-  //      That will make fors_list much more efficient.
-  (defpub_syntax for_list
+  (define (make_series series)
     '''
-    (for_list ((id series) ...) body ...+)
+Very dumbed-down implementation of the series protocol using iterators.
 
-Iterates the `series` in parallel, binding the corresponding `id`s to each
-element in turn and evaluating `body`.  Each `series` expression must evaluate
-to a list, sexp, or iterator.  Returns a stretchy list of the results.
+The `pos` is an iterator.
+    '''
+    (values
+      iterator_next     // pos_vals
+      identity          // pos_next
+      (iterate series)  // init
+      iterator_has_next // pos_cont
+      false             // val_cont
+      false  ))         // all_cont
 
-If there are no `id`s declared, then the body is executed once.
 
-    (for_list
-      [ (even [0, 2, 4]),
-        (odd  [1, 3, 5]) ]
-      (+ even odd))             =>  [1, 5, 9]
+  (define (expand_clause orig_stx clause)
+    '''
+Expands a single for-clause into subforms that are spliced into the overall
+iteration syntax structure.
+
+Returns the syntax components to comprehend a single series:
+
+    ([((outer-id ...) outer-expr), ...]
+     outer-check
+     [(loop-id loop-expr), ...]
+     pos-guard
+     [((inner-id ...) inner-expr), ...]  // These are the for-clause vars
+     pre-guard
+     post-guard
+     (loop-arg ...))
+
+This is currently simpler than Racket's version because we don't have...
+   * syntax protection (dye packs) to disarm and rearm
+   * `do-in`
+   * sequence transformers
+   * any but the most basic clause forms
+    '''
+    (let_values
+      [((ids rhs) (split_binding orig_stx clause check_single_or_multi_id))]
+      (let [(ids (normalize_ids ids)),
+            (clause_loc (|s| (datum_to_syntax s ctx rhs)))] // Copy the rhs location
+        (datum_to_syntax
+          (quasiquote
+            [[((pos_vals pos_next init pos_cont val_cont all_cont)
+               (UQ (clause_loc (QQ (make_series (UQ rhs))))))],
+             (void),
+             [(pos init)],
+             (UQ (clause_loc (Q (if pos_cont (pos_cont pos) true)))),
+             [((UQ ids)
+               (UQ (clause_loc (Q (pos_vals pos)))))],
+             (UQ (clause_loc (QQ (if val_cont (UQ (syntax_append (quote_syntax (val_cont)) ids)) true)))),
+             (UQ (clause_loc (QQ (if all_cont (UQ (syntax_append (quote_syntax (all_cont pos)) ids)) true)))),
+             (UQ (clause_loc (Q ((pos_next pos)))))])
+          ctx
+          clause))))
+
+
+//=============================================================================
+// for_fold_derived, fors_fold_derived
+
+  (define_syntax for_foldX_derived
+    '''
+    (for_foldX_derived
+      (original is_nested emit binds)
+      [(accum-id init-expr), ...]
+      (for-clause ...)
+      body ...+)
+
+Helper form for `for_fold_derived`.
+
+  * `is_nested` is `true` if this is a `fors` expansion, in which case we emit
+    a loop between every `for-clause`.
+  * `emit` is true to emit code for the accumulated `binds`.
+  * `binds` is a sexp of forms as returned by `expand_clause`.
+  * The `for-clause`s are expanded in turn and pushed onto the `binds`.
+
     '''
     (lambda (stx)
-      (let [(content (unsafe_pair_tail (syntax_unwrap stx)))]
-        (when (< (size content) 2)
-          (wrong_syntax stx "expecting bindings and body"))
-        (let_values [((bindings body) (split_content stx content))]
-          (let [(begin_body (pair (quote begin) body))]
-            (datum_to_syntax
-              (if (not (is_pair bindings))
-                /* Base case -- no bindings */
-                (sexp (quote stretchy_list)          // (stretchy_list
-                      begin_body)                    //   (begin BODY...))
-                (let_values [((ids series) (unzip_bindings stx bindings))]
-                  (let
-                    [(ident_rebinds
-                      (let loop [(rebinds (sexp)),
-                                 (ids ids),
-                                 (i 0)]
-                        (if (is_empty ids)
-                          rebinds
-                          (loop (pair (sexp (head ids)
-                                        (sexp (quote iterator_next)
-                                          (sexp (quote element) (quote iters) i)))
-                                      rebinds)
-                                (tail ids)
-                                (+ 1 i)))))]
-                    (quasiquote
-                      (let [(iters (map iterate
-                                     (unquote (pair (quote list) series)))),
-                            (result (stretchy_list))]
-                        (let loop []
-                          (if (every iterator_has_next iters)
-                            (let (unquote ident_rebinds)
-                              (add_m result (unquote begin_body))
-                              (loop))
-                            result)))))))
-              ctx
-              stx))))))
+      (lets [(subforms (unsafe_pair_tail (syntax_unwrap stx))),
+             (meta     (head subforms)),
+             (original (syntax_get meta 0)),
+             (nested   (syntax_unwrap  (syntax_get meta 1))),
+             (emit     (syntax_unwrap  (syntax_get meta 2))),
+             (binds    (syntax_to_sexp (syntax_get meta 3)))]
+        // Check for at least one body clause.
+        (when (< (syntax_size stx) 5)
+          (wrong_syntax original))
+        (let [(accums  (head (tail subforms))),
+              (clauses (head (tail (tail subforms)))),
+              (body    (tail (tail (tail subforms))))]
+          (unless (is_sequence (syntax_unwrap accums))
+            (wrong_syntax original "bad accumulator sequence: " accums))
+          (unless (is_sequence (syntax_unwrap clauses))
+            (wrong_syntax original "bad for-clause sequence: " clauses))
+
+          // These are actually the `accum-id`s but we retain the terms from
+          // the Racket code to make it easier to compare them.
+          (let [(fold_vars (map (|b| (binding_ids original b check_single_id))
+                             (syntax_to_sexp accums)))]
+            (if (and (is_empty binds)
+                     (is_empty (syntax_unwrap clauses)))
+              // All done
+              (datum_to_syntax
+                (quasiquote
+                  (let (unquote accums)
+                    (let_values [((unquote fold_vars)
+                                  (unquote (append (quote (let ())) body)))]
+                      (unquote (pair (quote values) fold_vars)))))
+                ctx
+                stx)
+
+              (if emit
+                // Emit a loop, injecting the various parts of the binds
+                // (expanded for-clauses) where they belong.
+                // Here we manually emulate the pattern-matching ... and
+                // ... ... operations, decomposing the `binds` into lists of
+                // parts.
+                (lets [(binds  (reverse binds)),
+                       (...    (|n| (map (|b| (syntax_get b n)) binds))),
+                       (...... (|n| (apply syntax_append (map (|b| (syntax_get b n)) binds))))]
+                  (let [(outer_bindings (...... 0)),
+                        (outer_checks   (...    1)),
+                        (loop_bindings  (...... 2)),
+                        (pos_guards     (...    3)),
+                        (inner_bindings (...... 4)), // Bind the for-clause vars
+                        (pre_guards     (...    5)),
+                        (post_guards    (...    6)),
+                        (loop_args      (...... 7)),
+                        (done           (pair (quote values) fold_vars))]
+
+                    // Check for duplicate ids in the accums and for-clauses.
+                    // Racket doesn't do this; see test code for explanation.
+                    (lets [(clause_vars (clause_ids original inner_bindings)),
+                           (dupe (check_duplicate_identifier (append fold_vars clause_vars)))]
+                      (when dupe
+                        (wrong_syntax original "duplicate binding identifier: " dupe)))
+
+                    (datum_to_syntax
+                      (quasiquote
+                        (let_values (unquote outer_bindings)
+                          (unquote (pair (quote begin) outer_checks))
+                          (let for_loop
+                            (unquote (syntax_append accums loop_bindings))
+                            (if (unquote (pair (quote and) pos_guards))
+                              (let_values (unquote inner_bindings)
+                                (if (unquote (pair (quote and) pre_guards))
+                                  (let_values [((unquote fold_vars)
+                                                (unquote
+                                                  (apply sexp
+                                                    (quote for_foldX_derived)
+                                                    (sexp original nested false (quote ()))
+                                                    (map (|i| (sexp i i)) fold_vars)
+                                                    clauses
+                                                    body)))]
+                                    (if (unquote (pair (quote and) post_guards))
+                                      (unquote (append (quote (for_loop))
+                                                 fold_vars
+                                                 (syntax_to_sexp loop_args)))
+                                      (unquote done)))
+                                  (unquote done)))
+                              (unquote done)))))
+                      ctx
+                      original)))
+
+                // Not emitting; expand the clauses.
+
+                (if (is_empty (syntax_unwrap clauses))
+                  // No more clauses, switch to emit
+                  (datum_to_syntax
+                    (apply sexp
+                      (quote for_foldX_derived)
+                      (sexp original nested true binds)
+                      accums
+                      clauses
+                      body)
+                    ctx
+                    stx)
+
+                  // Expand one clause and push it onto the binds.
+                  (lets [(clauses (syntax_to_sexp clauses)),
+                         (clause (head clauses)),
+                         (bind   (expand_clause original clause))]
+                    (datum_to_syntax
+                      (apply sexp
+                        (quote for_foldX_derived)
+                        (sexp original nested
+                          nested              // If nested, emit a loop now.
+                          (pair bind binds))
+                        accums
+                        (tail clauses)
+                        body)
+                      ctx
+                      stx))))))))))
 
 
+  (define (expand_ffd stx nested)
+    (let [(subforms (tail (syntax_unwrap stx)))]
+      (if (is_pair subforms)
+        (let [(original (head subforms)),
+              (rest     (tail subforms))]
+          (datum_to_syntax
+            (pair
+              (quote for_foldX_derived)
+              (pair (sexp original nested false (quote ()))
+                    rest))
+            ctx
+            stx))
+        (wrong_syntax stx))))
 
-  (defpub_syntax fors_list
+
+  (define_syntax for_fold_derived
     '''
-    (fors_list [(ident series), ...] body ...+)
+    (for_fold_derived original
+      [(accum-id init-expr), ...]
+      (for-clause ...)
+      body ...+)
 
-Like `for_list`, but the `series` are iterated in nested loops instead of in parallel.
-Each binding is made available to the following `series` as well as the `body` allowing
-for list comprehension.
+Like `for_fold`, but uses the `original` syntax object when issuing error
+messages.
+    '''
+    (lambda (stx)
+      (expand_ffd stx false)))
+
+
+  (define_syntax fors_fold_derived
+    '''
+    (fors_fold_derived original
+      [(accum-id init-expr), ...]
+      (for-clause ...)
+      body ...+)
+
+Like `fors_fold`, but uses the `original` syntax object when issuing error
+messages.
+    '''
+    (lambda (stx)
+      (expand_ffd stx true)))
+
+
+//=============================================================================
+// for_fold, fors_fold
+
+  (define_syntax for_fold
+    '''
+    (for_fold
+      [(accum-id init-expr), ...]
+      (for-clause ...)
+      body ...+)
+
+Iterates using explicit accumulators.
+The first clause is used to initialize any accumulator bindings before iteration
+begins; new accumulator locations are used for each cycle.
+The final `body` expression must produce the same number of values as there are
+`accum-id`s, and those become the accumulator values for the next cycle.
+
+The results of the `for_fold` expression are the final accumulator values.
+
+    (for_fold
+      [(result "")]
+      [((name value) { "a": 1, "b": 2 })]
+      (string_append result
+        (if (== result "") "" " and ")
+        (display_to_string name "=" value)))    => "a=1 and b=2"
+    '''
+    (lambda (stx)
+      (datum_to_syntax
+        (pair (quote for_fold_derived)
+          (pair stx (tail (syntax_unwrap stx))))
+        ctx
+        stx)))
+
+  (define_syntax fors_fold
+    '''
+    (fors_fold
+      [(accum-id init-expr), ...]
+      (for-clause ...)
+      body ...+)
+
+Like `for_fold`, except the series are iterated in nested loops instead of in
+parallel. Each clause's bindings are made available to the following clauses
+as well as the `body`.
+    '''
+    (lambda (stx)
+      (datum_to_syntax
+        (pair (quote fors_fold_derived)
+          (pair stx (tail (syntax_unwrap stx))))
+        ctx
+        stx)))
+
+
+//=============================================================================
+// Derived-form helpers
+
+  (define (for_variant_stx stx derived_id_stx fold_bind_stx wrap rhs_wrap combine)
+    '''
+Generates an expression for some variant of `for`, using `for_fold_derived` and
+applying some specialized syntax transforms to relevant components.
+
+    * `derived_id_stx` is either `for_fold_derived` or `fors_fold_derived`.
+    * `fold_bind_stx` is syntax for the accumulator initializers.
+    * `wrap` is a transform procedure applied to the results of the iteration.
+    * `rhs_wrap` is a transform procedure applied to each binding RHS.
+    * `combine` is a transform procedure applied to the body. The results of the
+      (generated) combination expression become the next accumulator values.
+    '''
+    (let [(subforms (unsafe_pair_tail (syntax_unwrap stx)))]
+      (if (and (>= (size subforms) 2)
+               (is_sequence (syntax_unwrap (head subforms))))
+          // Got a reasonable shape, so we can proceed.
+          (let_values [((clauses body) (split_letlike_subforms stx subforms))]
+            // Wrap the RHSs
+            (let [(wrapped_clauses
+                    (map (|c| (if (and (is_pair c) (is_pair (tail c)))
+                                (pair (head c) (rhs_wrap (tail c)))
+                                // Let derived form complain about malformed
+                                // for-clause, no need to wrap it.
+                                c))
+                      clauses))]
+              (datum_to_syntax
+                (wrap (datum_to_syntax
+                        (sexp derived_id_stx
+                          stx
+                          fold_bind_stx
+                          wrapped_clauses
+                          (combine (datum_to_syntax
+                                     (apply sexp (quote let) [] body)
+                                     ctx
+                                     stx)))
+                        ctx
+                        stx))
+                ctx
+                stx)))
+          // Malformed subforms; let the derived form complain.
+          (datum_to_syntax
+            (apply sexp derived_id_stx stx fold_bind_stx subforms)))))
+
+  (define_syntax define_syntax_via_derived
+    (lambda (stx)
+      (let [(subforms (unsafe_pair_tail (syntax_unwrap stx)))]
+        (let [(id         (element subforms 0)),
+              (docs       (element subforms 1)),
+              (derived_id (element subforms 2)),
+              (fold_bind  (element subforms 3)),
+              (wrap       (element subforms 4)),
+              (rhs_wrap   (element subforms 5)),
+              (combine    (element subforms 6))]
+          (quasisyntax
+            (define_syntax (unsyntax id)
+              (unsyntax docs)
+              (lambda (stx)
+                (for_variant_stx stx
+                  (quote_syntax (unsyntax derived_id))
+                  (quote_syntax (unsyntax fold_bind))
+                  (unsyntax wrap)
+                  (unsyntax rhs_wrap)
+                  (unsyntax combine)))))))))
+
+  (define_syntax define_for_variants
+    (lambda (stx)
+      (let [(subforms (unsafe_pair_tail (syntax_unwrap stx)))]
+        (let [(for       (element subforms 0)),
+              (for_docs  (element subforms 1)),
+              (fors      (element subforms 2)),
+              (fors_docs (element subforms 3)),
+              (fold_bind (element subforms 4)),
+              (wrap      (element subforms 5)),
+              (rhs_wrap  (element subforms 6)),
+              (combine   (element subforms 7))]
+          (datum_to_syntax
+            (QQ (begin
+                  (define_syntax_via_derived (UQ for) (UQ for_docs)
+                    for_fold_derived
+                    (UQ fold_bind) (UQ wrap) (UQ rhs_wrap) (UQ combine))
+                  (define_syntax_via_derived (UQ fors) (UQ fors_docs)
+                    fors_fold_derived
+                    (UQ fold_bind) (UQ wrap) (UQ rhs_wrap) (UQ combine))))
+            (quote_syntax context)
+            stx)))))
+
+
+//=============================================================================
+// for, fors
+
+  (define_for_variants
+    for
+    '''
+    (for [for-clause, ...] body ...+)
+
+    for-clause := (id series_expr)
+                | ((id ...+) series_expr)
+
+Iterates series in parallel, binding the corresponding `id`s to the values
+produced at each step and then evaluating `body`.
+
+The `series_exprs` are first evaluated left-to-right, and each must return
+a series value. While every series can produce more elements, they are retrieved
+in left-to-right order, bound to their `id`s at new storage slots, and then the
+`body` is evaluated.
+The results of the `body` are ignored; the result of `for` is always void.
+
+If no for-clauses are provided, then the body is executed once.
+
+    (for [(a [1, 2]),
+          (b [5, 7])]
+      (display (sexp a b)))
+    =>
+    (1 5)(2 7)
+    '''
+
+    fors
+    '''
+    (fors [for-clause, ...] body ...+)
+
+Like `for`, but the series are iterated in nested loops.
+The scope of each binding identifier includes the `series_expr`s of later
+for-clauses, as well as the `body`.
+
+    (fors [(a [1, 2]),
+           (b [5, 7])]
+      (display (sexp a b)))
+    =>
+    (1 5)(1 7)(2 5)(2 7)
+    '''
+
+    [(fold_var (void))]
+    identity
+    identity
+    (|r| (quasisyntax (begin (unsyntax r) (void)))))  // ignore the body value
+
+
+//=============================================================================
+// for_list, fors_list
+
+  (define_for_variants
+    for_list
+    '''
+    (for_list [for-clause, ...] body ...+)
+
+Like `for`, but returning a stretchy list of the `body` results.
+
+    (for_list
+      [(even [0, 2, 4]),
+       (odd  [1, 3, 5])]
+      (+ even odd))             =>  [1, 5, 9]
+    '''
+
+    fors_list
+    '''
+    (fors_list [for-clause, ...] body ...+)
+
+Like `fors`, but returning a stretchy list of the `body` results.
 
     (fors_list [(a [1,2]),
                 (b [5,7])]
@@ -134,33 +657,88 @@ for list comprehension.
                 (z y)]
       z)                                   => [1, 2, 3, 4]
     '''
-    (lambda (stx)
-      (let [(content (unsafe_pair_tail (syntax_unwrap stx)))]
-        (when (< (size content) 2)
-          (wrong_syntax stx "expecting bindings and body"))
-        (let_values [((bindings body) (split_content stx content))]
-          (datum_to_syntax
-            (if (not (is_pair bindings))
-              /* Base case -- no bindings */
-              (sexp (quote stretchy_list)          // (stretchy_list
-                    (pair (quote begin) body))     //   (begin BODY...))
-              (let [(binding (unsafe_pair_head bindings)),
-                    (others  (unsafe_pair_tail bindings))]
-                (if (is_empty others)
-                  /* Base case -- single binding */
-                  (pair (quote_syntax for_list)          // (for_list
-                        (pair bindings                   //    BINDINGS
-                              body))                     //    BODY...)
-                  /* Recursive case */
-                  (quasiquote
-                    (apply append_m                      // (apply append_m
-                      (stretchy_list)                    //   (stretchy_list)
-                      ((unquote (quote_syntax for_list)) //   (for_list
-                         [(unquote binding)]             //     [BINDING]
-                         (unquote
-                           (pair (quote_syntax fors_list)//     (fors_list
-                                 (pair others            //       (OTHERS...)
-                                       body)))))))))     //       BODY...)))
-            ctx
-            stx)))))
+
+    [(result (stretchy_list))]
+    (lambda (result) result)
+    (lambda (rhs) rhs)
+    (lambda (body) (quasisyntax (add_m result (unsyntax body)))))
+
+
+//=============================================================================
+// for_sexp, fors_sexp
+
+  (define_for_variants
+    for_sexp
+    '''
+    (for_sexp [for-clause, ...] body ...+)
+
+Like `for`, but returning a sexp of the `body` results.
+
+    (for_sexp
+      [(even [0, 2, 4]),
+       (odd  [1, 3, 5])]
+      (+ even odd))             =>  (1 5 9)
+    '''
+
+    fors_sexp
+    '''
+    (fors_sexp [for-clause, ...] body ...+)
+
+Like `fors`, but returning a sexp of the `body` results.
+
+    (fors_sexp [(a [1, 2]),
+                (b [5, 7])]
+      (* a b))                             => (5 7 10 14)
+    '''
+
+    [(result (quote ()))]
+    (lambda (result) (quasisyntax (reverse (unsyntax result))))
+    (lambda (rhs) rhs)
+    (lambda (body) (quasisyntax (pair (unsyntax body) result))))
+
+
+//=============================================================================
+// for_struct, fors_struct
+
+  (define_for_variants
+    for_struct
+    '''
+    (for_struct [for-clause, ...] body ...+)
+
+Like `for`, but returning a struct. The `body` must return two values, a field
+name (string or symbol) and its corresponding element.
+
+    (for_struct
+      [(key (quote (a b c))),
+       (val [1, 2, 3])]
+      (values key val))             =>  {a:1, b:2, c:3}
+
+If the same field name is returned by multiple evaluations of the body, the
+resulting struct will have corresponding repeated fields:
+
+    (for_struct
+      [(key ["a", "b", "a"]),
+       (val [1, 2, 3])]
+      (values key val))             =>  {a:1, a:3, b:2}
+    '''
+
+    fors_struct
+    '''
+    (fors_struct [for-clause, ...] body ...+)
+
+Like `fors`, but returning a struct. The `body` must return two values, a field
+name (string or symbol) and its corresponding element.
+As with `for_struct`, the result can have repeated fields:
+
+    (fors_struct [(v [1, 2]),
+                  (k ["a", "b"])]
+      (values k v))                 => {a:1, a:2, b:1, b:2}
+    '''
+
+    [(result {})]
+    (lambda (result) result)
+    (lambda (rhs) rhs)
+    (lambda (body) (quasisyntax (let_values [((key val) (unsyntax body))]
+                                   (unsafe_struct_puts result key val)))))
+
 )

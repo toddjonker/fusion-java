@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2018 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2017-2020 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -29,15 +29,16 @@ import com.amazon.fusion.LocalEnvironment.CompiledLocalVariableReference;
 import com.amazon.fusion.LocalEnvironment.CompiledLocalVariableSet;
 import com.amazon.fusion.LocalEnvironment.LocalBinding;
 import com.amazon.fusion.ModuleNamespace.CompiledImportedVariableReference;
+import com.amazon.fusion.ModuleNamespace.CompiledModuleVariableReference;
 import com.amazon.fusion.ModuleNamespace.ModuleDefinedBinding;
 import com.amazon.fusion.ModuleNamespace.ProvidedBinding;
-import com.amazon.fusion.Namespace.CompiledTopDefine;
-import com.amazon.fusion.Namespace.CompiledTopDefineSyntax;
-import com.amazon.fusion.Namespace.CompiledTopVariableReference;
+import com.amazon.fusion.Namespace.CompiledNsDefine;
+import com.amazon.fusion.Namespace.CompiledNsDefineSyntax;
 import com.amazon.fusion.Namespace.NsDefinedBinding;
 import com.amazon.fusion.Namespace.RequiredBinding;
 import com.amazon.fusion.TopLevelNamespace.CompiledFreeDefine;
 import com.amazon.fusion.TopLevelNamespace.CompiledFreeVariableReference;
+import com.amazon.fusion.TopLevelNamespace.CompiledTopLevelVariableReference;
 import com.amazon.fusion.TopLevelNamespace.TopLevelDefinedBinding;
 import java.util.Collections;
 
@@ -309,7 +310,7 @@ class Compiler
         final CompiledForm valueForm = compileExpression(env, valueSource);
 
         final SyntaxSymbol identifier = (SyntaxSymbol) stx.get(myEval, 1);
-        Binding binding = identifier.resolve();
+        Binding binding = identifier.getBinding();
 
         Binding.Visitor v = new Binding.Visitor()
         {
@@ -387,8 +388,8 @@ class Compiler
                     Object accept(ModuleNamespace ns) throws FusionException
                     {
                         String name = b.getName().stringValue();
-                        return new CompiledTopDefine(name, b.myAddress,
-                                                     valueForm);
+                        return new CompiledNsDefine(name, b.myAddress,
+                                                    valueForm);
                     }
                 };
 
@@ -436,7 +437,7 @@ class Compiler
         final CompiledForm valueForm = compileExpression(env, valueSource);
 
         final SyntaxSymbol identifier = (SyntaxSymbol) stx.get(myEval, 1);
-        Binding binding = identifier.resolve();
+        Binding binding = identifier.getBinding();
 
         Binding.Visitor v = new Binding.Visitor()
         {
@@ -451,7 +452,7 @@ class Compiler
             public Object visit(NsDefinedBinding b) throws FusionException
             {
                 String name = b.getName().stringValue();
-                return new CompiledTopDefineSyntax(name, b.myAddress, valueForm);
+                return new CompiledNsDefineSyntax(name, b.myAddress, valueForm);
             }
 
             @Override
@@ -515,7 +516,7 @@ class Compiler
             Object visit(TopLevelDefinedBinding b) throws FusionException
             {
                 assert b.isOwnedBy(env.namespace());
-                return new CompiledTopVariableReference(b.myAddress);
+                return new CompiledTopLevelVariableReference(b.myAddress);
             }
 
             @Override
@@ -535,7 +536,8 @@ class Compiler
                                                                  b.myAddress);
                 }
 
-                return new CompiledTopVariableReference(b.myAddress);
+                SourceLocation locn = identifier.getLocation();
+                return new CompiledModuleVariableReference(b.myAddress, locn);
             }
 
             @Override
@@ -606,7 +608,7 @@ class Compiler
             @Override
             Object visit(TopLevelDefinedBinding b) throws FusionException
             {
-                return new CompiledTopVariableReference(b.myAddress);
+                return new CompiledTopLevelVariableReference(b.myAddress);
             }
 
             @Override
@@ -624,8 +626,7 @@ class Compiler
             }
         };
 
-        // TODO Binding should already be resolved so we can use getBinding().
-        Binding binding = id.resolve();
+        Binding binding = id.getBinding();
         return (CompiledForm) binding.visit(v);
     }
 

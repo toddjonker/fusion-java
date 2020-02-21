@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -6,7 +6,9 @@ import static com.amazon.fusion.BindingSite.makeExportBindingSite;
 import static com.amazon.fusion.GlobalState.DEFINE;
 import static com.amazon.fusion.GlobalState.REQUIRE;
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 
 
@@ -405,19 +407,19 @@ final class ModuleNamespace
         }
 
         @Override
-        Binding resolve(BaseSymbol name,
-                        Iterator<SyntaxWrap> moreWraps,
-                        Set<MarkWrap> returnMarks)
+        Binding resolveMaybe(BaseSymbol name,
+                             Iterator<SyntaxWrap> moreWraps,
+                             Set<MarkWrap> returnMarks)
         {
             if (moreWraps.hasNext())
             {
                 SyntaxWrap nextWrap = moreWraps.next();
                 // Prior bindings never "leak through" a module, so we won't
                 // return this binding.
-                Binding b = nextWrap.resolve(name, moreWraps, returnMarks);
+                Binding b = nextWrap.resolveMaybe(name, moreWraps, returnMarks);
                 if (b != null)
                 {
-                    return ((Namespace)getEnvironment()).resolve(b, returnMarks);
+                    return ((Namespace)getEnvironment()).resolveMaybe(b, returnMarks);
                 }
             }
 
@@ -425,6 +427,8 @@ final class ModuleNamespace
         }
     }
 
+
+    private final List<BaseSymbol> myDefinedNames = new ArrayList<>();
 
     /**
      * Constructs a module with a given language.  Bindings provided by the
@@ -490,8 +494,23 @@ final class ModuleNamespace
     @Override
     NsDefinedBinding newDefinedBinding(SyntaxSymbol identifier, int address)
     {
+        assert myDefinedNames.size() == address;
+        myDefinedNames.add(identifier.getName());
         return new ModuleDefinedBinding(identifier, address, getModuleId());
     }
+
+    @Override
+    public BaseSymbol getDefinedName(int address)
+    {
+        return myDefinedNames.get(address);
+    }
+
+    BaseSymbol[] extractDefinedNames()
+    {
+        assert definitionCount() == myDefinedNames.size();
+        return myDefinedNames.toArray(BaseSymbol.EMPTY_ARRAY);
+    }
+
 
     @Override
     public void setDoc(int address, BindingDoc doc)
@@ -543,4 +562,38 @@ final class ModuleNamespace
         }
     }
 
+
+    /**
+     * A reference to a module-level variable in the lexically-enclosing
+     * namespace.
+     */
+    static final class CompiledModuleVariableReference
+        implements CompiledForm
+    {
+        private final int            myAddress;
+        private final SourceLocation myLocation;
+
+        CompiledModuleVariableReference(int address, SourceLocation location)
+        {
+            myAddress  = address;
+            myLocation = location;
+        }
+
+        @Override
+        public Object doEval(Evaluator eval, Store store)
+            throws FusionException
+        {
+            NamespaceStore ns = store.namespace();
+            Object result = ns.lookup(myAddress);
+
+            // Check for forward references.
+            if (result != null) return result;
+
+            // Synthesize an identifier for stack traces.
+            BaseSymbol name = ns.getDefinedName(myAddress);
+            SyntaxSymbol id = SyntaxSymbol.make(eval, myLocation, name);
+
+            throw new UnboundIdentifierException(id);
+        }
+    }
 }

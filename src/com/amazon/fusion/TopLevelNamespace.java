@@ -1,4 +1,4 @@
-// Copyright (c) 2013-2017 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2013-2019 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -93,14 +93,14 @@ final class TopLevelNamespace
         }
 
         @Override
-        Binding resolve(BaseSymbol name,
-                        Iterator<SyntaxWrap> moreWraps,
-                        Set<MarkWrap> returnMarks)
+        Binding resolveMaybe(BaseSymbol name,
+                             Iterator<SyntaxWrap> moreWraps,
+                             Set<MarkWrap> returnMarks)
         {
             if (moreWraps.hasNext())
             {
                 SyntaxWrap nextWrap = moreWraps.next();
-                nextWrap.resolve(name, moreWraps, returnMarks);
+                nextWrap.resolveMaybe(name, moreWraps, returnMarks);
             }
 
             return getEnvironment().substituteFree(name, returnMarks);
@@ -208,6 +208,12 @@ final class TopLevelNamespace
         return new TopLevelRequiredBinding(localId, null, target);
     }
 
+    @Override
+    public BaseSymbol getDefinedName(int address)
+    {
+        throw new UnsupportedOperationException();
+    }
+
 
     //========================================================================
     // Compiled Forms
@@ -250,6 +256,32 @@ final class TopLevelNamespace
             throws FusionException
         {
             return value;
+        }
+    }
+
+
+    /**
+     * A reference to a top-level variable in the lexically-enclosing namespace,
+     * when the binding is known at compile-time.
+     */
+    static final class CompiledTopLevelVariableReference
+        implements CompiledForm
+    {
+        final int myAddress;
+
+        CompiledTopLevelVariableReference(int address)
+        {
+            myAddress = address;
+        }
+
+        @Override
+        public Object doEval(Evaluator eval, Store store)
+            throws FusionException
+        {
+            NamespaceStore ns = store.namespace();
+            Object result = ns.lookup(myAddress);
+            assert result != null : "No value for namespace address " + myAddress;
+            return result;
         }
     }
 
