@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -56,15 +56,13 @@ final class LoadHandler
         eval = eval.markedContinuation(myCurrentLoadRelativeDirectory,
                                        makeString(eval, parent.getAbsolutePath()));
 
-        try
+        try (FileInputStream in = new FileInputStream(file))
         {
-            FileInputStream in = new FileInputStream(file);
-            try
-            {
-                SourceName name = SourceName.forFile(file);
-                Object result = null;
+            SourceName name = SourceName.forFile(file);
+            Object result = null;
 
-                IonReader reader = eval.getSystem().newReader(in);
+            try (IonReader reader = eval.getIonReaderBuilder().build(in))
+            {
                 while (reader.next() != null)
                 {
                     result = null;  // Don't hold onto garbage
@@ -72,13 +70,9 @@ final class LoadHandler
                     result = FusionEval.eval(eval, fileExpr, namespace);
                     // TODO TAIL
                 }
+            }
 
-                return result;
-            }
-            finally
-            {
-                in.close();
-            }
+            return result;
         }
         catch (FileNotFoundException e)
         {
@@ -114,7 +108,7 @@ final class LoadHandler
             String message = "Module source has no top-level forms";
             SyntaxException e =
                 new SyntaxException(null /* syntax form */, message);
-            e.addContext(SourceLocation.forLineColumn(sourceName, -1, -1));
+            e.addContext(SourceLocation.forName(sourceName));
             throw e;
         }
 

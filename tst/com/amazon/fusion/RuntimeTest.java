@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -6,7 +6,6 @@ import static com.amazon.fusion.FusionVoid.isVoid;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -14,7 +13,14 @@ import static org.junit.Assert.fail;
 import com.amazon.ion.IonInt;
 import com.amazon.ion.IonReader;
 import com.amazon.ion.IonValue;
-import java.io.File;
+import com.amazon.ion.IonWriter;
+import com.amazon.ion.SymbolTable;
+import com.amazon.ion.system.IonBinaryWriterBuilder;
+import com.amazon.ion.system.SimpleCatalog;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.Iterator;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -22,112 +28,9 @@ import org.junit.rules.ExpectedException;
 public class RuntimeTest
     extends CoreTestCase
 {
-    private static final File TEST_REPO = new File("tst-repo");
-
     @Rule
     public ExpectedException thrown = ExpectedException.none();
 
-    @Test
-    public void testDefaultBuilder()
-        throws Exception
-    {
-        FusionRuntimeBuilder b = FusionRuntimeBuilder.standard();
-        assertSame(b, b.mutable());
-
-        assertEquals("/fusion", b.getDefaultLanguage());
-        assertEquals("/fusion", b.copy().getDefaultLanguage());
-        assertEquals("/fusion", b.immutable().getDefaultLanguage());
-    }
-
-
-    @Test
-    public void testSetDefaultLanguage()
-        throws Exception
-    {
-        FusionRuntimeBuilder b = runtimeBuilder();
-        b.setDefaultLanguage("/fusion/base");
-        assertEquals("/fusion/base", runtime().getDefaultLanguage());
-        expectUnboundIdentifierExn("always");
-
-        assertEquals("/fusion/base", b.getDefaultLanguage());
-        assertEquals("/fusion/base", b.copy().getDefaultLanguage());
-        assertEquals("/fusion/base", b.immutable().getDefaultLanguage());
-
-        b = b.immutable().withDefaultLanguage("/fusion");
-        assertEquals("/fusion", b.getDefaultLanguage());
-    }
-
-    @Test(expected = IllegalArgumentException.class)
-    public void testNullDefaultLanguage()
-        throws Exception
-    {
-        runtimeBuilder().setDefaultLanguage(null);
-    }
-
-    @Test(expected = IllegalArgumentException.class)
-    public void testEmptyDefaultLanguage()
-        throws Exception
-    {
-        runtimeBuilder().setDefaultLanguage("");
-    }
-
-    @Test(expected = IllegalArgumentException.class)
-    public void testMalformedDefaultLanguage()
-        throws Exception
-    {
-        runtimeBuilder().setDefaultLanguage("fusion");
-    }
-
-    @Test(expected = UnsupportedOperationException.class)
-    public void testDefaultLanguageImmutablity()
-        throws Exception
-    {
-        runtimeBuilder().immutable().setDefaultLanguage("/fusion/base");
-    }
-
-
-    @Test
-    public void testDefaultCurrentDirectory()
-        throws Exception
-    {
-        topLevel().requireModule("/fusion/io");
-        assertString(System.getProperty("user.dir"), "(current_directory)");
-    }
-
-
-    @Test(expected = IllegalArgumentException.class)
-    public void testCurrentDirectoryDoesNotExist()
-        throws Exception
-    {
-        File file = new File("no-such-file");
-        assertFalse(file.exists());
-        runtimeBuilder().setInitialCurrentDirectory(file);
-    }
-
-
-    @Test(expected = IllegalArgumentException.class)
-    public void testCurrentDirectoryIsNormalFile()
-        throws Exception
-    {
-        File file = new File("build.xml");
-        assertTrue(file.isFile());
-        runtimeBuilder().setInitialCurrentDirectory(file);
-    }
-
-    @Test(expected = UnsupportedOperationException.class)
-    public void testInitialCurrentDirectoryImmutability()
-        throws Exception
-    {
-        runtimeBuilder().immutable().setInitialCurrentDirectory(TEST_REPO);
-    }
-
-
-    @Test(expected = UnsupportedOperationException.class)
-    public void testDocumentingImmutability()
-        throws Exception
-    {
-        runtimeBuilder().immutable().setDocumenting(true);
-    }
 
     @Test
     public void testModuleInUserRepository()
@@ -388,5 +291,60 @@ public class RuntimeTest
                                    containsString(source.display())));
 
         topLevel().loadModule(modulePath, system().newReader(moduleContent), source);
+    }
+
+
+    //========================================================================
+    // Default Ion Catalog
+
+    private SymbolTable newSharedSymbolTable(String name,
+                                             int version,
+                                             String... symbols)
+    {
+        Iterator<String> symIter = Arrays.asList(symbols).iterator();
+        return system().newSharedSymbolTable(name, version, symIter);
+    }
+
+    private byte[] encode(SymbolTable symtab, IonValue data)
+        throws IOException
+    {
+        IonBinaryWriterBuilder bwb =
+            IonBinaryWriterBuilder.standard().withImports(symtab);
+
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (IonWriter writer = bwb.build(out))
+        {
+            data.writeTo(writer);
+        }
+        return out.toByteArray();
+    }
+
+    @Test
+    public void testReadingIonWithSharedSymtabs()
+        throws Exception
+    {
+        SimpleCatalog catalog = new SimpleCatalog();
+        runtimeBuilder().setDefaultIonCatalog(catalog);
+
+        SymbolTable symtab = newSharedSymbolTable("flatware", 1,
+                                                  "fork", "spoon", "knife");
+        catalog.putTable(symtab);
+
+
+        IonValue data = system().singleValue("{ spoon: knife::fork }");
+        byte[] encodedData = encode(symtab, data);
+
+
+        Object readProc = topLevel().lookup("read");
+        Object decoded = topLevel().call("with_ion_from_lob", encodedData, readProc);
+        checkIon(data, decoded);
+
+
+        // Same data should fail w/o symtab
+        assertSame(symtab, catalog.removeTable("flatware", 1));
+
+        thrown.expect(FusionException.class);
+        thrown.expectMessage("$11");
+        topLevel().call("with_ion_from_lob", encodedData, readProc);
     }
 }

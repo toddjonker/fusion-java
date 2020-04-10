@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2020 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -128,28 +128,28 @@ final class LocalEnvironment
         myNamespace = enclosure.namespace();
         myDepth = 1 + enclosure.getDepth();
 
+        // 2019-04 Stats from the standard library and test suite:
+        //   85% of local envs have 1 entry, 12% have 2.
+        //   99% have 3 or fewer entries and none have more than 5.
         int count = identifiers.length;
         if (count > 1)
         {
+            // TODO Avoid a hashmap when count==2, do a simple comparison.
+            BoundIdMap<SyntaxSymbol> ids = new BoundIdMap<>();
             for (int i = 0; i < count; i++)
             {
-                SyntaxSymbol idI = identifiers[i];
-
-                for (int j = i + 1; j < count; j++)
+                SyntaxSymbol id   = identifiers[i];
+                SyntaxSymbol dupe = ids.put(id, id);
+                if (dupe != null)
                 {
-                    SyntaxSymbol idJ = identifiers[j];
+                    String message =
+                        "duplicate binding identifier: " +
+                        printQuotedSymbol(id.stringValue());
 
-                    if (idI.freeIdentifierEqual(idJ))
-                    {
-                        String message =
-                            "duplicate binding: " +
-                            printQuotedSymbol(idJ.stringValue());
-
-                        SyntaxException ex =
-                            new SyntaxException(null, message, idJ);
-                        ex.addContext(formForErrors);
-                        throw ex;
-                    }
+                    SyntaxException ex =
+                        new SyntaxException(null, message, id);
+                    ex.addContext(formForErrors);
+                    throw ex;
                 }
             }
         }
@@ -158,15 +158,8 @@ final class LocalEnvironment
         for (int i = 0; i < count; i++)
         {
             SyntaxSymbol identifier = identifiers[i];
-
-            // This helps make sure we're not preparing the same code twice.
-            assert identifier.getBinding() == null
-                : "Identifier " + identifier + " already bound to " +
-                  identifier.getBinding();
-
             myBindings[i] = new LocalBinding(identifier, myDepth, i);
         }
-
     }
 
 
@@ -200,9 +193,11 @@ final class LocalEnvironment
     @Override
     public Binding substitute(Binding binding, Set<MarkWrap> marks)
     {
+        BoundIdentifier boundId = new BoundIdentifier(binding, marks);
+
         for (LocalBinding b : myBindings)
         {
-            if (b.myIdentifier.resolvesBound(binding, marks))
+            if (b.myIdentifier.resolveBoundIdentifier().equals(boundId))
             {
                 return b;
             }
@@ -213,9 +208,12 @@ final class LocalEnvironment
     @Override
     public Binding substituteFree(BaseSymbol name, Set<MarkWrap> marks)
     {
+        BoundIdentifier boundId =
+            new BoundIdentifier(new FreeBinding(name), marks);
+
         for (LocalBinding b : myBindings)
         {
-            if (b.myIdentifier.resolvesFree(name, marks))
+            if (b.myIdentifier.resolveBoundIdentifier().equals(boundId))
             {
                 return b;
             }

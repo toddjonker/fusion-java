@@ -1,11 +1,10 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion.cli;
 
 import static com.amazon.fusion._Private_ModuleDocumenter.writeHtmlTree;
-import com.amazon.fusion.FusionRuntimeBuilder;
-import com.amazon.fusion._Private_Trampoline;
 import java.io.File;
+import java.io.PrintWriter;
 
 
 class Document
@@ -42,9 +41,8 @@ class Document
 
 
     @Override
-    Executor makeExecutor(GlobalOptions globals,
-                          Object        options,
-                          String[]      args)
+    Executor makeExecutor(GlobalOptions globals, String[] args)
+        throws UsageException
     {
         if (args.length != 2) return null;
 
@@ -53,24 +51,21 @@ class Document
 
         if (outputDir.isFile())
         {
-            System.err.print("Output location is a file: ");
-            System.err.println(outputDir);
-            return null;
+            throw usage("Output location is a file: " + outputDir);
         }
 
         if (! repoDir.isDirectory())
         {
-            System.err.print("Repository is not a directory: ");
-            System.err.println(repoDir);
-            return null;
+            throw usage("Repository is not a directory: " + repoDir);
         }
 
         if (! new File(repoDir, "src").isDirectory())
         {
-            System.err.print("Repository has no src directory: ");
-            System.err.println(repoDir);
-            return null;
+            throw usage("Repository has no src directory: " + repoDir);
         }
+
+        globals.collectDocumentation();
+        globals.setRepositories(repoDir.getAbsolutePath());
 
         return new Executor(globals, outputDir, repoDir);
     }
@@ -91,19 +86,10 @@ class Document
         }
 
         @Override
-        FusionRuntimeBuilder runtimeBuilder()
-            throws UsageException
-        {
-            FusionRuntimeBuilder builder = super.runtimeBuilder();
-            builder.addRepositoryDirectory(myRepoDir);
-            _Private_Trampoline.setDocumenting(builder, true);
-            return builder;
-        }
-
-        @Override
-        public int execute()
+        public int execute(PrintWriter out, PrintWriter err)
             throws Exception
         {
+            // TODO send log messages to the output PrintWriter, not System.out
             File srcDir = new File(myRepoDir, "src");
             writeHtmlTree(runtime(), myOutputDir, srcDir);
             return 0;

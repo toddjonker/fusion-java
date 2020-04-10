@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -231,15 +231,15 @@ abstract class Namespace
         }
 
         @Override
-        Binding resolveTop(BaseSymbol           name,
-                           Iterator<SyntaxWrap> moreWraps,
-                           Set<MarkWrap>        returnMarks)
+        Binding resolveTopMaybe(BaseSymbol           name,
+                                Iterator<SyntaxWrap> moreWraps,
+                                Set<MarkWrap>        returnMarks)
         {
             if (moreWraps.hasNext())
             {
                 SyntaxWrap nextWrap = moreWraps.next();
                 // The base implementation calls resolveTop here.
-                return nextWrap.resolve(name, moreWraps, returnMarks);
+                return nextWrap.resolveMaybe(name, moreWraps, returnMarks);
             }
             return null;
         }
@@ -339,7 +339,7 @@ abstract class Namespace
     }
 
     /**
-     * How many namspace-level definitions do we have?
+     * How many namespace-level definitions do we have?
      * This doesn't count imports.
      */
     final int definitionCount()
@@ -401,11 +401,9 @@ abstract class Namespace
      *
      * @return null if there's no binding in this namespace.
      */
-    private final NsBinding resolveBound(SyntaxSymbol identifier)
+    private final NsBinding resolveBoundMaybe(SyntaxSymbol identifier)
     {
-        Binding binding = identifier.resolve();
-        Set<MarkWrap> marks = identifier.computeMarks();
-        return myBindings.get(binding, marks);
+        return myBindings.get(identifier);
     }
 
     /**
@@ -414,7 +412,7 @@ abstract class Namespace
      *
      * @return null if identifier isn't bound here.
      */
-    final NsBinding resolve(Binding binding, Set<MarkWrap> marks)
+    final NsBinding resolveMaybe(Binding binding, Set<MarkWrap> marks)
     {
         return myBindings.get(binding, marks);
     }
@@ -423,13 +421,13 @@ abstract class Namespace
     public final NsBinding substituteFree(BaseSymbol name, Set<MarkWrap> marks)
     {
         Binding b = new FreeBinding(name);
-        return resolve(b, marks);
+        return resolveMaybe(b, marks);
     }
 
     @Override
     public final Binding substitute(Binding binding, Set<MarkWrap> marks)
     {
-        Binding subst = resolve(binding, marks);
+        Binding subst = resolveMaybe(binding, marks);
         if (subst == null) subst = binding;
         return subst;
     }
@@ -442,7 +440,7 @@ abstract class Namespace
     final NsDefinedBinding resolveDefinition(SyntaxSymbol identifier)
     {
         identifier = identifier.copyAndResolveTop();
-        NsBinding nsb = resolveBound(identifier);
+        NsBinding nsb = resolveBoundMaybe(identifier);
         return (nsb == null ? null : nsb.definition());
     }
 
@@ -452,9 +450,9 @@ abstract class Namespace
      *
      * @return null is equivalent to a {@link FreeBinding}.
      */
-    final Binding resolve(BaseSymbol name)
+    final Binding resolveMaybe(BaseSymbol name)
     {
-        return myWraps.resolve(name);
+        return myWraps.resolveMaybe(name);
     }
 
     /**
@@ -462,10 +460,10 @@ abstract class Namespace
      *
      * @return null is equivalent to a {@link FreeBinding}.
      */
-    final Binding resolve(String name)
+    final Binding resolveMaybe(String name)
     {
         BaseSymbol symbol = FusionSymbol.makeSymbol(null, name);
-        return resolve(symbol);
+        return resolveMaybe(symbol);
     }
 
 
@@ -486,7 +484,7 @@ abstract class Namespace
 
         identifier = identifier.copyAndResolveTop();
 
-        NsBinding entry = resolveBound(identifier);
+        NsBinding entry = resolveBoundMaybe(identifier);
         if (entry != null)
         {
             newDefinition = entry.redefine(identifier, formForErrors);
@@ -688,7 +686,7 @@ abstract class Namespace
         localId = localId.copyAndResolveTop();
 
         RequiredBinding required;
-        NsBinding entry = resolveBound(localId);
+        NsBinding entry = resolveBoundMaybe(localId);
         if (entry == null)
         {
             required = newRequiredBinding(localId, provided);
@@ -760,7 +758,7 @@ abstract class Namespace
      */
     final Object lookup(String name)
     {
-        Binding b = resolve(name);
+        Binding b = resolveMaybe(name);
         if (b == null)
         {
             return b;
@@ -851,7 +849,7 @@ abstract class Namespace
 
     final void setDoc(String name, BindingDoc doc)
     {
-        NsDefinedBinding binding = (NsDefinedBinding) resolve(name);
+        NsDefinedBinding binding = (NsDefinedBinding) resolveMaybe(name);
         setDoc(binding.myAddress, doc);
     }
 
@@ -916,40 +914,14 @@ abstract class Namespace
     //========================================================================
 
 
-    /**
-     * A reference to a top-level variable in the lexically-enclosing namespace.
-     */
-    static final class CompiledTopVariableReference
-        implements CompiledForm
-    {
-        final int myAddress;
-
-        CompiledTopVariableReference(int address)
-        {
-            myAddress = address;
-        }
-
-        @Override
-        public Object doEval(Evaluator eval, Store store)
-            throws FusionException
-        {
-            NamespaceStore ns = store.namespace();
-            Object result = ns.lookup(myAddress);
-            assert result != null : "No value for namespace address " + myAddress;
-            return result;
-        }
-    }
-
-
-    // TODO rename CompiledNsDefine
-    static class CompiledTopDefine
+    static class CompiledNsDefine
         implements CompiledForm
     {
         private final String       myName;
         private final int          myAddress;
         private final CompiledForm myValueForm;
 
-        CompiledTopDefine(String name, int address, CompiledForm valueForm)
+        CompiledNsDefine(String name, int address, CompiledForm valueForm)
         {
             assert name != null;
             myName      = name;
@@ -984,11 +956,11 @@ abstract class Namespace
     }
 
 
-    static final class CompiledTopDefineSyntax
-        extends CompiledTopDefine
+    static final class CompiledNsDefineSyntax
+        extends CompiledNsDefine
     {
-        CompiledTopDefineSyntax(String name, int address,
-                                CompiledForm valueForm)
+        CompiledNsDefineSyntax(String name, int address,
+                               CompiledForm valueForm)
         {
             super(name, address, valueForm);
         }

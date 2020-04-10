@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2020 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -41,6 +41,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 
 /**
@@ -393,6 +394,19 @@ public final class FusionString
     //========================================================================
     // Conversions
 
+
+    /**
+     * Converts a Fusion string to its equivalent {@link String} value.
+     *
+     * @param fusionString must be a Fusion string.
+     *
+     * @return null if given {@code null.string}.
+     */
+    public static String unsafeStringToJavaString(TopLevel top, Object fusionString)
+        throws FusionException
+    {
+        return ((BaseString) fusionString).stringValue();
+    }
 
     /**
      * @param fusionString must be a Fusion string.
@@ -875,9 +889,14 @@ public final class FusionString
     }
 
 
-    static final class SplitProc
+    static class SplitProc
             extends Procedure
     {
+        String prepareSeparator(String separator)
+        {
+            return separator;  // TODO This should always be escaped
+        }
+
         @Override
         Object doApply(Evaluator eval, Object[] args)
                 throws FusionException
@@ -885,7 +904,7 @@ public final class FusionString
             checkArityExact(2, args);
             String string    = checkRequiredStringArg(eval, this, 0, args);
             String separator = checkRequiredStringArg(eval, this, 1, args);
-            String[] splitResult = string.split(separator);
+            String[] splitResult = string.split(prepareSeparator(separator));
             List<Object> fusionStrings = new ArrayList<>();
             for (int i = 0; i < splitResult.length; i++)
             {
@@ -895,6 +914,19 @@ public final class FusionString
                 }
             }
             return immutableList(eval, fusionStrings);
+        }
+    }
+
+    /**
+     * TODO This should be merged into SplitProc, removing regex features.
+     */
+    static final class SplitNoRegexpProc
+        extends SplitProc
+    {
+        @Override
+        String prepareSeparator(String separator)
+        {
+            return Pattern.quote(separator);
         }
     }
 

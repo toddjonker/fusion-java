@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2020 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -284,7 +284,15 @@ final class FusionStruct
     }
 
 
-    static Object mergeValuesForKey(Object prev, Object value)
+    /**
+     * Merges one or more new values for a key with one or more existing values.
+     *
+     * @param prev may be a single value, or an array of values.
+     * @param value may be a single value, or an array of values.
+     *
+     * @return the merged array of values.
+     */
+    private static Object[] mergeValuesForKey(Object prev, Object value)
     {
         Object[] multi;
         if (prev instanceof Object[])
@@ -317,12 +325,15 @@ final class FusionStruct
 
 
     /**
+     * Adds an element to the struct, allowing for repeated fields in the result.
+     *
      * @param value may be an array (for repeated fields)
      */
     static FunctionalHashTrie<String, Object> structImplAdd(FunctionalHashTrie<String, Object> map,
                                                             String name,
                                                             Object value)
     {
+        // TODO This should be done with a single traversal of the trie.
         Object prev = map.get(name);
         if (prev != null)
         {
@@ -516,6 +527,22 @@ final class FusionStruct
     }
 
 
+    static Object unsafeStructPuts(Evaluator eval, Object struct,
+                                   String key, Object value)
+        throws FusionException
+    {
+        return ((BaseStruct) struct).puts(eval, key, value);
+    }
+
+
+    static Object unsafeStructPutsM(Evaluator eval, Object struct,
+                                    String key, Object value)
+        throws FusionException
+    {
+        return ((BaseStruct) struct).putsM(eval, key, value);
+    }
+
+
     //========================================================================
     // Bulk modification
 
@@ -649,6 +676,12 @@ final class FusionStruct
             throws FusionException;
 
         Object putM(Evaluator eval, String key, Object value)
+            throws FusionException;
+
+        Object puts(Evaluator eval, String key, Object value)
+            throws FusionException;
+
+        Object putsM(Evaluator eval, String key, Object value)
             throws FusionException;
 
         Object removeKeys(Evaluator eval, String[] keys)
@@ -785,6 +818,20 @@ final class FusionStruct
 
         @Override
         public Object putM(Evaluator eval, String key, Object value)
+            throws FusionException
+        {
+            return put(eval, key, value);
+        }
+
+        @Override
+        public Object puts(Evaluator eval, String key, Object value)
+            throws FusionException
+        {
+            return put(eval, key, value);
+        }
+
+        @Override
+        public Object putsM(Evaluator eval, String key, Object value)
             throws FusionException
         {
             return put(eval, key, value);
@@ -1149,6 +1196,16 @@ final class FusionStruct
             FunctionalHashTrie<String, Object> newMap = map.with(key, value);
 
             return makeSimilar(newMap, newSize);
+        }
+
+        @Override
+        public Object puts(Evaluator eval, String key, Object value)
+            throws FusionException
+        {
+            FunctionalHashTrie<String, Object> map = getMap(eval);
+            FunctionalHashTrie<String, Object> newMap = structImplAdd(map, key, value);
+
+            return makeSimilar(newMap, size() + 1);
         }
 
         @Override
@@ -1526,6 +1583,13 @@ final class FusionStruct
         }
 
         @Override
+        public Object putsM(Evaluator eval, String key, Object value)
+            throws FusionException
+        {
+            return puts(eval, key, value);
+        }
+
+        @Override
         public Object removeKeysM(Evaluator eval, String[] keys)
             throws FusionException
         {
@@ -1792,6 +1856,16 @@ final class FusionStruct
         }
 
         @Override
+        public Object putsM(Evaluator eval, String key, Object value)
+            throws FusionException
+        {
+            myMap = structImplAdd(myMap, key, value);
+            mySize++;
+
+            return this;
+        }
+
+        @Override
         public Object removeKeysM(Evaluator eval, String[] keys)
             throws FusionException
         {
@@ -2017,6 +2091,32 @@ final class FusionStruct
         {
             String key = unsafeTextToJavaString(eval, args[1]);
             return unsafeStructPutM(eval, args[0], key, args[2]);
+        }
+    }
+
+
+
+    static final class UnsafeStructPutsProc
+        extends Procedure
+    {
+        @Override
+        Object doApply(Evaluator eval, Object[] args)
+            throws FusionException
+        {
+            String key = unsafeTextToJavaString(eval, args[1]);
+            return unsafeStructPuts(eval, args[0], key, args[2]);
+        }
+    }
+
+    static final class UnsafeStructPutsMProc
+        extends Procedure
+    {
+        @Override
+        Object doApply(Evaluator eval, Object[] args)
+            throws FusionException
+        {
+            String key = unsafeTextToJavaString(eval, args[1]);
+            return unsafeStructPutsM(eval, args[0], key, args[2]);
         }
     }
 

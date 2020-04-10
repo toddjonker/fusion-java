@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -7,11 +7,14 @@ import static com.amazon.fusion.FusionNumber.isFloat;
 import static com.amazon.fusion.FusionNumber.isInt;
 import static com.amazon.fusion.FusionNumber.unsafeIntToJavaBigInteger;
 import static com.amazon.fusion.FusionNumber.unsafeNumberToJavaBigDecimal;
-import static com.amazon.fusion.FusionString.stringToJavaString;
+import static com.amazon.fusion.FusionString.isString;
+import static com.amazon.fusion.FusionString.unsafeStringToJavaString;
 import static com.amazon.fusion.FusionValue.isAnyNull;
 import static com.amazon.fusion.FusionVoid.isVoid;
+import static com.amazon.ion.util.IonTextUtils.printString;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;
+import com.amazon.fusion.junit.StdioTestCase;
 import com.amazon.ion.IonContainer;
 import com.amazon.ion.IonInt;
 import com.amazon.ion.IonList;
@@ -32,6 +35,7 @@ import org.junit.Assert;
 import org.junit.Before;
 
 public class CoreTestCase
+    extends StdioTestCase
 {
     static final String NONTERMINATING_EXPRESSION =
         "((lambda (x) (x x)) (lambda (x) (x x)))";
@@ -104,6 +108,8 @@ public class CoreTestCase
             // during scripted builds.
             b = b.withBootstrapRepository(new File("fusion"));
             b = b.withConfigProperties(getClass(), "/fusion.properties");
+
+            b = b.withInitialCurrentOutputPort(stdout());
 
             myRuntimeBuilder = b;
         }
@@ -298,9 +304,16 @@ public class CoreTestCase
     void checkString(String expected, Object actual)
         throws FusionException
     {
-        // TODO UNSAFE use of null Evaluator
-        String actualString = stringToJavaString(null, actual);
-        assertEquals(expected, actualString);
+        TopLevel top = topLevel();
+        if (isString(top, actual))
+        {
+            String actualString = unsafeStringToJavaString(top, actual);
+            assertEquals(expected, actualString);
+        }
+        else
+        {
+            fail("Expected " + printString(expected) + " but got " + actual);
+        }
     }
 
 

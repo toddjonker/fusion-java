@@ -201,13 +201,6 @@ final class FusionTimestamp
         {
             myContent.print(out);
         }
-
-        @Override
-        void display(Evaluator eval, Appendable out)
-            throws IOException
-        {
-            myContent.print(out);
-        }
     }
 
 

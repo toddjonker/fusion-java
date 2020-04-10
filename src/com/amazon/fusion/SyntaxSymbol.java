@@ -1,9 +1,10 @@
-// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2020 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionBool.makeBool;
 import static com.amazon.fusion.FusionSymbol.makeSymbol;
+import static com.amazon.fusion.FusionSyntax.checkIdentifierArg;
 import static com.amazon.fusion.FusionUtils.EMPTY_OBJECT_ARRAY;
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import java.util.Collections;
@@ -35,9 +36,9 @@ final class SyntaxSymbol
 
 
     /** Initialized during {@link #doExpand} */
-    private Binding myBinding;
+    private BoundIdentifier myBoundId;
 
-    final SyntaxWraps myWraps;
+    private final SyntaxWraps myWraps;   // TODO make non-null to streamline logic.
 
     /**
      * @param datum must not be null.
@@ -117,7 +118,7 @@ final class SyntaxSymbol
                                            getLocation(),
                                            properties,
                                            getName());
-        id.myBinding = myBinding;
+        id.myBoundId = myBoundId;
         return id;
     }
 
@@ -142,7 +143,7 @@ final class SyntaxSymbol
         SyntaxSymbol copy =
             new SyntaxSymbol(null, myWraps, getLocation(), getProperties(),
                              getName());
-        copy.myBinding = binding;
+        copy.myBoundId = uncachedResolveBoundIdentifier().copyReplacingBinding(binding);
         return copy;
     }
 
@@ -217,6 +218,7 @@ final class SyntaxSymbol
     @Override
     boolean hasMarks(Evaluator eval)
     {
+        if (myBoundId != null) return myBoundId.hasMarks();
         return (myWraps == null ? false : myWraps.hasMarks(eval));
     }
 
@@ -224,34 +226,53 @@ final class SyntaxSymbol
     /** Not set until {@link #resolve} or {@link #doExpand}. */
     Binding getBinding()
     {
-        return myBinding;
+        return myBoundId.getBinding();
     }
+
+
+    /**
+     * Resolves this identifier to a {@link BoundIdentifier}, but doesn't cache
+     * the result if it has not been previously resolved.
+     *
+     * @return not null.
+     */
+    BoundIdentifier uncachedResolveBoundIdentifier()
+    {
+        if (myBoundId != null) return myBoundId;
+        if (myWraps != null)
+        {
+            return myWraps.resolveBoundIdentifier(getName());
+        }
+        return new BoundIdentifier(new FreeBinding(getName()),
+                                   Collections.<MarkWrap>emptySet());
+    }
+
+    /**
+     * Resolves this identifier to a {@link BoundIdentifier}, permanently
+     * caching the result.
+     *
+     * @return not null.
+     */
+    BoundIdentifier resolveBoundIdentifier()
+    {
+        if (myBoundId == null)
+        {
+            myBoundId = uncachedResolveBoundIdentifier();
+        }
+        return myBoundId;
+    }
+
 
     /**
      * Expand-time binding resolution.
      * As a precondition, this symbol's text must be non-empty.
-     * As a postcondition, {@link #myBinding} is not null.
+     * As a postcondition, {@link #myBoundId} is not null.
      *
      * @return not null.
      */
     Binding resolve()
     {
-        if (myBinding == null)
-        {
-            BaseSymbol name = getName();
-            assert name.isNonEmpty();
-
-            if (myWraps == null)
-            {
-                myBinding = new FreeBinding(name);
-            }
-            else
-            {
-                myBinding = myWraps.resolve(name);
-                if (myBinding == null) myBinding = new FreeBinding(name);
-            }
-        }
-        return myBinding;
+        return resolveBoundIdentifier().getBinding();
     }
 
 
@@ -263,14 +284,7 @@ final class SyntaxSymbol
      */
     Binding uncachedResolve()
     {
-        if (myBinding != null) return myBinding;
-        BaseSymbol name = getName();
-        if (myWraps != null)
-        {
-            Binding b = myWraps.resolve(name);
-            if (b != null) return b;
-        }
-        return new FreeBinding(name);
+        return uncachedResolveBoundIdentifier().getBinding();
     }
 
 
@@ -283,9 +297,9 @@ final class SyntaxSymbol
      */
     Binding uncachedResolveMaybe()
     {
-        if (myBinding != null) return myBinding;
+        if (myBoundId != null) return myBoundId.getBinding();
         if (myWraps   == null) return null;
-        return myWraps.resolve(getName());
+        return myWraps.resolveMaybe(getName());
     }
 
 
@@ -298,7 +312,7 @@ final class SyntaxSymbol
         Binding b = null;
         if (myWraps != null)
         {
-            b = myWraps.resolveTop(getName());
+            b = myWraps.resolveTopMaybe(getName());
         }
         if (b == null)
         {
@@ -310,77 +324,20 @@ final class SyntaxSymbol
 
 
     /**
-     * Determines whether this identifier resolves to a {@link FreeBinding}
-     * with the given name and marks.
-     */
-    boolean resolvesFree(BaseSymbol name, Set<MarkWrap> marks)
-    {
-        Binding resolvedBoundId = resolve();
-        if (resolvedBoundId.isFree(name))
-        {
-            Set<MarkWrap> boundMarks = computeMarks();
-            if (marks.equals(boundMarks))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-
-    /**
-     * Determines whether this identifier resolves to a given binding and has
-     * the given marks.
-     *
-     * @param binding must not be null.
-     * @param marks must not be null.
-     */
-    boolean resolvesBound(Binding binding, Set<MarkWrap> marks)
-    {
-        Binding resolvedBoundId = resolve();
-        if (resolvedBoundId.sameTarget(binding))
-        {
-            Set<MarkWrap> boundMarks = computeMarks();
-            if (marks.equals(boundMarks))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-
-    /**
      * Checks if this symbol is bound to a {@link SyntacticForm} in the given
-     * enviroment.  If so, cache the binding and return the form.  Otherwise
+     * environment.  If so, cache the binding and return the form.  Otherwise
      * do nothing.
      *
      * @return may be null.
      */
     SyntacticForm resolveSyntaxMaybe(Environment env)
     {
-        Binding b = null;
-        if (myBinding != null)
+        BoundIdentifier b = uncachedResolveBoundIdentifier();
+        Object resolved = env.namespace().lookup(b.getBinding());
+        if (resolved instanceof SyntacticForm)
         {
-            b = myBinding;
-        }
-        else if (myWraps != null)
-        {
-            String name = stringValue();
-            if (name != null && name.length() != 0)
-            {
-                b = myWraps.resolve(getName());
-            }
-        }
-
-        if (b != null)
-        {
-            Object resolved = env.namespace().lookup(b);
-            if (resolved instanceof SyntacticForm)
-            {
-                myBinding = b;
-                return (SyntacticForm) resolved;
-            }
+            myBoundId = b;
+            return (SyntacticForm) resolved;
         }
         return null;
     }
@@ -390,8 +347,11 @@ final class SyntaxSymbol
     SyntaxValue doExpand(Expander expander, Environment env)
         throws FusionException
     {
-        if (myBinding == null)        // Otherwise we've already been expanded
+        if (myBoundId == null)        // Otherwise we've already been expanded
         {
+            // FIXME Ensure that this validation always happens when necessary,
+            //       even if other code calls resolve() before expansion.
+
             String text = stringValue();
             if (text == null)
             {
@@ -409,9 +369,8 @@ final class SyntaxSymbol
                 throw new SyntaxException(null, message, this);
             }
 
-            resolve();
-
-            if (myBinding instanceof FreeBinding)
+            Binding b = resolve();
+            if (b instanceof FreeBinding)
             {
                 Evaluator eval = expander.getEvaluator();
                 BaseSymbol topSym = makeSymbol(eval, "#%top");
@@ -438,16 +397,18 @@ final class SyntaxSymbol
     }
 
 
+    boolean boundIdentifierEqual(SyntaxSymbol that)
+    {
+        BoundIdentifier thisId = this.uncachedResolveBoundIdentifier();
+        BoundIdentifier thatId = that.uncachedResolveBoundIdentifier();
+        return thisId.equals(thatId);
+    }
+
     boolean freeIdentifierEqual(SyntaxSymbol that)
     {
         Binding thisBinding = this.uncachedResolve();
         Binding thatBinding = that.uncachedResolve();
         return thisBinding.sameTarget(thatBinding);
-    }
-
-    Object freeIdentifierEqual(Evaluator eval, SyntaxSymbol that)
-    {
-        return makeBool(eval, freeIdentifierEqual(that));
     }
 
 
@@ -470,5 +431,39 @@ final class SyntaxSymbol
             base = buf.toString();
         }
         return base;
+    }
+
+
+    //========================================================================
+    // Procedures
+
+
+    static final class BoundIdentifierEqualProc
+        extends Procedure2
+    {
+        @Override
+        Object doApply(Evaluator eval, Object arg1, Object arg2)
+            throws FusionException
+        {
+            SyntaxSymbol id1 = checkIdentifierArg(eval, this, "identifier", 0, arg1, arg2);
+            SyntaxSymbol id2 = checkIdentifierArg(eval, this, "identifier", 1, arg1, arg2);
+
+            return makeBool(eval, id1.boundIdentifierEqual(id2));
+        }
+    }
+
+
+    static final class FreeIdentifierEqualProc
+        extends Procedure2
+    {
+        @Override
+        Object doApply(Evaluator eval, Object arg1, Object arg2)
+            throws FusionException
+        {
+            SyntaxSymbol id1 = checkIdentifierArg(eval, this, "identifier", 0, arg1, arg2);
+            SyntaxSymbol id2 = checkIdentifierArg(eval, this, "identifier", 1, arg1, arg2);
+
+            return makeBool(eval, id1.freeIdentifierEqual(id2));
+        }
     }
 }
