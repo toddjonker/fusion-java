@@ -1,14 +1,12 @@
-// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2022 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
-import static com.amazon.fusion.BindingDoc.COLLECT_DOCS_MARK;
 import static com.amazon.fusion.FusionIo.safeWriteToString;
 import static com.amazon.fusion.FusionVoid.voidValue;
 import static com.amazon.fusion.ModuleIdentity.isValidAbsoluteModulePath;
 import static com.amazon.fusion.StandardReader.readSyntax;
 import static com.amazon.ion.util.IonTextUtils.printQuotedSymbol;
-import static java.lang.Boolean.TRUE;
 import com.amazon.ion.IonReader;
 import java.io.File;
 import java.io.IOException;
@@ -21,43 +19,23 @@ final class StandardTopLevel
     private final Namespace myNamespace;
 
 
-    /**
-     * @param initialModulePath must be absolute.
-     */
     StandardTopLevel(GlobalState globalState,
                      Namespace namespace,
-                     String initialModulePath,
-                     boolean documenting)
+                     Object... continuationMarks)
         throws FusionInterrupt, FusionException
     {
-        assert ModuleIdentity.isValidAbsoluteModulePath(initialModulePath);
-
         _Private_CoverageCollector collector = globalState.myCoverageCollector;
         Evaluator eval = (collector == null
                             ? new Evaluator(globalState)
                             : new CoverageEvaluator(globalState, collector));
 
-        if (documenting)
+        if (continuationMarks.length != 0)
         {
-            eval = eval.markedContinuation(COLLECT_DOCS_MARK, TRUE);
+            eval = eval.markedContinuation(continuationMarks);
         }
 
         myEvaluator = eval;
         myNamespace = namespace;
-
-        namespace.require(myEvaluator, initialModulePath);
-    }
-
-    /**
-     * @param initialModulePath must be absolute.
-     */
-    StandardTopLevel(GlobalState globalState,
-                     ModuleRegistry registry,
-                     String initialModulePath)
-        throws FusionInterrupt, FusionException
-    {
-        this(globalState, new TopLevelNamespace(registry), initialModulePath,
-             false);
     }
 
 
@@ -78,6 +56,17 @@ final class StandardTopLevel
         return myEvaluator;
     }
 
+    // NOT PUBLIC
+    Namespace getNamespace()
+    {
+        return myNamespace;
+    }
+
+    // NOT PUBLIC
+    ModuleRegistry getRegistry()
+    {
+        return myNamespace.getRegistry();
+    }
 
     @Override
     public Object eval(String source, SourceName name)
@@ -116,6 +105,8 @@ final class StandardTopLevel
             while (source.getType() != null)
             {
                 SyntaxValue sourceExpr = readSyntax(myEvaluator, source, name);
+
+                // This method parameterizes current_namespace for us:
                 result = FusionEval.eval(myEvaluator, sourceExpr, myNamespace);
                 source.next();
             }
@@ -144,6 +135,8 @@ final class StandardTopLevel
         try
         {
             LoadHandler load = myEvaluator.getGlobalState().myLoadHandler;
+
+            // This method parameterizes current_namespace for us:
             return load.loadTopLevel(myEvaluator,
                                      myNamespace,
                                      source.toString());
@@ -170,13 +163,17 @@ final class StandardTopLevel
 
         try
         {
+            // Make sure we use the registry on our namespace.
+            Evaluator eval =
+                myEvaluator.parameterizeCurrentNamespace(myNamespace);
+
             ModuleNameResolver resolver =
                 myEvaluator.getGlobalState().myModuleNameResolver;
             ModuleIdentity id =
                 ModuleIdentity.forAbsolutePath(absoluteModulePath);
             ModuleLocation loc =
                 new IonReaderModuleLocation(source, name);
-            resolver.loadModule(myEvaluator, id, loc, true /* reload it */);
+            resolver.loadModule(eval, id, loc, true /* reload it */);
         }
         catch (FusionInterrupt e)
         {
@@ -184,6 +181,32 @@ final class StandardTopLevel
         }
     }
 
+    ModuleIdentity loadModule(String modulePath)
+        throws FusionInterruptedException, FusionException
+    {
+        try
+        {
+            return myNamespace.resolveAndLoadModule(myEvaluator, modulePath);
+        }
+        catch (FusionInterrupt e)
+        {
+            throw new FusionInterruptedException(e);
+        }
+    }
+
+
+    void attachModule(StandardTopLevel src, String modulePath)
+        throws FusionInterruptedException, FusionException
+    {
+        try
+        {
+            myNamespace.attachModule(myEvaluator, src.myNamespace, modulePath);
+        }
+        catch (FusionInterrupt e)
+        {
+            throw new FusionInterruptedException(e);
+        }
+    }
 
     @Override
     public void requireModule(String modulePath)
@@ -291,6 +314,7 @@ final class StandardTopLevel
                 arguments[i] = fv;
             }
 
+            // TODO Should this set current_namespace?
             return myEvaluator.callNonTail(proc, arguments);
         }
         catch (FusionInterrupt e)

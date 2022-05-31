@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2022 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -11,8 +11,6 @@ import static com.amazon.fusion.FusionNumber.makeInt;
 import static com.amazon.fusion.FusionSexp.immutableSexp;
 import static com.amazon.fusion.FusionSexp.nullSexp;
 import static com.amazon.fusion.FusionString.makeString;
-import static com.amazon.fusion.FusionStruct.STRUCT_MERGE_FUNCTION;
-import static com.amazon.fusion.FusionStruct.immutableStruct;
 import static com.amazon.fusion.FusionStruct.nullStruct;
 import static com.amazon.fusion.FusionSymbol.makeSymbol;
 import static com.amazon.fusion.FusionTimestamp.makeTimestamp;
@@ -20,7 +18,6 @@ import static com.amazon.fusion.SourceLocation.forCurrentSpan;
 import static com.amazon.fusion.SyntaxValue.STX_PROPERTY_ORIGINAL;
 import static com.amazon.ion.IntegerSize.BIG_INTEGER;
 import static java.lang.Boolean.TRUE;
-import static java.util.AbstractMap.SimpleEntry;
 import com.amazon.fusion.FusionList.BaseList;
 import com.amazon.fusion.FusionSexp.BaseSexp;
 import com.amazon.ion.Decimal;
@@ -31,10 +28,7 @@ import com.amazon.ion.IonType;
 import com.amazon.ion.Timestamp;
 import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
-import java.util.NoSuchElementException;
 
 /**
  *
@@ -122,7 +116,7 @@ class StandardReader
             {
                 if (source.isNullValue())
                 {
-                    datum = makeBool(eval, anns, (Boolean) null);
+                    datum = makeBool(eval, anns, null);
                 }
                 else
                 {
@@ -169,7 +163,7 @@ class StandardReader
             {
                 if (source.isNullValue())
                 {
-                    datum = makeFloat(eval, anns, (Double) null);
+                    datum = makeFloat(eval, anns, null);
                 }
                 else
                 {
@@ -316,65 +310,6 @@ class StandardReader
     }
 
 
-    private static Iterator<Map.Entry<String, Object>>
-        makeIonReaderStructIterator(final Evaluator eval,
-                                    final IonReader source,
-                                    final SourceName name,
-                                    final boolean readingSyntax)
-    {
-        return new Iterator<Map.Entry<String, Object>>()
-        {
-            Object current;
-
-            private void attemptAdvance() {
-                if (current == null)
-                {
-                    current = source.next();
-                }
-            }
-
-            @Override
-            public boolean hasNext()
-            {
-                attemptAdvance();
-                return current != null;
-            }
-
-            @Override
-            public Map.Entry<String, Object> next()
-            {
-                if (hasNext())
-                {
-                    String key = source.getFieldName();
-                    Object value;
-                    try
-                    {
-                        value = read(eval, source, name, readingSyntax);
-                    }
-                    catch (FusionException e)
-                    {
-                        // Throwing a RuntimeException so that we can adhere to
-                        //   the Iterator interface.
-                        throw new RuntimeException(e);
-                    }
-
-                    Map.Entry<String, Object> ret = new SimpleEntry<>(key, value);
-                    current = null;
-                    return ret;
-                }
-                throw new NoSuchElementException();
-            }
-
-            @Override
-            public void remove()
-            {
-                throw new UnsupportedOperationException();
-            }
-        };
-    }
-
-
-
     /**
      * @throws IonException if there's a problem reading the source data.
      */
@@ -390,27 +325,19 @@ class StandardReader
             return nullStruct(eval, anns);
         }
 
+        FusionStruct.Builder builder = FusionStruct.builder(eval);
+
         source.stepIn();
-
-        Iterator<Map.Entry<String, Object>> iterator =
-            makeIonReaderStructIterator(eval, source, name, readingSyntax);
-        FunctionalHashTrie<String, Object> fht =
-            FunctionalHashTrie.merge(iterator,
-                                     STRUCT_MERGE_FUNCTION);
-
+        {
+            while (source.next() != null)
+            {
+                String key   = source.getFieldName();
+                Object value = read(eval, source, name, readingSyntax);
+                builder.add(key, value);
+            }
+        }
         source.stepOut();
 
-        try
-        {
-            return immutableStruct(fht, anns);
-        }
-        catch (RuntimeException e)
-        {
-            if (e.getCause() instanceof FusionException)
-            {
-                throw (FusionException) e.getCause();
-            }
-            throw e;
-        }
+        return builder.buildImmutable(anns);
     }
 }

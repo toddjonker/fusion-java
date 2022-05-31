@@ -1,4 +1,4 @@
-// Copyright (c) 2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2019-2020 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion.junit;
 
@@ -32,7 +32,7 @@ public class Reflect
 
     public static Method getMethod(Object o, String name, Class<?>... argTypes)
     {
-        Class c = o.getClass();
+        Class<?> c = o.getClass();
         try
         {
             return c.getMethod(name, argTypes);
@@ -44,23 +44,24 @@ public class Reflect
     }
 
 
-    public static Method getterFor(Object o, String property, Class type)
+    public static Method getterFor(Object o, String property, Class<?> type)
     {
         String prefix = (type == Boolean.class ? "is" : "get");
         return getMethod(o, prefix + property);
     }
 
-    public static Method setterFor(Object o, String property, Class type)
+    public static Method setterFor(Object o, String property, Class<?> type)
     {
         return getMethod(o, "set" + property, type);
     }
 
-    public static Method witherFor(Object o, String property, Class type)
+    public static Method witherFor(Object o, String property, Class<?> type)
     {
         return getMethod(o, "with" + property, type);
     }
 
 
+    @SuppressWarnings("unchecked")
     public static <T> T invoke(Object o, Method method, Object... args)
     {
         try

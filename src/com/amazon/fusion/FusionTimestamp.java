@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2020 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -17,7 +17,6 @@ import static com.amazon.fusion.FusionVoid.isVoid;
 import static com.amazon.fusion.FusionVoid.voidValue;
 import static com.amazon.fusion.SimpleSyntaxValue.makeSyntax;
 import static com.amazon.ion.Timestamp.UTC_OFFSET;
-import static com.amazon.ion.Timestamp.createFromUtcFields;
 import static com.amazon.ion.Timestamp.forDay;
 import static com.amazon.ion.Timestamp.forMinute;
 import static com.amazon.ion.Timestamp.forMonth;
@@ -832,7 +831,7 @@ final class FusionTimestamp
         extends Procedure
     {
         @Override
-        Object doApply(Evaluator eval, Object args[])
+        Object doApply(Evaluator eval, Object[] args)
             throws FusionException
         {
             checkArityExact(2, args);

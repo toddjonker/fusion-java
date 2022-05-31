@@ -1,14 +1,20 @@
-// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2022 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
+import static com.amazon.fusion.BindingDoc.COLLECT_DOCS_MARK;
+import static com.amazon.fusion.FusionUtils.EMPTY_OBJECT_ARRAY;
+import static com.amazon.fusion.GlobalState.KERNEL_MODULE_IDENTITY;
 import static com.amazon.fusion.ModuleIdentity.forAbsolutePath;
 import static com.amazon.fusion.ModuleIdentity.isValidAbsoluteModulePath;
+import static java.lang.Boolean.TRUE;
 import com.amazon.ion.IonCatalog;
+import com.amazon.ion.IonReader;
 import com.amazon.ion.IonSystem;
 import com.amazon.ion.IonValue;
 import com.amazon.ion.ValueFactory;
 import com.amazon.ion.system.IonSystemBuilder;
+import java.io.OutputStream;
 
 
 final class StandardRuntime
@@ -41,9 +47,12 @@ final class StandardRuntime
             myGlobalState =
                 GlobalState.initialize(ionSystem, builder, myRegistry, topNs);
 
-            myTopLevel =
-                new StandardTopLevel(myGlobalState, topNs, myDefaultLanguage,
-                                     builder.isDocumenting());
+            Object[] parameterization =
+                (builder.isDocumenting()
+                     ? new Object[]{ COLLECT_DOCS_MARK, TRUE }
+                     : EMPTY_OBJECT_ARRAY);
+
+            myTopLevel = makeTopLevel(topNs, myDefaultLanguage, parameterization);
         }
         catch (FusionException e)
         {
@@ -88,26 +97,53 @@ final class StandardRuntime
     }
 
 
-    @Override
-    public TopLevel makeTopLevel(String initialModulePath)
+    StandardTopLevel makeTopLevel(Namespace namespace,
+                                  String initialModulePath,
+                                  Object... parameterization)
         throws FusionException
     {
-        if (! isValidAbsoluteModulePath(initialModulePath))
-        {
-            String message =
-                "Not a valid absolute module path: " + initialModulePath;
-            throw new IllegalArgumentException(message);
-        }
-
         try
         {
-            return new StandardTopLevel(myGlobalState, myRegistry,
-                                        initialModulePath);
+            StandardTopLevel top =
+                new StandardTopLevel(myGlobalState, namespace, parameterization);
+            if (initialModulePath != null)
+            {
+                if (! isValidAbsoluteModulePath(initialModulePath))
+                {
+                    String message =
+                        "Not a valid absolute module path: " + initialModulePath;
+                    throw new IllegalArgumentException(message);
+                }
+
+                top.requireModule(initialModulePath);
+            }
+            return top;
         }
         catch (FusionInterrupt e)
         {
             throw new FusionInterruptedException(e);
         }
+    }
+
+    StandardTopLevel makeTopLevel(ModuleRegistry registry,
+                                  String initialModulePath)
+        throws FusionException
+    {
+        return makeTopLevel(new TopLevelNamespace(registry), initialModulePath);
+    }
+
+    @Override
+    public TopLevel makeTopLevel(String initialModulePath)
+        throws FusionException
+    {
+        return makeTopLevel(myRegistry, initialModulePath);
+    }
+
+
+    StandardTopLevel makeEmptyTopLevelAndRegistry()
+        throws FusionException
+    {
+        return makeTopLevel(makeModuleRegistry(), null);
     }
 
 
@@ -116,6 +152,24 @@ final class StandardRuntime
         throws FusionException
     {
         return makeTopLevel(getDefaultLanguage());
+    }
+
+
+    private ModuleRegistry makeModuleRegistry()
+        throws FusionException
+    {
+        ModuleNameResolver resolver = myGlobalState.myModuleNameResolver;
+
+        ModuleRegistry r = new ModuleRegistry();
+        r.attach(resolver, myRegistry, KERNEL_MODULE_IDENTITY);
+        return r;
+    }
+
+
+    @Override
+    public SandboxBuilder makeSandboxBuilder()
+    {
+        return new SandboxBuilderImpl();
     }
 
 
@@ -152,5 +206,126 @@ final class StandardRuntime
         throws FusionException
     {
         return FusionValue.copyToIonValueMaybe(fusionValue, factory);
+    }
+
+
+    //========================================================================
+
+
+    private class SandboxBuilderImpl
+        implements SandboxBuilder
+    {
+        private String myLanguage;
+
+        @Override
+        public void setLanguage(String absoluteModulePath)
+        {
+            if (! isValidAbsoluteModulePath(absoluteModulePath))
+            {
+                String message =
+                    "Not a valid absolute module path: " + absoluteModulePath;
+                throw new IllegalArgumentException(message);
+            }
+            myLanguage = absoluteModulePath;
+        }
+
+        @Override
+        public TopLevel build()
+            throws FusionException
+        {
+            if (myLanguage == null)
+            {
+                throw new IllegalStateException("No language specified.");
+            }
+            ModuleIdentity langId = forAbsolutePath(myLanguage);
+
+            // Our goal here, for now, is to emulate:
+            // (make-evaluator `(begin) #:requires (list <language>))
+
+            // That said, we should avoid replicated instances of /fusion/**
+            // modules.
+
+            try
+            {
+                ModuleNameResolver resolver =
+                    myGlobalState.myModuleNameResolver;
+
+                Object currentIonReader =
+                    myGlobalState.myCurrentIonReaderParam;
+                Object currentNamespace =
+                    myGlobalState.myCurrentNamespaceParam;
+                Object currentOutputPort =
+                    myGlobalState.myCurrentOutputPortParam;
+                Object currentSecurityGuard =
+                    myGlobalState.myCurrentSecurityGuardParam;
+
+                IonReader reader =
+                    myGlobalState.myIonReaderBuilder.build("");
+
+                // When language is given as a module path, Racket creates a
+                // new module-namespace in that language.
+
+                // SEE make-evaluation-namespace in sandbox.rkt
+                //  * Using current-namespace to find the current registry,
+                //     * instantiate myLanguage
+                //  * Create the new namespace...
+                //     * Create a fresh registry, it should contain any core
+                //       singleton modules eg #%kernel
+                //  * namespace-attach-module the language from current NS.
+                //    This attaches transitive dependencies.
+                //  * Require the language into the new NS.
+
+                // Hack to force instantiation of myLanguage in myRegistry.
+                makeTopLevel(myRegistry, myLanguage);
+
+                ModuleRegistry newRegistry = makeModuleRegistry();
+                newRegistry.attach(resolver, myRegistry, langId);
+
+                TopLevelNamespace namespace = new TopLevelNamespace(newRegistry);
+
+                return makeTopLevel(namespace,
+                                    myLanguage,
+                                    // Continuation mark key/values:
+                                    currentIonReader,
+                                    reader,
+                                    currentNamespace,
+                                    namespace,
+                                    currentOutputPort,
+                                    new NullOutputStream(),
+                                    currentSecurityGuard,
+                                    SecurityGuard.CLOSED);
+
+                // StandardTopLevel automagically sets current_namespace for
+                // some entry points like eval() and load(), but not for others
+                // like call() or loadModule().
+                // TODO StandardTopLevel should *always* set current_namespace
+                //   in its outermost Evaluator, but we need some backwards
+                //   compatibility analysis before doing that.
+            }
+            catch (FusionInterrupt e)
+            {
+                throw new FusionInterruptedException(e);
+            }
+        }
+    }
+
+
+    private static final class NullOutputStream
+        extends OutputStream
+    {
+        @Override
+        public void write(int b)
+        {
+        }
+
+        @Override
+        public void write(byte[] b)
+        {
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len)
+        {
+        }
     }
 }

@@ -22,6 +22,7 @@ import static com.amazon.fusion.FusionVoid.voidValue;
 import static java.lang.Character.highSurrogate;
 import static java.lang.Character.isSupplementaryCodePoint;
 import static java.lang.Character.lowSurrogate;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import com.amazon.fusion.FusionBool.BaseBool;
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import com.amazon.fusion.FusionText.BaseText;
@@ -35,7 +36,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
-import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -52,11 +52,6 @@ import java.util.regex.Pattern;
 public final class FusionString
 {
     private FusionString() {}
-
-    /** The string {@code "UTF-8"}. */
-    static final String UTF8_CHARSET_NAME = "UTF-8";
-
-    static final Charset UTF8_CHARSET = Charset.forName(UTF8_CHARSET_NAME);
 
 
     //========================================================================
@@ -607,7 +602,7 @@ public final class FusionString
 
             if (s == null || s.isEmpty()) return FusionNumber.ZERO_INT;
 
-            CharsetEncoder encoder = UTF8_CHARSET.newEncoder();
+            CharsetEncoder encoder = UTF_8.newEncoder();
             try
             {
                 ByteBuffer buffer = encoder.encode(CharBuffer.wrap(s));
@@ -885,6 +880,31 @@ public final class FusionString
             }
 
             return makeString(eval, resultBuilder.toString());
+        }
+    }
+
+
+    static final class ReplaceProc
+            extends Procedure
+    {
+        @Override
+        Object doApply(Evaluator eval, Object[] args)
+                throws FusionException
+        {
+            checkArityExact(3, args);
+
+            String string = checkNullableStringArg(eval, this, 0, args);
+            String from = checkRequiredStringArg(eval, this, 1, args);
+            String to = checkRequiredStringArg(eval, this, 2, args);
+
+            String result = null;
+
+            if (string != null)
+            {
+                result = string.replace(from, to);
+            }
+
+            return makeString(eval, result);
         }
     }
 

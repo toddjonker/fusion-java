@@ -186,12 +186,12 @@ abstract class Procedure
     {
         try
         {
-            T arg = klass.cast(args[argNum]);
-            return klass.cast(arg);
+            return klass.cast(args[argNum]);
         }
-        catch (ClassCastException e) {}
-
-        throw new ArgumentException(this, desc, argNum, args);
+        catch (ClassCastException e)
+        {
+            throw new ArgumentException(this, desc, argNum, args);
+        }
     }
 
 
@@ -313,9 +313,10 @@ abstract class Procedure
         {
             return (SyntaxValue) args[argNum];
         }
-        catch (ClassCastException e) {}
-
-        throw new ArgumentException(this, "Syntax value", argNum, args);
+        catch (ClassCastException e)
+        {
+            throw new ArgumentException(this, "Syntax value", argNum, args);
+        }
     }
 
     private <T extends SyntaxValue> T checkSyntaxArg(Class<T> klass,
@@ -369,9 +370,10 @@ abstract class Procedure
         {
             return (Procedure) args[argNum];
         }
-        catch (ClassCastException e) {}
-
-        throw new ArgumentException(this, "procedure", argNum, args);
+        catch (ClassCastException e)
+        {
+            throw new ArgumentException(this, "procedure", argNum, args);
+        }
     }
 
 }

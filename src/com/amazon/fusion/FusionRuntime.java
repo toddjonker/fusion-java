@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2022 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -8,22 +8,28 @@ import com.amazon.ion.ValueFactory;
 
 /**
  * Primary entry point for embedding Fusion within a Java program.
- * The runtime contains resources common to many evaluations, in particular a
- * registry of all loaded modules. Instances are immutable and thread-safe.
+ * The runtime contains resources common to many evaluations, in particular the
+ * default module registry tracking loaded modules.
+ * Instances are immutable and thread-safe.
  * <p>
  * <b>WARNING:</b> This interface must not be implemented or extended by
  * code outside of this library.
+ * </p>
  * <p>
  * The runtime should be considered a very heavyweight component, and it should
  * not be used in a transient or localized fashion. Most applications should
  * construct exactly one runtime.
+ * </p>
  * <p>
  * The runtime maintains a {@link TopLevel} namespace within which expressions
  * can be evaluated. The namespace bindings and state are maintained between
  * calls.  Applications that need isolated evaluation should create additional
- * top levels by calling one of the {@link #makeTopLevel} methods.
+ * top levels by calling one of the {@link #makeTopLevel} methods. More secure
+ * evaluation contexts are provided via {@link #makeSandboxBuilder()}.
+ * </p>
  * <p>
  * To create a {@link FusionRuntime}, use a {@link FusionRuntimeBuilder}.
+ * </p>
  */
 public interface FusionRuntime
 {
@@ -37,7 +43,7 @@ public interface FusionRuntime
      *
      * @see FusionRuntimeBuilder#getDefaultLanguage()
      */
-    public String getDefaultLanguage();
+    String getDefaultLanguage();
 
 
     /**
@@ -45,7 +51,7 @@ public interface FusionRuntime
      *
      * @return not null.
      */
-    public IonCatalog getDefaultIonCatalog();
+    IonCatalog getDefaultIonCatalog();
 
 
     /**
@@ -61,7 +67,7 @@ public interface FusionRuntime
      *
      * @see #getDefaultLanguage()
      */
-    public TopLevel getDefaultTopLevel()
+    TopLevel getDefaultTopLevel()
         throws FusionException;
 
 
@@ -73,7 +79,7 @@ public interface FusionRuntime
      *
      * @see #getDefaultLanguage()
      */
-    public TopLevel makeTopLevel()
+    TopLevel makeTopLevel()
         throws FusionException;
 
 
@@ -86,8 +92,16 @@ public interface FusionRuntime
      *
      * @return not null.
      */
-    public TopLevel makeTopLevel(String initialModulePath)
+    TopLevel makeTopLevel(String initialModulePath)
         throws FusionException;
+
+
+    /**
+     * Returns a fresh builder for creating evaluation sandboxes.
+     *
+     * @return a new builder instance.
+     */
+    SandboxBuilder makeSandboxBuilder();
 
 
     /**
@@ -97,7 +111,7 @@ public interface FusionRuntime
      * with {@code '/'}.
      * @return a new module builder.
      */
-    public ModuleBuilder makeModuleBuilder(String absoluteModulePath)
+    ModuleBuilder makeModuleBuilder(String absoluteModulePath)
         throws FusionException;
 
 
@@ -115,7 +129,7 @@ public interface FusionRuntime
      * @throws FusionException if the value is not handled by the default
      * ionization strategy, or if something else goes wrong during ionization.
      */
-    public IonValue ionize(Object fusionValue, ValueFactory factory)
+    IonValue ionize(Object fusionValue, ValueFactory factory)
         throws FusionException;
 
 
@@ -130,6 +144,6 @@ public interface FusionRuntime
      *
      * @throws FusionException if something goes wrong during ionization.
      */
-    public IonValue ionizeMaybe(Object fusionValue, ValueFactory factory)
+    IonValue ionizeMaybe(Object fusionValue, ValueFactory factory)
         throws FusionException;
 }

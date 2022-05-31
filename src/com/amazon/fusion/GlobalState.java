@@ -1,9 +1,10 @@
-// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2022 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionString.makeString;
 import static com.amazon.fusion.FusionValue.UNDEF;
+import com.amazon.fusion.ModuleNamespace.ModuleDefinedBinding;
 import com.amazon.ion.IonReader;
 import com.amazon.ion.IonStruct;
 import com.amazon.ion.IonSystem;
@@ -23,27 +24,33 @@ final class GlobalState
     static final ModuleIdentity KERNEL_MODULE_IDENTITY =
         ModuleIdentity.forAbsolutePath(KERNEL_MODULE_NAME);
 
-    static final String ALL_DEFINED_OUT = "all_defined_out";
-    static final String BEGIN           = "begin";
-    static final String DEFINE          = "define";
-    static final String DEFINE_SYNTAX   = "define_syntax";
-    static final String EOF             = "eof";
-    static final String LAMBDA          = "lambda";
-    static final String MODULE          = "module";
-    static final String ONLY_IN         = "only_in";
-    static final String PREFIX_IN       = "prefix_in";
-    static final String PROVIDE         = "provide";
-    static final String RENAME_IN       = "rename_in";
-    static final String RENAME_OUT      = "rename_out";
-    static final String REQUIRE         = "require";
+    static final String ALL_DEFINED_OUT       = "all_defined_out";
+    static final String BEGIN                 = "begin";
+    static final String CLOSED_SECURITY_GUARD = "closed_security_guard";
+    static final String DEFINE                = "define";
+    static final String DEFINE_SYNTAX         = "define_syntax";
+    static final String EOF                   = "eof";
+    static final String LAMBDA                = "lambda";
+    static final String MODULE                = "module";
+    static final String ONLY_IN               = "only_in";
+    static final String PREFIX_IN             = "prefix_in";
+    static final String PROVIDE               = "provide";
+    static final String RENAME_IN             = "rename_in";
+    static final String RENAME_OUT            = "rename_out";
+    static final String REQUIRE               = "require";
 
     final IonSystem                  myIonSystem;
     final IonReaderBuilder           myIonReaderBuilder;
+    final FileSystemSpecialist       myFileSystemSpecialist;
     final ModuleInstance             myKernelModule;
     final ModuleNameResolver         myModuleNameResolver;
     final LoadHandler                myLoadHandler;
-    final DynamicParameter           myCurrentNamespaceParam;
     final _Private_CoverageCollector myCoverageCollector;
+
+    final DynamicParameter myCurrentIonReaderParam;
+    final DynamicParameter myCurrentNamespaceParam;
+    final DynamicParameter myCurrentOutputPortParam;
+    final DynamicParameter myCurrentSecurityGuardParam;
 
     final Binding myKernelAllDefinedOutBinding;
     final Binding myKernelBeginBinding;
@@ -58,20 +65,25 @@ final class GlobalState
     final Binding myKernelRequireBinding;
 
     private GlobalState(IonSystem                  ionSystem,
-                        IonReaderBuilder           ionReaderBuiler,
+                        IonReaderBuilder           ionReaderBuilder,
+                        FileSystemSpecialist       fileSystemSpecialist,
                         ModuleInstance             kernel,
                         ModuleNameResolver         resolver,
                         LoadHandler                loadHandler,
-                        DynamicParameter           currentNamespaceParam,
                         _Private_CoverageCollector coverageCollector)
     {
         myIonSystem             = ionSystem;
-        myIonReaderBuilder      = ionReaderBuiler;
+        myIonReaderBuilder      = ionReaderBuilder;
+        myFileSystemSpecialist  = fileSystemSpecialist;
         myKernelModule          = kernel;
         myModuleNameResolver    = resolver;
         myLoadHandler           = loadHandler;
-        myCurrentNamespaceParam = currentNamespaceParam;
         myCoverageCollector     = coverageCollector;
+
+        myCurrentIonReaderParam     = kernelValue("current_ion_reader");
+        myCurrentNamespaceParam     = kernelValue("current_namespace");
+        myCurrentOutputPortParam    = kernelValue("current_output_port");
+        myCurrentSecurityGuardParam = kernelValue("current_security_guard");
 
         myKernelAllDefinedOutBinding = kernelBinding(ALL_DEFINED_OUT);
         myKernelBeginBinding         = kernelBinding(BEGIN);
@@ -113,8 +125,14 @@ final class GlobalState
             new DynamicParameter(UNDEF);
         DynamicParameter currentNamespaceParam =
             new DynamicParameter(initialCurrentNamespace);
+        DynamicParameter currentSecurityGuard =
+            new DynamicParameter(SecurityGuard.OPEN);
+
+        FileSystemSpecialist fs =
+            new FileSystemSpecialist(currentSecurityGuard,
+                                     currentDirectory);
         LoadHandler loadHandler =
-            new LoadHandler(currentLoadRelativeDirectory, currentDirectory);
+            new LoadHandler(fs, currentLoadRelativeDirectory);
         ModuleNameResolver resolver =
             new ModuleNameResolver(loadHandler,
                                    currentLoadRelativeDirectory,
@@ -128,11 +146,13 @@ final class GlobalState
 
         ns.define(ALL_DEFINED_OUT, new ProvideForm.AllDefinedOutForm());
         ns.define(BEGIN, new BeginForm());
+        ns.define(CLOSED_SECURITY_GUARD, SecurityGuard.CLOSED);
 
         ns.define("current_output_port", currentOutputPort);
         ns.define("current_directory", currentDirectory);
         ns.define("current_ion_reader", new CurrentIonReaderParameter());
         ns.define("current_namespace", currentNamespaceParam);
+        ns.define("current_security_guard", currentSecurityGuard);
 
         ns.define(DEFINE, new DefineForm());
         ns.define(DEFINE_SYNTAX, new DefineSyntaxForm());
@@ -154,8 +174,7 @@ final class GlobalState
         ModuleInstance kernel = registry.lookup(KERNEL_MODULE_IDENTITY);
 
         GlobalState globals =
-            new GlobalState(system, readerBuilder, kernel, resolver, loadHandler,
-                            currentNamespaceParam,
+            new GlobalState(system, readerBuilder, fs, kernel, resolver, loadHandler,
                             builder.getCoverageCollector());
         return globals;
     }
@@ -165,11 +184,18 @@ final class GlobalState
      * Ensure we have a {@linkplain Binding#target target binding} that can be
      * compared with {@code ==}.
      */
-    private Binding kernelBinding(String name)
+    private ModuleDefinedBinding kernelBinding(String name)
     {
-        Binding b = myKernelModule.resolveProvidedName(name).target();
-        assert b != null && ! (b instanceof FreeBinding);
+        ModuleDefinedBinding b = myKernelModule.resolveProvidedName(name).target();
+        assert b != null;
         return b;
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> T kernelValue(String name)
+    {
+        ModuleDefinedBinding b = kernelBinding(name);
+        return (T) b.lookup(myKernelModule);
     }
 
     /**

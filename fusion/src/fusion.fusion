@@ -47,8 +47,23 @@ contact us for clarification.
   (require "/fusion/bool")
   (provide is_bool is_false is_true is_truthy is_untruthy not)
 
+  // lob (clob & blob)
+  (require "/fusion/lob")
+  (provide
+    lob_to_hex
+  )
+
   (require "/fusion/number")
-  (provide + - * / decimal int_to_string is_decimal is_float is_int string_to_int)
+  (provide
+    + - * /
+    decimal
+    int_to_string
+    is_decimal
+    is_float
+    is_int
+    random
+    string_to_int
+  )
 
   (require "/fusion/string")
   (provide
@@ -59,6 +74,7 @@ contact us for clarification.
     string_is_lower
     string_is_upper
     string_join
+    string_replace
     string_split
     string_starts_with
     string_to_lower

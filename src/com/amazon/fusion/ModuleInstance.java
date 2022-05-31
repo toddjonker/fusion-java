@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2022 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -22,6 +22,9 @@ import java.util.Set;
 final class ModuleInstance
     extends NamedValue
 {
+    // TODO This should retain the Namespace, perhaps, so we can evaluate
+    //  "inside" the module namespace
+
     private final ModuleIdentity myIdentity;
     private final String         myDocs;
     private final ModuleStore    myStore;
@@ -136,11 +139,9 @@ final class ModuleInstance
      */
     BindingDoc documentProvidedName(String name)
     {
-        BindingDoc doc = null;
-
         ModuleDefinedBinding binding = resolveProvidedName(name).target();
 
-        doc = documentProvidedName(binding);
+        BindingDoc doc = documentProvidedName(binding);
         if (doc == null)
         {
             Object value = binding.lookup(this);

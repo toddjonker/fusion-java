@@ -1,10 +1,14 @@
-// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2020 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionStruct.asImmutableStruct;
+import static com.amazon.fusion.FusionStruct.emptyStruct;
+import static com.amazon.fusion.FusionStruct.immutableStruct;
 import static com.amazon.fusion.FusionStruct.isImmutableStruct;
 import static com.amazon.fusion.FusionStruct.isMutableStruct;
+import static com.amazon.fusion.FusionStruct.unsafeStructMerge1;
+import static com.amazon.fusion.FusionStruct.unsafeStructSize;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertTrue;
@@ -28,6 +32,20 @@ public class StructTest
 
     //========================================================================
 
+    @Test
+    public void testStructLiteralWithRepeat()
+        throws Exception
+    {
+        Object s = eval("{f:1, f:2}");
+        assertEquals(2, unsafeStructSize(evaluator(), s));
+    }
+
+    @Test
+    public void testStructLiteralWithBadSyntax()
+            throws Exception
+    {
+        expectSyntaxExn("{f:(define)}");
+    }
 
     @Test
     public void testDeepRemoveKeysM()
@@ -174,6 +192,26 @@ public class StructTest
 
 
     @Test
+    public void structMerge1()
+        throws Exception
+    {
+        Evaluator eval = evaluator();
+
+        Object empty = emptyStruct(eval);
+
+        Object dupes = immutableStruct(new String[]{ "a", "a" },
+                                       new Object[]{ 1, 1 },
+                                       FusionSymbol.BaseSymbol.EMPTY_ARRAY);
+        assertEquals(2, unsafeStructSize(eval, dupes));
+
+        Object merged = unsafeStructMerge1(eval, empty, dupes);
+        assertEquals(1, unsafeStructSize(eval, merged));
+
+        merged = unsafeStructMerge1(eval, dupes, empty);
+        assertEquals(1, unsafeStructSize(eval, merged));
+    }
+
+    @Test
     public void structMergeFail()
         throws Exception
     {
@@ -192,7 +230,7 @@ public class StructTest
 
         Object ms = FusionStruct.mutableStruct(eval);
         assertTrue(isMutableStruct(eval, ms));
-        assertEquals(0, FusionStruct.unsafeStructSize(eval, ms));
+        assertEquals(0, unsafeStructSize(eval, ms));
     }
 
 

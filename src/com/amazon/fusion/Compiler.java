@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2020 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2017-2022 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -9,9 +9,9 @@ import static com.amazon.fusion.FusionList.unsafeListElement;
 import static com.amazon.fusion.FusionSexp.unsafePairHead;
 import static com.amazon.fusion.FusionSexp.unsafePairTail;
 import static com.amazon.fusion.FusionString.stringToJavaString;
+import static com.amazon.fusion.FusionStruct.emptyStruct;
 import static com.amazon.fusion.FusionStruct.immutableStruct;
 import static com.amazon.fusion.FusionStruct.nullStruct;
-import static com.amazon.fusion.FusionStruct.structImplAdd;
 import static com.amazon.fusion.FusionSymbol.BaseSymbol.internSymbol;
 import static com.amazon.fusion.FusionValue.isAnnotated;
 import static com.amazon.fusion.FusionValue.isAnyNull;
@@ -40,7 +40,6 @@ import com.amazon.fusion.TopLevelNamespace.CompiledFreeDefine;
 import com.amazon.fusion.TopLevelNamespace.CompiledFreeVariableReference;
 import com.amazon.fusion.TopLevelNamespace.CompiledTopLevelVariableReference;
 import com.amazon.fusion.TopLevelNamespace.TopLevelDefinedBinding;
-import java.util.Collections;
 
 /**
  * "Registers" used during compilation.
@@ -729,7 +728,7 @@ class Compiler
         int size = FusionStruct.unsafeStructSize(myEval, struct);
         if (size == 0)
         {
-            return new CompiledConstant(immutableStruct(Collections.EMPTY_MAP));
+            return new CompiledConstant(emptyStruct(myEval));
         }
 
         final String[]       fieldNames = new String[size];
@@ -774,10 +773,10 @@ class Compiler
                                                         constFields,
                                                         BaseSymbol.EMPTY_ARRAY));
         }
-        else
-        {
-            return new CompiledStruct(fieldNames, fieldForms);
-        }
+
+        if (size == 1) return new CompiledStruct1(fieldNames[0], fieldForms[0]);
+
+        return new CompiledStruct(fieldNames, fieldForms);
     }
 
 
@@ -872,10 +871,10 @@ class Compiler
                 else
                 {
                     b.append("\nArguments were: ");
-                    for (int i = 0; i < args.length; i++)
+                    for (Object arg : args)
                     {
                         b.append("\n  ");
-                        safeWrite(eval, b, args[i]);
+                        safeWrite(eval, b, arg);
                     }
                 }
 
@@ -957,19 +956,41 @@ class Compiler
         public Object doEval(Evaluator eval, Store store)
             throws FusionException
         {
-            FunctionalHashTrie<String, Object> map = FunctionalHashTrie.EMPTY;
+            FusionStruct.Builder builder = FusionStruct.builder(eval);
 
             for (int i = 0; i < myFieldNames.length; i++)
             {
-                CompiledForm form = myFieldForms[i];
-                Object value = eval.eval(store, form);
-
-                String fieldName = myFieldNames[i];
-
-                map = structImplAdd(map, fieldName, value);
+                Object value = eval.eval(store, myFieldForms[i]);
+                builder.add(myFieldNames[i], value);
             }
 
-            return immutableStruct(map, myFieldNames.length);
+            return builder.buildImmutable();
+        }
+    }
+
+
+    /**
+     * Special-case for single-field {@code {key:expr}}, which can skip a lot of
+     * bookkeeping.
+     */
+    private static final class CompiledStruct1
+        implements CompiledForm
+    {
+        private final String       myFieldName;
+        private final CompiledForm myFieldForm;
+
+        CompiledStruct1(String fieldName, CompiledForm fieldForm)
+        {
+            myFieldName = fieldName;
+            myFieldForm = fieldForm;
+        }
+
+        @Override
+        public Object doEval(Evaluator eval, Store store)
+            throws FusionException
+        {
+            Object value = eval.eval(store, myFieldForm);
+            return immutableStruct(eval, myFieldName, value);
         }
     }
 }

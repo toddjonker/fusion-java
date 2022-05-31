@@ -1,32 +1,30 @@
-// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2022 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionEval.callCurrentEval;
 import static com.amazon.fusion.FusionString.makeString;
-import static com.amazon.fusion.FusionUtils.resolvePath;
 import static com.amazon.fusion.GlobalState.MODULE;
 import static com.amazon.fusion.StandardReader.readSyntax;
 import com.amazon.ion.IonException;
 import com.amazon.ion.IonReader;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
 
 /**
  * Parallel to Racket's load handler.
  */
 final class LoadHandler
 {
-    private final DynamicParameter myCurrentLoadRelativeDirectory;
-    private final DynamicParameter myCurrentDirectory;
+    private final FileSystemSpecialist myFileSystem;
+    private final DynamicParameter     myCurrentLoadRelativeDirectory;
 
-    LoadHandler(DynamicParameter currentLoadRelativeDirectory,
-                DynamicParameter currentDirectory)
+    LoadHandler(FileSystemSpecialist fileSystemSpecialist,
+                DynamicParameter     currentLoadRelativeDirectory)
     {
+        myFileSystem                   = fileSystemSpecialist;
         myCurrentLoadRelativeDirectory = currentLoadRelativeDirectory;
-        myCurrentDirectory = currentDirectory;
     }
 
 
@@ -48,7 +46,7 @@ final class LoadHandler
     Object loadTopLevel(Evaluator eval, Namespace namespace, String path)
         throws FusionException
     {
-        File file = resolvePath(eval, myCurrentDirectory, path);
+        File file = myFileSystem.resolvePath(eval, "load", path);
         File parent = file.getParentFile();
 
         // TODO this shouldn't be done in the standard load handler.
@@ -56,7 +54,7 @@ final class LoadHandler
         eval = eval.markedContinuation(myCurrentLoadRelativeDirectory,
                                        makeString(eval, parent.getAbsolutePath()));
 
-        try (FileInputStream in = new FileInputStream(file))
+        try (InputStream in = myFileSystem.openInputFile(eval, "load", file))
         {
             SourceName name = SourceName.forFile(file);
             Object result = null;
@@ -73,11 +71,6 @@ final class LoadHandler
             }
 
             return result;
-        }
-        catch (FileNotFoundException e)
-        {
-            String message = "Error loading " + e.getMessage();
-            throw new FusionException(message, e);
         }
         catch (IOException | IonException e)
         {
@@ -149,15 +142,10 @@ final class LoadHandler
     {
         try
         {
-            IonReader reader = loc.read(eval);
-            try
+            try (IonReader reader = loc.read(eval))
             {
                 SourceName sourceName = loc.sourceName();
                 return readModuleDeclaration(eval, id, sourceName, reader);
-            }
-            finally
-            {
-                reader.close();
             }
         }
         catch (IOException e)
@@ -204,6 +192,7 @@ final class LoadHandler
             bodyEval =
                 eval.markedContinuation(myCurrentLoadRelativeDirectory,
                                         makeString(eval, dirPath));
+            // TODO Should this set other params like current_namespace?
         }
 
         // TODO Do we need an Evaluator with no continuation marks?
