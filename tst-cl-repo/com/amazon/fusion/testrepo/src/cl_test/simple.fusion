@@ -1,0 +1,5 @@
+(module simple "/fusion"
+  (provide (all_defined_out))
+
+  (define the_answer 42)
+)

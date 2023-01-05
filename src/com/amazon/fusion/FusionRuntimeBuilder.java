@@ -5,6 +5,8 @@ package com.amazon.fusion;
 import static com.amazon.fusion.ModuleIdentity.isValidAbsoluteModulePath;
 import static com.amazon.fusion._Private_CoverageCollectorImpl.fromDirectory;
 import com.amazon.ion.IonCatalog;
+import com.amazon.ion.IonSystem;
+import com.amazon.ion.system.IonSystemBuilder;
 import com.amazon.ion.system.SimpleCatalog;
 import java.io.File;
 import java.io.OutputStream;
@@ -107,6 +109,9 @@ import java.util.Properties;
  */
 public class FusionRuntimeBuilder
 {
+    // TODO determine the right factoring for system--this is used for class loader manifests
+    private static final IonSystem ION_SYSTEM = IonSystemBuilder.standard().build();
+
     /**
      * The property used to configure the <a href="#bootrepo">bootstrap
      * repository</a>: {@value}.
@@ -123,6 +128,21 @@ public class FusionRuntimeBuilder
 
     private static final String STANDARD_DEFAULT_LANGUAGE = "/fusion";
 
+    /** Deferred constructor for a {@link ModuleRepository}. */
+    private interface RepositoryConstructor
+    {
+        ModuleRepository create() throws FusionException;
+
+        /**
+         * The {@link File} location of this repository, <tt>null</tt>,
+         * if not applicable to the underlying repository.
+         *
+         * This is provided for compatibility for parts of the implementation that are coupled
+         * to repositories being filesystem based.
+         */
+        @Deprecated
+        File getRepositoryDirectory();
+    }
 
     /**
      * The standard builder of {@link FusionRuntime}s, with all configuration
@@ -141,8 +161,8 @@ public class FusionRuntimeBuilder
 
     private OutputStream myCurrentOutputPort;
     private File         myCurrentDirectory;
-    private File         myBootstrapRepository;
-    private File[]       myRepositoryDirectories;
+    private RepositoryConstructor myBootstrapRepositoryConstructor;
+    private RepositoryConstructor[] myRepositoryConstructors;
     private String       myDefaultLanguage = STANDARD_DEFAULT_LANGUAGE;
     private IonCatalog   myDefaultIonCatalog;
 
@@ -158,8 +178,8 @@ public class FusionRuntimeBuilder
     {
         this.myCurrentOutputPort     = that.myCurrentOutputPort;
         this.myCurrentDirectory      = that.myCurrentDirectory;
-        this.myBootstrapRepository   = that.myBootstrapRepository;
-        this.myRepositoryDirectories = that.myRepositoryDirectories;
+        this.myBootstrapRepositoryConstructor   = that.myBootstrapRepositoryConstructor;
+        this.myRepositoryConstructors           = that.myRepositoryConstructors;
         this.myDefaultLanguage       = that.myDefaultLanguage;
         this.myDefaultIonCatalog     = that.myDefaultIonCatalog;
         this.myCoverageDataDirectory = that.myCoverageDataDirectory;
@@ -236,6 +256,8 @@ public class FusionRuntimeBuilder
 
         try
         {
+            // TODO support classloader resource repository
+            // TODO support setting other repositories here
             String path = props.getProperty(PROPERTY_BOOTSTRAP_REPOSITORY);
             if (path != null)
             {
@@ -588,14 +610,18 @@ public class FusionRuntimeBuilder
      * By default, this property is null.
      *
      * @return the bootstrap directory, or null if one has not been
-     * configured.
+     * configured or is applicable to the bootstrap repository.
      *
      * @see #setBootstrapRepository(File)
      * @see #withBootstrapRepository(File)
      */
     public File getBootstrapRepository()
     {
-        return myBootstrapRepository;
+        if (myBootstrapRepositoryConstructor == null)
+        {
+            return null;
+        }
+        return myBootstrapRepositoryConstructor.getRepositoryDirectory();
     }
 
 
@@ -639,9 +665,12 @@ public class FusionRuntimeBuilder
                     "Not a Fusion bootstrap repository: " + original;
                 throw new IllegalArgumentException(message);
             }
+            myBootstrapRepositoryConstructor = fileRepoConstructor(original, directory);
         }
-
-        myBootstrapRepository = directory;
+        else
+        {
+            myBootstrapRepositoryConstructor = null;
+        }
     }
 
 
@@ -669,6 +698,19 @@ public class FusionRuntimeBuilder
         return b;
     }
 
+    public void setBootstrapRepository(Class<?> resourceClass,
+                                       String manifestPath)
+    {
+        myBootstrapRepositoryConstructor = classloaderRepoConstructor(resourceClass, manifestPath);
+    }
+
+    public final FusionRuntimeBuilder withBootstrapRepository(Class<?> resourceClass,
+                                                              String manifestPath)
+    {
+        FusionRuntimeBuilder b = mutable();
+        b.setBootstrapRepository(resourceClass, manifestPath);
+        return b;
+    }
 
     //=========================================================================
 
@@ -698,30 +740,13 @@ public class FusionRuntimeBuilder
 
         if (! directory.isDirectory())
         {
-           String message = "Repository is not a directory: " + original;
-           throw new IllegalArgumentException(message);
+            String message = "Repository is not a directory: " + original;
+            throw new IllegalArgumentException(message);
         }
 
-        File src = new File(directory, "src");
-        if (! src.isDirectory())
-        {
-           String message = "Repository has no src directory: " + original;
-           throw new IllegalArgumentException(message);
-        }
-
-        if (myRepositoryDirectories == null)
-        {
-            myRepositoryDirectories = new File[] { directory };
-        }
-        else
-        {
-            int len = myRepositoryDirectories.length;
-            myRepositoryDirectories =
-                Arrays.copyOf(myRepositoryDirectories, len + 1);
-            myRepositoryDirectories[len] = directory;
-        }
+        RepositoryConstructor repoCtor = fileRepoConstructor(original, directory);
+        addRepositoryConstructor(repoCtor);
     }
-
 
     /**
      * Declares a repository from which Fusion modules are loaded,
@@ -741,6 +766,84 @@ public class FusionRuntimeBuilder
         FusionRuntimeBuilder b = mutable();
         b.addRepositoryDirectory(directory);
         return b;
+    }
+
+    public final void addClassloaderRepository(Class<?> resourceClass,
+                                               String manifestPath)
+    {
+        mutationCheck();
+
+        RepositoryConstructor repoCtor = classloaderRepoConstructor(resourceClass, manifestPath);
+        addRepositoryConstructor(repoCtor);
+    }
+
+    public final FusionRuntimeBuilder withClassloaderRepository(Class<?> resourceClass,
+                                                                String manifestPath)
+    {
+        FusionRuntimeBuilder b = mutable();
+        b.addClassloaderRepository(resourceClass, manifestPath);
+        return b;
+    }
+
+    private void addRepositoryConstructor(RepositoryConstructor repoCtor)
+    {
+        if (myRepositoryConstructors == null)
+        {
+            myRepositoryConstructors = new RepositoryConstructor[] { repoCtor };
+        }
+        else
+        {
+            int len = myRepositoryConstructors.length;
+            myRepositoryConstructors =
+                Arrays.copyOf(myRepositoryConstructors, len + 1);
+            myRepositoryConstructors[len] = repoCtor;
+        }
+    }
+
+    private RepositoryConstructor fileRepoConstructor(File original, File directory)
+    {
+        // TODO FUSION-214 Push this into the repo impl
+        final File src = new File(directory, "src");
+        if (! src.isDirectory())
+        {
+            String message = "Repository has no src directory: " + original;
+            throw new IllegalArgumentException(message);
+        }
+
+        final File root = directory;
+        return new RepositoryConstructor()
+        {
+            @Override
+            public ModuleRepository create()
+            {
+                return new FileSystemModuleRepository(src);
+            }
+
+            @Override
+            public File getRepositoryDirectory()
+            {
+                return root;
+            }
+        };
+    }
+
+    private RepositoryConstructor classloaderRepoConstructor(final Class<?> resourceClass,
+                                                             final String manifestPath)
+    {
+        return new RepositoryConstructor()
+        {
+            @Override
+            public ModuleRepository create() throws FusionException
+            {
+                return new ClassloaderResourceRepository(ION_SYSTEM, resourceClass, manifestPath);
+            }
+
+            @Override
+            public File getRepositoryDirectory()
+            {
+                return null;
+            }
+        };
     }
 
 
@@ -934,12 +1037,19 @@ public class FusionRuntimeBuilder
                 _Private_CoverageCollectorImpl c =
                     fromDirectory(b.myCoverageDataDirectory);
 
-                c.noteRepository(b.getBootstrapRepository());
-                if (b.myRepositoryDirectories != null)
+                // TODO Fix coverage to not rely on file based repositories
+                if (b.getBootstrapRepository() != null)
                 {
-                    for (File f : b.myRepositoryDirectories)
+                    c.noteRepository(b.getBootstrapRepository());
+                }
+                if (b.myRepositoryConstructors != null)
+                {
+                    for (RepositoryConstructor repoCtor : b.myRepositoryConstructors)
                     {
-                        c.noteRepository(f);
+                        File f = repoCtor.getRepositoryDirectory();
+                        if (f != null) {
+                            c.noteRepository(f);
+                        }
                     }
                 }
 
@@ -976,12 +1086,12 @@ public class FusionRuntimeBuilder
 
 
     private void addBootstrapRepository(List<ModuleRepository> repos)
+        throws FusionException // FIXME contract break
     {
-        if (myBootstrapRepository != null)
+        if (myBootstrapRepositoryConstructor != null)
         {
-            // TODO FUSION-214 Push this into the repo impl
-            File src = new File(myBootstrapRepository, "src");
-            repos.add(new FileSystemModuleRepository(src));
+            ModuleRepository bootstrapRepo = myBootstrapRepositoryConstructor.create();
+            repos.add(bootstrapRepo);
         }
     }
 
@@ -993,6 +1103,7 @@ public class FusionRuntimeBuilder
      * incomplete, inconsistent, or otherwise unusable.
      */
     ModuleRepository[] buildModuleRepositories()
+        throws FusionException // FIXME breaks contract with StandardRuntime
     {
         ArrayList<ModuleRepository> repos = new ArrayList<>();
 
@@ -1000,13 +1111,15 @@ public class FusionRuntimeBuilder
 
         boolean needBootstrap = repos.isEmpty();
 
-        if (myRepositoryDirectories != null)
+        if (myRepositoryConstructors != null)
         {
-            for (File f : myRepositoryDirectories)
+            for (RepositoryConstructor repoCtor : myRepositoryConstructors)
             {
                 if (needBootstrap)
                 {
-                    if (! isValidBootstrapRepo(f))
+                    // TODO generalize bootstrap check to not be coupled to filesystem
+                    File f = repoCtor.getRepositoryDirectory();
+                    if (f != null && ! isValidBootstrapRepo(f))
                     {
                         String message =
                             "The first repository is not a Fusion bootstrap " +
@@ -1016,12 +1129,8 @@ public class FusionRuntimeBuilder
                     needBootstrap = false;
                 }
 
-                // TODO FUSION-214 Push this into the repo impl
-                File src = new File(f, "src");
-                if (src.isDirectory())
-                {
-                    repos.add(new FileSystemModuleRepository(src));
-                }
+                ModuleRepository repo = repoCtor.create();
+                repos.add(repo);
             }
         }
 
