@@ -590,8 +590,8 @@ abstract class Namespace
      */
     static final class RequireRenameMapping
     {
-        final SyntaxSymbol myLocalIdentifier;
-        final BaseSymbol   myExportedIdentifier;
+        private final SyntaxSymbol myLocalIdentifier;
+        private final BaseSymbol   myExportedIdentifier;
 
         RequireRenameMapping(SyntaxSymbol localIdentifier,
                              BaseSymbol exportedIdentifier)
@@ -695,7 +695,7 @@ abstract class Namespace
      * This is used by {@code (require module_path)}.
      */
     final void require(Evaluator      eval,
-                       SyntaxSymbol   context,
+                       SyntaxText     context,
                        ModuleIdentity moduleId)
         throws FusionException
     {
