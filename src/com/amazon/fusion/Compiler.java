@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2022 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2017-2023 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -34,10 +34,12 @@ import com.amazon.fusion.ModuleNamespace.ModuleDefinedBinding;
 import com.amazon.fusion.ModuleNamespace.ProvidedBinding;
 import com.amazon.fusion.Namespace.CompiledNsDefine;
 import com.amazon.fusion.Namespace.CompiledNsDefineSyntax;
+import com.amazon.fusion.Namespace.CompiledNsDefineValues;
 import com.amazon.fusion.Namespace.NsDefinedBinding;
 import com.amazon.fusion.Namespace.RequiredBinding;
-import com.amazon.fusion.TopLevelNamespace.CompiledFreeDefine;
 import com.amazon.fusion.TopLevelNamespace.CompiledFreeVariableReference;
+import com.amazon.fusion.TopLevelNamespace.CompiledTopDefine;
+import com.amazon.fusion.TopLevelNamespace.CompiledTopDefineValues;
 import com.amazon.fusion.TopLevelNamespace.CompiledTopLevelVariableReference;
 import com.amazon.fusion.TopLevelNamespace.TopLevelDefinedBinding;
 
@@ -73,6 +75,9 @@ class Compiler
     }
 
 
+    /**
+     * @see FusionEval#evalCompileTimePartOfTopLevel
+     */
     void evalCompileTimePart(final TopLevelNamespace topNs,
                              final SyntaxValue       stx)
         throws FusionException
@@ -160,29 +165,22 @@ class Compiler
     CompiledForm compileExpression(Environment env, SyntaxSexp stx)
         throws FusionException
     {
-        SyntaxValue first = stx.get(myEval, 0);
-        if (first instanceof SyntaxSymbol)
+        SyntacticForm form = stx.syntaxForm(myEval, env);
+        if (form != null)
         {
-            SyntacticForm form = ((SyntaxSymbol) first).resolveSyntaxMaybe(env);
+            // We found a static top-level syntax binding!
 
-            // NOTE: Failure to get a binding indicates use of a built-in
+            // NOTE: Unexpected failure to get here indicates use of a built-in
             // syntactic form that's defined (probably via java_new) in the
             // same module. That's not supported! Such modules need to be
             // broken apart to meet this requirement.  This won't affect
-            // users unless we open the whole compiler APIs so they can add
+            // users unless we open the whole compiler APIs so that they can add
             // new "built-in" syntax.
 
-            if (form != null)
-            {
-                // We found a static top-level syntax binding!
-                // Continue the compilation process.
-                // TODO bounce the tail-call?
-
-                return form.compile(this, env, stx);
-            }
+            return form.compile(this, env, stx);
         }
 
-        return compileProcedureApplication(env, stx, first);
+        return compileProcedureApplication(env, stx);
     }
 
 
@@ -248,10 +246,10 @@ class Compiler
 
 
     private CompiledForm compileProcedureApplication(Environment env,
-                                                     SyntaxSexp  stx,
-                                                     SyntaxValue procExpr)
+                                                     SyntaxSexp  stx)
         throws FusionException
     {
+        SyntaxValue procExpr = stx.get(myEval, 0);
         CompiledForm procForm = compileExpression(env, procExpr);
         CompiledForm[] argForms = compileExpressions(env, stx, 1);
 
@@ -301,127 +299,68 @@ class Compiler
         return argLocs;
     }
 
-    CompiledForm compileDefine(final Environment env, SyntaxSexp stx)
+
+    CompiledForm compileDefineValues(final Environment env, SyntaxSexp stx)
         throws FusionException
     {
         int arity = stx.size();
-        SyntaxValue valueSource = stx.get(myEval, arity-1);
-        final CompiledForm valueForm = compileExpression(env, valueSource);
+        SyntaxValue valueSource = stx.get(myEval, arity - 1);
+        final CompiledForm valuesForm = compileExpression(env, valueSource);
 
-        final SyntaxSymbol identifier = (SyntaxSymbol) stx.get(myEval, 1);
-        Binding binding = identifier.getBinding();
+        SyntaxSexp idSexp = (SyntaxSexp) stx.get(myEval, 1);
+        SyntaxSymbol[] ids = idSexp.extract(myEval, SyntaxSymbol.class);
+        int idCount = ids.length;
 
-        Binding.Visitor v = new Binding.Visitor()
+        Namespace namespace = env.namespace();
+        if (namespace instanceof TopLevelNamespace)
         {
-            @Override
-            Object visit(Binding b) throws FusionException
+            // Regardless of any current binding for this id, treat it the same.
+            if (idCount == 1)
             {
-                String msg = "Unexpected binding type for `define`.";
-                throw new IllegalStateException(msg);
+                return new CompiledTopDefine(ids[0], valuesForm);
             }
-
-            @Override
-            public Object visit(final FreeBinding b) throws FusionException
+            else
             {
-                Namespace.Visitor nv = new Namespace.Visitor()
-                {
-                    @Override
-                    Object accept(TopLevelNamespace ns) throws FusionException
-                    {
-                        return new CompiledFreeDefine(identifier, valueForm);
-                    }
-
-                    @Override
-                    Object accept(ModuleNamespace ns) throws FusionException
-                    {
-                        String msg = "Unexpected define in module: " + b;
-                        throw new IllegalStateException(msg);
-                    }
-                };
-
-                return env.namespace().visit(nv);
+                return new CompiledTopDefineValues(ids, valuesForm);
             }
+        }
 
-            @Override
-            public Object visit(final TopLevelDefinedBinding b)
-                throws FusionException
-            {
-                Namespace.Visitor nv = new Namespace.Visitor()
-                {
-                    @Override
-                    Object accept(TopLevelNamespace ns) throws FusionException
-                    {
-                        // We can't trust the identifier in the binding, since
-                        // it may have resolved to an id with a different set
-                        // of marks.
-                        return new CompiledFreeDefine(identifier, valueForm);
-                    }
+        String[] names  = new String[idCount];
+        int[] addresses = new int   [idCount];
 
-                    @Override
-                    Object accept(ModuleNamespace ns) throws FusionException
-                    {
-                        String msg = "Unexpected define in module: " + b;
-                        throw new IllegalStateException(msg);
-                    }
-                };
-
-                return env.namespace().visit(nv);
-            }
-
-            @Override
-            public Object visit(final ModuleDefinedBinding b)
-                throws FusionException
-            {
-                Namespace.Visitor nv = new Namespace.Visitor()
-                {
-                    @Override
-                    Object accept(TopLevelNamespace ns) throws FusionException
-                    {
-                        // The lexical context of the bound identifier resolves
-                        // to some module. We'll use a top-level binding
-                        // instead.
-                        return new CompiledFreeDefine(identifier, valueForm);
-                    }
-
-                    @Override
-                    Object accept(ModuleNamespace ns) throws FusionException
-                    {
-                        String name = b.getName().stringValue();
-                        return new CompiledNsDefine(name, b.myAddress,
-                                                    valueForm);
-                    }
-                };
-
-                return env.namespace().visit(nv);
-            }
-
-            @Override
-            Object visit(ProvidedBinding b) throws FusionException
-            {
-                return b.target().visit(this);
-            }
-
-            @Override
-            Object visit(RequiredBinding b) throws FusionException
-            {
-                return b.getProvided().visit(this);
-            }
-        };
-
-        CompiledForm compiled = (CompiledForm) binding.visit(v);
-
-        if (arity != 3
-            && binding instanceof NsDefinedBinding
-            && myEval.firstContinuationMark(COLLECT_DOCS_MARK) != null)
+        for (int i = 0; i < idCount; i++)
         {
-            // We have documentation. Sort of.
-            Object docString = stx.get(myEval, 2).unwrap(myEval);
-            BindingDoc doc = new BindingDoc(identifier.stringValue(),
-                                            null, // kind
-                                            null, // usage
-                                            stringToJavaString(myEval, docString));
-            int address = ((NsDefinedBinding) binding).myAddress;
-            env.namespace().setDoc(address, doc);
+            SyntaxSymbol identifier = ids[i];
+            Binding b = identifier.getBinding();
+
+            names[i] = b.getName().stringValue();
+            addresses[i] = ((ModuleDefinedBinding) b).myAddress;
+        }
+
+        CompiledForm compiled;
+        if (idCount == 1)
+        {
+            compiled = new CompiledNsDefine(names[0], addresses[0], valuesForm);
+        }
+        else
+        {
+            compiled = new CompiledNsDefineValues(names, addresses, valuesForm);
+        }
+
+        // Collect documentation when necessary.
+        if (arity != 3 && myEval.firstContinuationMark(COLLECT_DOCS_MARK) != null)
+        {
+            SyntaxSequence docSeq = (SyntaxSequence) stx.get(myEval, 2);
+
+            for (int i = 0; i < idCount; i++)
+            {
+                Object docString = docSeq.get(myEval, i).unwrap(myEval);
+                BindingDoc doc = new BindingDoc(names[i],
+                                                null, // kind
+                                                null, // usage
+                                                stringToJavaString(myEval, docString));
+                namespace.setDoc(addresses[i], doc);
+            }
         }
 
         return compiled;
