@@ -76,6 +76,10 @@ final class ClassloaderResourceRepository
     ClassloaderResourceRepository(IonSystem ion, Class<?> resourceClass, String manifestPath)
         throws FusionException
     {
+        // FIXME Accepting IonSystem here means that its catalog entries can influence
+        // parsing of the manifest.  It would be better for that to be "sandboxed" so
+        // it cannot rely on unmodeled inputs.
+
         myIdentity = "classloader::[" + resourceClass.getName() + "," + manifestPath + "]";
         myResourceClass = resourceClass;
 
