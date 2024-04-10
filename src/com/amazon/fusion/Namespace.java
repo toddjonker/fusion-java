@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2022 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2023 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -1011,6 +1011,7 @@ abstract class Namespace
         Object processValue(Evaluator eval, Store store, Object value)
             throws FusionException
         {
+            eval.checkSingleResult(value, "module-level definition");
             return value;
         }
     }
@@ -1043,6 +1044,70 @@ abstract class Namespace
             }
 
             return value;
+        }
+    }
+
+
+    /**
+     * Interprets non-single-binding {@code define_values} at module-level.
+     * Single-binding forms are interpreted by {@link CompiledNsDefine}.
+     */
+    static class CompiledNsDefineValues
+        implements CompiledForm
+    {
+        private final String[]     myNames;
+        private final int[]        myAddresses;
+        private final CompiledForm myValuesForm;
+
+        CompiledNsDefineValues(String[] names,
+                               int[] addresses,
+                               CompiledForm valuesForm)
+        {
+            assert names.length != 1;
+            myNames      = names;
+            myAddresses  = addresses;
+            myValuesForm = valuesForm;
+        }
+
+        @Override
+        public final Object doEval(Evaluator eval, Store store)
+            throws FusionException
+        {
+            int expectedCount = myNames.length;
+
+            Object values = eval.eval(store, myValuesForm);
+            if (values instanceof Object[])
+            {
+                Object[] vals = (Object[]) values;
+                int actualCount = vals.length;
+                if (expectedCount != actualCount)
+                {
+                    String expectation =
+                        expectedCount + " results but received " + actualCount;
+                    throw new ResultFailure("module-level definition",
+                                            expectation, -1, vals);
+                }
+
+                NamespaceStore ns = store.namespace();
+
+                for (int i = 0; i < expectedCount; i++)
+                {
+                    Object value = vals[i];
+                    ns.set(myAddresses[i], value);
+                    if (value instanceof NamedValue)
+                    {
+                        ((NamedValue)value).inferName(myNames[i]);
+                    }
+                }
+            }
+            else
+            {
+                String expectation = expectedCount + " results but received 1";
+                throw new ResultFailure("module-level definition",
+                                        expectation, -1, values);
+            }
+
+            return voidValue(eval);
         }
     }
 }

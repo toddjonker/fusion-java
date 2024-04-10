@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2020 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2024 Amazon.com, Inc.  All rights reserved.
 
 (module fusion "/fusion/base"
 
@@ -27,7 +27,7 @@ contact us for clarification.
 
 
   // Top-Level Forms
-  (provide begin define)
+  (provide begin define define_values)
 
   // Module Forms
   (provide all_defined_out module only_in
@@ -45,18 +45,29 @@ contact us for clarification.
 
   // bool
   (require "/fusion/bool")
-  (provide is_bool is_false is_true is_truthy is_untruthy not)
+  (provide
+    is_bool
+    is_false
+    is_true
+    is_truthy
+    is_untruthy
+    not)
 
   // lob (clob & blob)
   (require "/fusion/lob")
   (provide
+    is_blob
+    is_clob
+    lob_digest
     lob_to_hex
   )
 
   (require "/fusion/number")
   (provide
     + - * /
+    ceiling
     decimal
+    floor
     int_to_string
     is_decimal
     is_float
@@ -80,7 +91,9 @@ contact us for clarification.
     string_to_lower
     string_to_symbol
     string_to_upper
+    symbol_append
     symbol_to_string
+    text_to_string
   )
 
   (require "/fusion/timestamp")
@@ -117,7 +130,7 @@ contact us for clarification.
   (require "/fusion/void")
   (provide is_void void)
 
-  (provide is_symbol is_clob is_blob)
+  (provide is_symbol)
 
   (provide < <= = >= >)
   (provide = == === same ident)
@@ -149,6 +162,11 @@ contact us for clarification.
 
   (provide let let_values letrec lets values)
 
+  (require "/fusion/parameter")
+  (provide
+    make_parameter
+    parameterize)
+
 
   //=========================================================================
   // Control Forms
@@ -169,6 +187,36 @@ contact us for clarification.
     for_struct     fors_struct
   )
 
+  (require "/fusion/series")
+  (provide
+    empty_series
+    in_port
+    in_producer
+    is_series
+    series_to_list
+    series_to_sexp
+  )
+
+  (require "/fusion/exception")
+  (provide
+    assert
+    call_with_handler
+    is_argument_error
+    is_arity_error
+    is_contract_error
+    is_error_exn
+    is_exn
+    is_result_error
+    is_syntax_error
+    is_unbound_error
+    raise
+    raise_argument_error
+    raise_arity_error
+    raise_contract_error
+    raise_result_error
+    with_handlers
+  )
+
 
   //=========================================================================
   // Procedures
@@ -176,6 +224,13 @@ contact us for clarification.
   (require "/fusion/procedure")
   (provide always apply compose conjoin curry_left curry_right disjoin
     identity is_procedure lambda negate thunk | ||)
+
+
+  //=========================================================================
+  // Reflection
+
+  (require "/fusion/reflection")
+  (provide object_name)
 
 
   //=========================================================================

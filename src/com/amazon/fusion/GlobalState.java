@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2022 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2023 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -27,8 +27,8 @@ final class GlobalState
     static final String ALL_DEFINED_OUT       = "all_defined_out";
     static final String BEGIN                 = "begin";
     static final String CLOSED_SECURITY_GUARD = "closed_security_guard";
-    static final String DEFINE                = "define";
     static final String DEFINE_SYNTAX         = "define_syntax";
+    static final String DEFINE_VALUES         = "define_values";
     static final String EOF                   = "eof";
     static final String LAMBDA                = "lambda";
     static final String MODULE                = "module";
@@ -54,8 +54,8 @@ final class GlobalState
 
     final Binding myKernelAllDefinedOutBinding;
     final Binding myKernelBeginBinding;
-    final Binding myKernelDefineBinding;
     final Binding myKernelDefineSyntaxBinding;
+    final Binding myKernelDefineValuesBinding;
     final Binding myKernelOnlyInBinding;
     final Binding myKernelModuleBinding;
     final Binding myKernelPrefixInBinding;
@@ -87,8 +87,8 @@ final class GlobalState
 
         myKernelAllDefinedOutBinding = kernelBinding(ALL_DEFINED_OUT);
         myKernelBeginBinding         = kernelBinding(BEGIN);
-        myKernelDefineBinding        = kernelBinding(DEFINE);
         myKernelDefineSyntaxBinding  = kernelBinding(DEFINE_SYNTAX);
+        myKernelDefineValuesBinding  = kernelBinding(DEFINE_VALUES);
         myKernelModuleBinding        = kernelBinding(MODULE);
         myKernelOnlyInBinding        = kernelBinding(ONLY_IN);
         myKernelPrefixInBinding      = kernelBinding(PREFIX_IN);
@@ -154,8 +154,8 @@ final class GlobalState
         ns.define("current_namespace", currentNamespaceParam);
         ns.define("current_security_guard", currentSecurityGuard);
 
-        ns.define(DEFINE, new DefineForm());
         ns.define(DEFINE_SYNTAX, new DefineSyntaxForm());
+        ns.define(DEFINE_VALUES, new DefineValuesForm());
         ns.define(EOF, FusionIo.eof(null));
         ns.define("java_new", new JavaNewProc());
         ns.define(LAMBDA, new LambdaForm());
@@ -164,9 +164,9 @@ final class GlobalState
         ns.define(ONLY_IN, new RequireForm.OnlyInForm());
         ns.define(PREFIX_IN, new RequireForm.PrefixInForm());
         ns.define(PROVIDE, new ProvideForm());
-        ns.define(REQUIRE, new RequireForm(resolver));
         ns.define(RENAME_IN, new RequireForm.RenameInForm());
         ns.define(RENAME_OUT, new ProvideForm.RenameOutForm());
+        ns.define(REQUIRE, new RequireForm(resolver));
 
 
         ns.instantiate();

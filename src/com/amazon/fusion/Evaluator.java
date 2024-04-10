@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2022 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -8,6 +8,8 @@ import static com.amazon.fusion.FusionNull.makeNullNull;
 import static com.amazon.fusion.FusionNumber.makeDecimal;
 import static com.amazon.fusion.FusionNumber.makeFloat;
 import static com.amazon.fusion.FusionNumber.makeInt;
+import static com.amazon.fusion.FusionSexp.emptySexp;
+import static com.amazon.fusion.FusionSexp.pair;
 import static com.amazon.fusion.FusionSexp.sexpFromIonSequence;
 import static com.amazon.fusion.FusionString.makeString;
 import static com.amazon.fusion.FusionStruct.structFromIonStruct;
@@ -481,31 +483,35 @@ class Evaluator
 
 
     /**
-     * Collects all marks for {@code key} in the current continuation,
-     * with the most recent mark first.
+     * Collects all marks for {@code key} in the current continuation into a
+     * sexp, with the most recent mark first.
      *
-     * @return a non-null list.
+     * @return a non-null sexp.
      */
-    ArrayList<Object> continuationMarks(Object key)
+    Object continuationMarkSexp(Object key)
     {
-        // The keys must be hashable and equals-able!
-        assert key instanceof DynamicParameter;
-
-        ArrayList<Object> results = new ArrayList<>();
-
-        Evaluator e = this;
-        while (e.myOuterFrame != null)
+        Object sexp;
+        if (myOuterFrame != null)
         {
-            Object value = e.myContinuationMarks.get(key);
-            if (value != null)
-            {
-                results.add(value);
-            }
-            e = e.myOuterFrame;
+            sexp = myOuterFrame.continuationMarkSexp(key);
+        }
+        else
+        {
+            sexp = emptySexp(this);
         }
 
-        return results;
+        if (myContinuationMarks != null)
+        {
+            Object value = myContinuationMarks.get(key);
+            if (value != null)
+            {
+                sexp = pair(this, value, sexp);
+            }
+        }
+
+        return sexp;
     }
+
 
     Evaluator addContinuationFrame()
     {
@@ -603,6 +609,9 @@ class Evaluator
         return eval(ns, compiled);
     }
 
+    /**
+     * @see FusionEval#evalCompileTimePartOfTopLevel
+     */
     void evalCompileTimePart(TopLevelNamespace topNs, SyntaxValue topStx)
         throws FusionException
     {
