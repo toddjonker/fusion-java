@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2017 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2014-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -17,33 +17,17 @@ final class CoverageEvaluator
         myCollector = collector;
     }
 
-    private CoverageEvaluator(CoverageEvaluator outer,
-                              Object key,
-                              Object mark)
+    private CoverageEvaluator(CoverageEvaluator outer)
     {
-        super(outer, key, mark);
-        myCollector = outer.myCollector;
-    }
-
-    private CoverageEvaluator(CoverageEvaluator outer,
-                              Object[] keys,
-                              Object[] marks)
-    {
-        super(outer, keys, marks);
+        super(outer);
         myCollector = outer.myCollector;
     }
 
 
     @Override
-    Evaluator markedContinuation(Object key, Object mark)
+    Evaluator addContinuationFrame()
     {
-        return new CoverageEvaluator(this, key, mark);
-    }
-
-    @Override
-    Evaluator markedContinuation(Object[] keys, Object[] marks)
-    {
-        return new CoverageEvaluator(this, keys, marks);
+        return new CoverageEvaluator(this);
     }
 
 
@@ -74,9 +58,11 @@ final class CoverageEvaluator
             SourceLocation loc = source.getLocation();
             if (loc != null)
             {
-                if (myCollector.coverableLocation(loc))
+                if (myCollector.locationIsRecordable(loc))
                 {
                     form = new CoverageCompiledForm(loc, form);
+
+                    myCollector.locationInstrumented(loc);
                 }
             }
 
@@ -108,8 +94,9 @@ final class CoverageEvaluator
         {
             _Private_CoverageCollector collector =
                 ((CoverageEvaluator) eval).myCollector;
-            collector.coverLocation(myLocation);
+            collector.locationEvaluated(myLocation);
 
+            // TODO Eliminate tail-call?
             return myForm.doEval(eval, store);
         }
     }

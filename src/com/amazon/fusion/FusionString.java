@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2020 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -15,13 +15,14 @@ import static com.amazon.fusion.FusionNumber.makeInt;
 import static com.amazon.fusion.FusionNumber.unsafeTruncateIntToJavaInt;
 import static com.amazon.fusion.FusionString.CHAR_TYPES.LOWERCASE;
 import static com.amazon.fusion.FusionString.CHAR_TYPES.UPPERCASE;
-import static com.amazon.fusion.FusionSymbol.makeSymbol;
 import static com.amazon.fusion.FusionSymbol.BaseSymbol.internSymbols;
+import static com.amazon.fusion.FusionSymbol.makeSymbol;
 import static com.amazon.fusion.FusionText.checkRequiredTextArg;
 import static com.amazon.fusion.FusionVoid.voidValue;
 import static java.lang.Character.highSurrogate;
 import static java.lang.Character.isSupplementaryCodePoint;
 import static java.lang.Character.lowSurrogate;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import com.amazon.fusion.FusionBool.BaseBool;
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import com.amazon.fusion.FusionText.BaseText;
@@ -35,7 +36,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.CharacterCodingException;
-import java.nio.charset.Charset;
 import java.nio.charset.CharsetEncoder;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -52,11 +52,6 @@ import java.util.regex.Pattern;
 public final class FusionString
 {
     private FusionString() {}
-
-    /** The string {@code "UTF-8"}. */
-    static final String UTF8_CHARSET_NAME = "UTF-8";
-
-    static final Charset UTF8_CHARSET = Charset.forName(UTF8_CHARSET_NAME);
 
 
     //========================================================================
@@ -96,9 +91,15 @@ public final class FusionString
         }
 
         @Override
-        SyntaxValue datumToSyntaxMaybe(Evaluator eval, SourceLocation loc)
+        SyntaxString makeOriginalSyntax(Evaluator eval, SourceLocation loc)
         {
-            return SimpleSyntaxValue.makeSyntax(eval, loc, this);
+            return SyntaxString.makeOriginal(eval, loc, this);
+        }
+
+        @Override
+        SyntaxString datumToSyntaxMaybe(Evaluator eval, SourceLocation loc)
+        {
+            return SyntaxString.make(eval, loc, this);
         }
 
 
@@ -377,6 +378,11 @@ public final class FusionString
      *
      * @param top the top-level that was the source of the value.
      * @param value the value to test.
+     *
+     * @return {@code true} if the value is a Fusion string,
+     * otherwise {@code false}
+     *
+     * @throws FusionException if an error occurs during evaluation
      */
     public static boolean isString(TopLevel top, Object value)
         throws FusionException
@@ -398,9 +404,12 @@ public final class FusionString
     /**
      * Converts a Fusion string to its equivalent {@link String} value.
      *
+     * @param top the top-level that was the source of the value.
      * @param fusionString must be a Fusion string.
      *
      * @return null if given {@code null.string}.
+     *
+     * @throws FusionException if an error occurs during evaluation
      */
     public static String unsafeStringToJavaString(TopLevel top, Object fusionString)
         throws FusionException
@@ -607,7 +616,7 @@ public final class FusionString
 
             if (s == null || s.isEmpty()) return FusionNumber.ZERO_INT;
 
-            CharsetEncoder encoder = UTF8_CHARSET.newEncoder();
+            CharsetEncoder encoder = UTF_8.newEncoder();
             try
             {
                 ByteBuffer buffer = encoder.encode(CharBuffer.wrap(s));
@@ -679,12 +688,6 @@ public final class FusionString
             throws FusionException
         {
             String input = checkNullableStringArg(eval, this, 0, arg);
-
-            if (input != null && input.isEmpty())
-            {
-                throw argFailure("non-empty string", 0, arg);
-            }
-
             return makeSymbol(eval, input);
         }
     }
@@ -885,6 +888,31 @@ public final class FusionString
             }
 
             return makeString(eval, resultBuilder.toString());
+        }
+    }
+
+
+    static final class ReplaceProc
+            extends Procedure
+    {
+        @Override
+        Object doApply(Evaluator eval, Object[] args)
+                throws FusionException
+        {
+            checkArityExact(3, args);
+
+            String string = checkNullableStringArg(eval, this, 0, args);
+            String from = checkRequiredStringArg(eval, this, 1, args);
+            String to = checkRequiredStringArg(eval, this, 2, args);
+
+            String result = null;
+
+            if (string != null)
+            {
+                result = string.replace(from, to);
+            }
+
+            return makeString(eval, result);
         }
     }
 

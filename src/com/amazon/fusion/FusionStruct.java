@@ -1,10 +1,9 @@
-// Copyright (c) 2012-2020 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2023 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionBool.falseBool;
 import static com.amazon.fusion.FusionBool.makeBool;
-import static com.amazon.fusion.FusionBool.trueBool;
 import static com.amazon.fusion.FusionCompare.EqualityTier.LOOSE_EQUAL;
 import static com.amazon.fusion.FusionCompare.EqualityTier.STRICT_EQUAL;
 import static com.amazon.fusion.FusionCompare.EqualityTier.TIGHT_EQUAL;
@@ -13,20 +12,24 @@ import static com.amazon.fusion.FusionIo.dispatchWrite;
 import static com.amazon.fusion.FusionIterator.iterate;
 import static com.amazon.fusion.FusionList.checkNullableListArg;
 import static com.amazon.fusion.FusionList.unsafeJavaIterate;
-import static com.amazon.fusion.FusionSymbol.makeSymbol;
+import static com.amazon.fusion.FusionList.unsafeListSize;
 import static com.amazon.fusion.FusionSymbol.BaseSymbol.internSymbols;
-import static com.amazon.fusion.FusionText.checkNonEmptyTextArg;
+import static com.amazon.fusion.FusionSymbol.makeSymbol;
+import static com.amazon.fusion.FusionText.checkRequiredTextArg;
 import static com.amazon.fusion.FusionText.textToJavaString;
 import static com.amazon.fusion.FusionText.unsafeTextToJavaString;
-import static com.amazon.fusion.FusionUtils.EMPTY_STRING_ARRAY;
 import static com.amazon.fusion.FusionVoid.voidValue;
 import static com.amazon.ion.util.IonTextUtils.printSymbol;
 import static java.util.AbstractMap.SimpleEntry;
+import static java.util.Collections.emptyIterator;
 import com.amazon.fusion.FusionBool.BaseBool;
 import com.amazon.fusion.FusionCollection.BaseCollection;
 import com.amazon.fusion.FusionCompare.EqualityTier;
 import com.amazon.fusion.FusionIterator.AbstractIterator;
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
+import com.amazon.fusion.util.function.BiFunction;
+import com.amazon.fusion.util.function.BiPredicate;
+import com.amazon.fusion.util.hamt.MultiHashTrie;
 import com.amazon.ion.IonException;
 import com.amazon.ion.IonStruct;
 import com.amazon.ion.IonType;
@@ -34,15 +37,14 @@ import com.amazon.ion.IonValue;
 import com.amazon.ion.IonWriter;
 import com.amazon.ion.ValueFactory;
 import java.io.IOException;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 
+@SuppressWarnings({"unused", "RedundantThrows", "DuplicateThrows"})
 final class FusionStruct
 {
     // Go away you big meany!
@@ -51,18 +53,8 @@ final class FusionStruct
 
     private static final NullStruct             NULL_STRUCT  = new NullStruct();
     private static final NonNullImmutableStruct EMPTY_STRUCT =
-        new FunctionalStruct(FunctionalHashTrie.EMPTY, BaseSymbol.EMPTY_ARRAY, 0);
+        new FunctionalStruct(MultiHashTrie.<String, Object>empty(), BaseSymbol.EMPTY_ARRAY);
 
-    // Utility method.
-    static final BiFunction<Object, Object, Object> STRUCT_MERGE_FUNCTION =
-        new BiFunction<Object, Object, Object>()
-        {
-            @Override
-            public Object apply(Object o, Object o2)
-            {
-                return mergeValuesForKey(o, o2);
-            }
-        };
 
     //========================================================================
     // Constructors
@@ -72,7 +64,7 @@ final class FusionStruct
         String[] annStrings = struct.getTypeAnnotations();
         BaseSymbol[] annotations = internSymbols(annStrings);
 
-        // There's no benefit to being lazy injecting null.struct or {}.
+        // There's no benefit to being lazy with null.struct or {}.
         if (struct.isNullValue())
         {
             return nullStruct(eval, annotations);
@@ -80,8 +72,7 @@ final class FusionStruct
 
         if (struct.isEmpty())
         {
-            Map<String, Object> map = Collections.emptyMap();
-            return immutableStruct(map, annotations);
+            return EMPTY_STRUCT.annotate(eval, annotations);
         }
 
         return new LazyInjectingStruct(annotations, struct);
@@ -107,86 +98,99 @@ final class FusionStruct
     }
 
 
-    static NonNullImmutableStruct immutableStruct(FunctionalHashTrie<String, Object> map)
+    static final class Builder
     {
-        return immutableStruct(map, BaseSymbol.EMPTY_ARRAY, computeSize(map));
-    }
+        private final MultiHashTrie.Builder<String, Object> myTrieBuilder =
+            MultiHashTrie.builderMulti();
 
-    static NonNullImmutableStruct immutableStruct(FunctionalHashTrie<String, Object> map,
-                                                  int size)
-    {
-        return immutableStruct(map, BaseSymbol.EMPTY_ARRAY, size);
-    }
+        private Builder() {}
 
-    static NonNullImmutableStruct immutableStruct(FunctionalHashTrie<String, Object> map,
-                                                  String[] anns)
-    {
-        return immutableStruct(map, internSymbols(anns), computeSize(map));
-    }
-
-    static NonNullImmutableStruct immutableStruct(FunctionalHashTrie<String, Object> map,
-                                                  BaseSymbol[] anns)
-    {
-        return immutableStruct(map, anns, computeSize(map));
-    }
-
-    static NonNullImmutableStruct immutableStruct(FunctionalHashTrie<String, Object> map,
-                                                  BaseSymbol[] anns,
-                                                  int size)
-    {
-        if (map.size() == 0)
+        /**
+         * Adds a new field to the struct, retaining existing fields with the
+         * same name.
+         */
+        void add(String fieldName, Object value)
         {
-            if (anns.length == 0)
-            {
-                return EMPTY_STRUCT;
-            }
-
-            map = FunctionalHashTrie.EMPTY;
+            myTrieBuilder.withMulti(fieldName, value);
         }
 
-        return new FunctionalStruct(map, anns, size);
+        // TODO add(String[], Object[])
+
+
+        NonNullImmutableStruct buildImmutable()
+        {
+            return buildImmutable(BaseSymbol.EMPTY_ARRAY);
+        }
+
+        NonNullImmutableStruct buildImmutable(String[] annotations)
+        {
+            return buildImmutable(internSymbols(annotations));
+        }
+
+        NonNullImmutableStruct buildImmutable(BaseSymbol[] annotations)
+        {
+            MultiHashTrie<String, Object> trie = myTrieBuilder.build();
+            return immutableStruct(trie, annotations);
+        }
+
+
+        MutableStruct buildMutable()
+        {
+            return buildMutable(BaseSymbol.EMPTY_ARRAY);
+        }
+
+        MutableStruct buildMutable(String[] annotations)
+        {
+            return buildMutable(internSymbols(annotations));
+        }
+
+        MutableStruct buildMutable(BaseSymbol[] annotations)
+        {
+            MultiHashTrie<String, Object> trie = myTrieBuilder.build();
+            return new MutableStruct(trie, annotations);
+        }
     }
 
+    static Builder builder(Evaluator eval)
+    {
+        Objects.requireNonNull(eval);
+        return new Builder();
+    }
+
+
+    static NonNullImmutableStruct emptyStruct(Evaluator eval)
+        throws FusionException
+    {
+        return EMPTY_STRUCT;
+    }
+
+    static Object immutableStruct(Evaluator eval,
+                                  String name,
+                                  Object value)
+        throws FusionException
+    {
+        return new FunctionalStruct(MultiHashTrie.singleEntry(name, value),
+                                    BaseSymbol.EMPTY_ARRAY);
+    }
+
+    private static NonNullImmutableStruct
+    immutableStruct(MultiHashTrie<String, Object> map, BaseSymbol[] anns)
+    {
+        if (map.size() == 0 && anns.length == 0) return EMPTY_STRUCT;
+        return new FunctionalStruct(map, anns);
+    }
+
+    /**
+     * @deprecated It is generally better to use a {@link #builder} or to
+     * populate a Fusion struct directly
+     * than to populate a {@link Map} and then copy it into a struct.
+     */
+    @Deprecated
     static NonNullImmutableStruct immutableStruct(Map<String, Object> map)
     {
         if (map.size() == 0) return EMPTY_STRUCT;
-        return new FunctionalStruct(map, BaseSymbol.EMPTY_ARRAY);
-    }
-
-    static NonNullImmutableStruct immutableStruct(Map<String, Object> map, int size)
-    {
-        if (map.size() == 0) return EMPTY_STRUCT;
-        return new FunctionalStruct(map, BaseSymbol.EMPTY_ARRAY, size);
-    }
-
-    static NonNullImmutableStruct immutableStruct(Map<String, Object> map,
-                                                  BaseSymbol[] anns)
-    {
-        return immutableStruct(map, anns, computeSize(map));
-    }
-
-
-    static NonNullImmutableStruct immutableStruct(Map<String, Object> map,
-                                                  BaseSymbol[] anns,
-                                                  int size)
-    {
-        if (map.size() == 0)
-        {
-            if (anns.length == 0)
-            {
-                return EMPTY_STRUCT;
-            }
-
-            map = Collections.emptyMap(); // Just to normalize
-        }
-
-        return new FunctionalStruct(map, anns, size);
-    }
-
-    static NonNullImmutableStruct immutableStruct(Map<String, Object> map,
-                                                  String[] anns)
-    {
-        return immutableStruct(map, internSymbols(anns));
+        return new FunctionalStruct(MultiHashTrie.fromMap(map),
+                                    BaseSymbol.EMPTY_ARRAY);
     }
 
 
@@ -194,26 +198,7 @@ final class FusionStruct
                                                   Object[] values,
                                                   BaseSymbol[] anns)
     {
-        FunctionalHashTrie<String, Object> map = FunctionalHashTrie.EMPTY;
-        if (names.length == 0)
-        {
-            if (anns.length == 0)
-            {
-                return EMPTY_STRUCT;
-            }
-        }
-        else
-        {
-            for (int i = 0; i < names.length; i++)
-            {
-                String field  = names[i];
-                Object newElt = values[i];
-
-                map = structImplAdd(map, field, newElt);
-            }
-        }
-
-        return new FunctionalStruct(map, anns, names.length);
+        return immutableStruct(MultiHashTrie.fromArrays(names, values), anns);
     }
 
     static NonNullImmutableStruct immutableStruct(String[] names,
@@ -237,8 +222,7 @@ final class FusionStruct
     {
         if (struct instanceof ImmutableStruct) return struct;
 
-        MutableStruct s = (MutableStruct) struct;
-        return immutableStruct(s.getMap(eval), s.size());
+        return ((MutableStruct) struct).asImmutable();
     }
 
 
@@ -249,172 +233,40 @@ final class FusionStruct
     static Object mutableStruct(Evaluator eval)
         throws FusionException
     {
-        return new MutableStruct(FunctionalHashTrie.EMPTY,
-                                 BaseSymbol.EMPTY_ARRAY,
-                                 0);
+        return new MutableStruct();
     }
 
+    static Object mutableStruct(Evaluator eval, String name, Object value)
+        throws FusionException
+    {
+        return new MutableStruct(MultiHashTrie.singleEntry(name, value),
+                                 BaseSymbol.EMPTY_ARRAY);
+    }
+
+    /**
+     * @deprecated It is generally better to use a {@link #builder} or to
+     * populate a Fusion struct directly
+     * than to populate a {@link Map} and then copy it into a struct.
+     */
+    @Deprecated
     static MutableStruct mutableStruct(Map<String, Object> map)
     {
-        return new MutableStruct(map, BaseSymbol.EMPTY_ARRAY);
-    }
-
-    static MutableStruct mutableStruct(FunctionalHashTrie<String, Object> map)
-    {
-        return new MutableStruct(map, BaseSymbol.EMPTY_ARRAY);
+        return new MutableStruct(MultiHashTrie.fromMap(map),
+                                 BaseSymbol.EMPTY_ARRAY);
     }
 
     static MutableStruct mutableStruct(String[] names,
                                        Object[] values,
                                        String[] anns)
     {
-        FunctionalHashTrie<String, Object> map = FunctionalHashTrie.EMPTY;
-        if (names.length != 0)
-        {
-            for (int i = 0; i < names.length; i++)
-            {
-                String field  = names[i];
-                Object newElt = values[i];
-
-                map = structImplAdd(map, field, newElt);
-            }
-        }
-
-        return new MutableStruct(map, internSymbols(anns), names.length);
-    }
-
-
-    /**
-     * Merges one or more new values for a key with one or more existing values.
-     *
-     * @param prev may be a single value, or an array of values.
-     * @param value may be a single value, or an array of values.
-     *
-     * @return the merged array of values.
-     */
-    private static Object[] mergeValuesForKey(Object prev, Object value)
-    {
-        Object[] multi;
-        if (prev instanceof Object[])
-        {
-            Object[] prevArray = (Object[]) prev;
-            if (value instanceof Object[])
-            {
-                Object[] moreArray = (Object[]) value;
-
-                int prevLen = prevArray.length;
-                int moreLen = moreArray.length;
-                multi = Arrays.copyOf(prevArray, prevLen + moreLen);
-                System.arraycopy(moreArray, 0, multi, prevLen, moreLen);
-            }
-            else
-            {
-                multi = extend(prevArray, value);
-            }
-        }
-        else if (value instanceof Object[])
-        {
-            multi = extend((Object[]) value, prev);
-        }
-        else
-        {
-            multi = new Object[] { prev, value };
-        }
-        return multi;
-    }
-
-
-    /**
-     * Adds an element to the struct, allowing for repeated fields in the result.
-     *
-     * @param value may be an array (for repeated fields)
-     */
-    static FunctionalHashTrie<String, Object> structImplAdd(FunctionalHashTrie<String, Object> map,
-                                                            String name,
-                                                            Object value)
-    {
-        // TODO This should be done with a single traversal of the trie.
-        Object prev = map.get(name);
-        if (prev != null)
-        {
-            Object[] multi = (Object[]) mergeValuesForKey(prev, value);
-            return map.with(name, multi);
-        }
-        else
-        {
-            return map.with(name, value);
-        }
-    }
-
-    private static
-    FunctionalHashTrie<String, Object> structImplMerge(FunctionalHashTrie<String, Object> map1,
-                                                       Map<String, Object> map2)
-    {
-        for (Map.Entry<String,Object> entry : map2.entrySet())
-        {
-            String key   = entry.getKey();
-            Object value = entry.getValue();
-            map1 = structImplAdd(map1, key, value);
-        }
-        return map1;
-    }
-
-    private static
-    FunctionalHashTrie<String, Object> structImplOneify(FunctionalHashTrie<String, Object> map)
-    {
-        for (Map.Entry<String, Object> entry : map.entrySet())
-        {
-            Object value = entry.getValue();
-            if (value instanceof Object[])
-            {
-                Object first = ((Object[]) value)[0];
-                map = map.with(entry.getKey(), first);
-            }
-        }
-        return map;
-    }
-
-    private static
-    FunctionalHashTrie<String, Object> structImplMerge1(FunctionalHashTrie<String, Object> map1,
-                                                        Map<String, Object> map2)
-    {
-        for (Map.Entry<String, Object> entry : map2.entrySet())
-        {
-            String key = entry.getKey();
-            Object value = entry.getValue();
-            if (value instanceof Object[])
-            {
-                value = ((Object[]) value)[0];
-            }
-            map1 = map1.with(key, value);
-        }
-        return map1;
+        MultiHashTrie<String, Object> trie = MultiHashTrie.fromArrays(names, values);
+        return new MutableStruct(trie, internSymbols(anns));
     }
 
 
     //========================================================================
     // Utilities
 
-    private static int computeSize(Map map)
-    {
-        int size = map.size();
-        for (Object values : map.values())
-        {
-            if (values instanceof Object[])
-            {
-                size += ((Object[]) values).length - 1;
-            }
-        }
-        return size;
-    }
-
-    private static Object[] extend(Object[] array, Object element)
-    {
-        int len = array.length;
-        array = Arrays.copyOf(array, len+1);
-        array[len] = element;
-        return array;
-    }
 
     private static Object bounceDefaultResult(Evaluator eval, Object def)
         throws FusionException
@@ -471,6 +323,10 @@ final class FusionStruct
     }
 
 
+    /**
+     * Visit all fields of a struct, in no particular order.
+     * If the visitor returns a non-null result, no more fields will be visited.
+     */
     static void unsafeStructFieldVisit(Evaluator eval, Object struct,
                                        StructFieldVisitor visitor)
         throws FusionException
@@ -557,7 +413,7 @@ final class FusionStruct
 
 
     static Object unsafeStructRemoveKeysM(Evaluator eval, Object struct,
-                                        String[] keys)
+                                          String[] keys)
         throws FusionException
     {
         if (keys.length == 0) return struct;
@@ -614,17 +470,62 @@ final class FusionStruct
     //========================================================================
 
 
-    static interface StructFieldVisitor
+    interface StructFieldVisitor
     {
         /**
-         * @return null means continue visiting, non-null means abort visiting.
+         * @return The meaning of the return value depends on the invoking
+         * process.
          */
         Object visit(String name, Object value)
             throws FusionException;
     }
 
+    static class TunneledFusionException
+        extends RuntimeException
+    {
+        private final FusionException myFusionException;
 
-    static interface BaseStruct
+        TunneledFusionException(FusionException e)
+        {
+            myFusionException = e;
+        }
+
+        public FusionException getFusionException()
+        {
+            return myFusionException;
+        }
+    }
+
+
+    /**
+     * Adapts {@link StructFieldVisitor} to HAMT transform visitor.
+     */
+    private static class StructFieldXform
+        implements BiFunction<String, Object, Object>
+    {
+        private final StructFieldVisitor visitor;
+
+        public StructFieldXform(StructFieldVisitor visitor)
+        {
+            this.visitor = visitor;
+        }
+
+        @Override
+        public Object apply(String key, Object value)
+        {
+            try
+            {
+                return visitor.visit(key, value);
+            }
+            catch (FusionException e)
+            {
+                throw new TunneledFusionException(e);
+            }
+        }
+    }
+
+
+    interface BaseStruct
     {
         boolean isAnnotated()
             throws FusionException;
@@ -643,6 +544,13 @@ final class FusionStruct
         int size(); // Doesn't throw
 
         Set<String> keys(Evaluator eval);
+
+        /**
+         * Gets the implementation map, first injecting elements if needed.
+         *
+         * @return not null; perhaps empty if this is mutable.
+         */
+        MultiHashTrie<String, Object> getMap(Evaluator eval);
 
         /**
          * Visits each field in the struct, stopping as soon as the visitation
@@ -710,7 +618,7 @@ final class FusionStruct
     }
 
 
-    static interface ImmutableStruct
+    interface ImmutableStruct
         extends BaseStruct
     {
     }
@@ -720,9 +628,9 @@ final class FusionStruct
         extends BaseCollection
         implements ImmutableStruct
     {
-        NullStruct() {}
+        private NullStruct() {}
 
-        NullStruct(BaseSymbol[] annotations)
+        private NullStruct(BaseSymbol[] annotations)
         {
             super(annotations);
         }
@@ -765,6 +673,12 @@ final class FusionStruct
         public Set<String> keys(Evaluator eval)
         {
             return Collections.emptySet();
+        }
+
+        @Override
+        public MultiHashTrie<String, Object> getMap(Evaluator eval)
+        {
+            return MultiHashTrie.empty();
         }
 
         @Override
@@ -811,9 +725,7 @@ final class FusionStruct
         public Object put(Evaluator eval, String key, Object value)
             throws FusionException
         {
-            Map<String,Object> map = new HashMap<>(1);
-            map.put(key, value);
-            return immutableStruct(map, myAnnotations, 1);
+            return new FunctionalStruct(key, value, myAnnotations);
         }
 
         @Override
@@ -872,8 +784,7 @@ final class FusionStruct
         {
             if (other.size() == 0) return this;
 
-            MapBasedStruct is = (MapBasedStruct) other;
-            return new FunctionalStruct(is.getMap(eval), myAnnotations, other.size());
+            return new FunctionalStruct(other.getMap(eval), myAnnotations);
         }
 
         @Override
@@ -889,9 +800,8 @@ final class FusionStruct
         {
             if (other.size() == 0) return this;
 
-            MapBasedStruct is = (MapBasedStruct) other;
-            Map<String,Object> map = structImplOneify(is.getMap(eval));
-            return new FunctionalStruct(map, myAnnotations, map.size());
+            MultiHashTrie<String, Object> map = other.getMap(eval).oneify();
+            return new FunctionalStruct(map, myAnnotations);
         }
 
         @Override
@@ -947,44 +857,21 @@ final class FusionStruct
         extends BaseCollection
         implements BaseStruct
     {
-        /**
-         * We can't use {@link #getMap}().size() because that doesn't count
-         * repeated fields.
-         */
-        int mySize;
-
-        private MapBasedStruct(BaseSymbol[] annotations, int size)
+        private MapBasedStruct(BaseSymbol[] annotations)
         {
             super(annotations);
-            mySize = size;
         }
 
-        /**
-         * Gets the implementation map, first injecting elements if needed.
-         *
-         * @return not null; perhaps empty if this is mutable.
-         */
-        abstract FunctionalHashTrie<String, Object> getMap(Evaluator eval);
+        abstract MapBasedStruct makeSimilar(MultiHashTrie<String, Object> map,
+                                            BaseSymbol[] annotations);
 
-        abstract MapBasedStruct makeSimilar(FunctionalHashTrie<String, Object> map,
-                                            BaseSymbol[] annotations,
-                                            int size);
-
-        MapBasedStruct makeSimilar(FunctionalHashTrie<String, Object> map)
+        MapBasedStruct makeSimilar(MultiHashTrie<String, Object> map)
         {
-            return makeSimilar(map, myAnnotations, computeSize(map));
-        }
-
-        MapBasedStruct makeSimilar(FunctionalHashTrie<String, Object> map, int size)
-        {
-            return makeSimilar(map, myAnnotations, size);
+            return makeSimilar(map, myAnnotations);
         }
 
         @Override
-        public int size()
-        {
-            return mySize;
-        }
+        public abstract int size();
 
         @Override
         public Set<String> keys(Evaluator eval)
@@ -992,26 +879,17 @@ final class FusionStruct
             return Collections.unmodifiableSet(getMap(eval).keySet());
         }
 
+        // TODO Add visitation to HAMT.
         @Override
         public void visitFields(Evaluator eval, StructFieldVisitor visitor)
             throws FusionException
         {
-            for (Map.Entry<String, Object> entry : getMap(eval).entrySet())
+            for (Map.Entry<String, Object> entry : getMap(eval))
             {
                 String fieldName = entry.getKey();
+                Object value     = entry.getValue();
 
-                Object value = entry.getValue();
-                if (value instanceof Object[])
-                {
-                    for (Object element : (Object[]) value)
-                    {
-                        if (visitor.visit(fieldName, element) != null) return;
-                    }
-                }
-                else
-                {
-                    if (visitor.visit(fieldName, value) != null) return;
-                }
+                if (visitor.visit(fieldName, value) != null) return;
             }
         }
 
@@ -1022,63 +900,21 @@ final class FusionStruct
                                                StructFieldVisitor visitor)
             throws FusionException
         {
-            boolean mustReplaceThis = (this instanceof MutableStruct);
-
-            if (mySize == 0 && !mustReplaceThis)
+            try
             {
+                MultiHashTrie<String, Object> oldMap = getMap(eval);
+                MultiHashTrie<String, Object> newMap =
+                    oldMap.transform(new StructFieldXform(visitor));
+                if (newMap != oldMap || this instanceof MutableStruct)
+                {
+                    return new FunctionalStruct(newMap, myAnnotations);
+                }
                 return (NonNullImmutableStruct) this;
             }
-
-            // Replace children in map as necessary.
-            FunctionalHashTrie<String, Object> oldMap = getMap(eval);
-            FunctionalHashTrie<String, Object> newMap = oldMap;
-
-            for (Map.Entry<String, Object> entry : oldMap.entrySet())
+            catch (TunneledFusionException e)
             {
-                String fieldName = entry.getKey();
-
-                Object value = entry.getValue();
-                if (value instanceof Object[])
-                {
-                    Object[] children = (Object[]) value;
-                    int childCount = children.length;
-
-                    boolean mustReplaceArray = false;
-                    Object[] newChildren = new Object[childCount];
-                    for (int i = 0; i < childCount; i++)
-                    {
-                        Object child = children[i];
-                        Object newChild = visitor.visit(fieldName, child);
-                        if (newChild != child)
-                        {
-                            mustReplaceArray = true;
-                        }
-                        newChildren[i] = newChild;
-                    }
-
-                    if (mustReplaceArray)
-                    {
-                        newMap = newMap.with(entry.getKey(), newChildren);
-                        mustReplaceThis = true;
-                    }
-                }
-                else
-                {
-                    Object newChild = visitor.visit(fieldName, value);
-                    if (newChild != value)
-                    {
-                        newMap = newMap.with(entry.getKey(), newChild);
-                        mustReplaceThis = true;
-                    }
-                }
+                throw e.getFusionException();
             }
-
-            if (! mustReplaceThis)
-            {
-                return (NonNullImmutableStruct) this;
-            }
-
-            return new FunctionalStruct(newMap, myAnnotations);
         }
 
         @Override
@@ -1137,18 +973,12 @@ final class FusionStruct
         {
             // There's no real need to inject, but otherwise it's hard to find
             // a good way to synchronize properly to read from the map.
-            return getMap(eval).get(key) != null;
+            return getMap(eval).containsKey(key);
         }
 
         Object get(Evaluator eval, String fieldName)
         {
-            Object result = getMap(eval).get(fieldName);
-            if (result instanceof Object[])
-            {
-                return ((Object[]) result)[0];
-            }
-
-            return result;
+            return getMap(eval).get(fieldName);
         }
 
         @Override
@@ -1160,11 +990,6 @@ final class FusionStruct
             {
                 return voidValue(eval);
             }
-            if (result instanceof Object[])
-            {
-                return ((Object[]) result)[0];
-            }
-
             return result;
         }
 
@@ -1177,11 +1002,6 @@ final class FusionStruct
             {
                 return bounceDefaultResult(eval, def);
             }
-            if (result instanceof Object[])
-            {
-                return ((Object[]) result)[0];
-            }
-
             return result;
         }
 
@@ -1189,90 +1009,40 @@ final class FusionStruct
         public Object put(Evaluator eval, String key, Object value)
             throws FusionException
         {
-            FunctionalHashTrie<String, Object> map = getMap(eval);
-            Object prior = map.get(key);
-            int newSize = size() + computeSizeDifference(prior);
+            // `put` replaces existing values at the key; don't allow duplicates.
+            MultiHashTrie<String, Object> newMap = getMap(eval).with1(key, value);
 
-            FunctionalHashTrie<String, Object> newMap = map.with(key, value);
-
-            return makeSimilar(newMap, newSize);
+            return makeSimilar(newMap);
         }
 
         @Override
         public Object puts(Evaluator eval, String key, Object value)
             throws FusionException
         {
-            FunctionalHashTrie<String, Object> map = getMap(eval);
-            FunctionalHashTrie<String, Object> newMap = structImplAdd(map, key, value);
+            MultiHashTrie<String, Object> newMap = getMap(eval).withMulti(key, value);
 
-            return makeSimilar(newMap, size() + 1);
+            return makeSimilar(newMap);
         }
 
         @Override
         public Object removeKeys(Evaluator eval, String[] keys)
             throws FusionException
         {
-            if (keys.length == 0)
-            {
-                return this;
-            }
+            MultiHashTrie<String, Object> oldMap = getMap(eval);
+            MultiHashTrie<String, Object> newMap = oldMap.withoutKeys(keys);
 
-            int newSize = mySize;
-            FunctionalHashTrie<String, Object> oldMap = getMap(eval);
-            FunctionalHashTrie<String, Object> newMap = oldMap;
+            if (newMap == oldMap) return this;
 
-            for (String key : keys)
-            {
-                Object old = newMap.get(key);
-                if (old != null)
-                {
-                    if (old instanceof Object[])
-                    {
-                        newSize -= ((Object[]) old).length;
-                    }
-                    else
-                    {
-                        newSize--;
-                    }
-                    newMap = newMap.without(key);
-                }
-            }
-
-            if (newMap == oldMap)
-            {
-                return this;
-            }
-
-            return makeSimilar(newMap, newSize);
+            return makeSimilar(newMap);
         }
 
         @Override
         public Object retainKeys(Evaluator eval, String[] keys)
             throws FusionException
         {
-            if (keys.length == 0)
-            {
-                return makeSimilar(FunctionalHashTrie.EMPTY, 0);
-            }
-
-            FunctionalHashTrie<String, Object> oldMap = getMap(eval);
-            FunctionalHashTrie<String, Object> newMap = oldMap;
-
-            Set<String> keysToRetain = new HashSet<>(Arrays.asList(keys));
-            Set<String> existingKeys = oldMap.keySet();
-
-            for (String key : existingKeys)
-            {
-                if (!keysToRetain.contains(key))
-                {
-                    newMap = newMap.without(key);
-                }
-            }
-
-            if (newMap == oldMap)
-            {
-                return this;
-            }
+            MultiHashTrie<String, Object> oldMap = getMap(eval);
+            MultiHashTrie<String, Object> newMap =
+                MultiHashTrie.fromSelectedKeys(oldMap, keys);
 
             return makeSimilar(newMap);
         }
@@ -1283,38 +1053,24 @@ final class FusionStruct
         {
             if (other.size() == 0) return this;
 
-            FunctionalHashTrie<String, Object> newMap = getMap(eval);
+            MultiHashTrie<String, Object> otherMap = other.getMap(eval);
+            MultiHashTrie<String, Object> origMap = getMap(eval);
+            MultiHashTrie<String, Object> newMap = origMap.mergeMulti(otherMap);
 
-            // We know it has children.
-            MapBasedStruct is = (MapBasedStruct) other;
-            for (Map.Entry<String,Object> entry : is.getMap(eval).entrySet())
-            {
-                String key   = entry.getKey();
-                Object value = entry.getValue();
-                newMap = structImplAdd(newMap, key, value);
-            }
-
-            return makeSimilar(newMap, this.size() + other.size());
+            return makeSimilar(newMap);
         }
 
         @Override
         public Object merge1(Evaluator eval, BaseStruct other)
             throws FusionException
         {
-            FunctionalHashTrie origMap = getMap(eval);
-            FunctionalHashTrie newMap = structImplOneify(origMap);
+            MultiHashTrie<String, Object> otherMap = other.getMap(eval);
+            MultiHashTrie<String, Object> origMap = getMap(eval);
+            MultiHashTrie<String, Object> newMap  = origMap.merge1(otherMap);
 
-            if (other.size() == 0)
-            {
-                if (newMap == origMap) return this;
-            }
-            else  // Other is not empty, we are going to make a change
-            {
-                MapBasedStruct is = (MapBasedStruct) other;
-                newMap = structImplMerge1(newMap, is.getMap(eval));
-            }
+            if (newMap == origMap) return this;
 
-            return makeSimilar(newMap, newMap.size());
+            return makeSimilar(newMap);
         }
 
         @Override
@@ -1353,67 +1109,38 @@ final class FusionStruct
             return falseBool(eval);
         }
 
-        private BaseBool actualStructEqual(Evaluator eval,
-                                           EqualityTier tier,
-                                           MapBasedStruct left)
+        private BaseBool actualStructEqual(final Evaluator eval,
+                                           final EqualityTier tier,
+                                           final MapBasedStruct left)
             throws FusionException
         {
-            if (size() != left.size()) return falseBool(eval);
-
-            Map<String, Object> leftMap = left.getMap(eval);
-
-            for (Map.Entry<String, Object> entry : getMap(eval).entrySet())
+            BiPredicate<Object, Object> comp = new BiPredicate<Object, Object>()
             {
-                String fieldName = entry.getKey();
-
-                Object lv = leftMap.get(fieldName);
-                Object rv = entry.getValue();
-                if (lv instanceof Object[])
+                public boolean test(Object lv, Object rv)
                 {
-                    if (! (rv instanceof Object[])) return falseBool(eval);
-
-                    Object[] lArray = (Object[]) lv;
-                    Object[] rArray = (Object[]) rv;
-
-                    int lCount = lArray.length;
-                    int rCount = rArray.length;
-                    if (lCount != rCount) return falseBool(eval);
-
-                    rArray = Arrays.copyOf(rArray, rCount);
-                    for (int i = 0; i < lCount; i++)
+                    try
                     {
-                        lv = lArray[i];
-
-                        // Seek a matching element from rArray
-                        boolean found = false;
-                        for (int j = 0; j < rCount; j++)
-                        {
-                            rv = rArray[j];
-                            BaseBool b = tier.eval(eval, lv, rv);
-                            if (b.isTrue())
-                            {
-                                found = true;
-                                rArray[j] = rArray[--rCount];
-                                break;
-                            }
-                        }
-
-                        if (!found) return falseBool(eval);
+                        return tier.eval(eval, lv, rv).isTrue();
                     }
-
-                    // By now we've found a match for everything!
-                    assert rCount == 0;
+                    catch (FusionException e)
+                    {
+                        throw new TunneledFusionException(e);
+                    }
                 }
-                else
-                {
-                    if (rv instanceof Object[]) return falseBool(eval);
+            };
 
-                    BaseBool b = tier.eval(eval, lv, rv);
-                    if (b.isFalse()) return b;
-                }
+            try
+            {
+                MultiHashTrie<String, Object> leftMap  = left.getMap(eval);
+                MultiHashTrie<String, Object> rightMap = getMap(eval);
+
+                boolean result = leftMap.equals(rightMap, comp);
+                return makeBool(eval, result);
             }
-
-            return trueBool(eval);
+            catch (TunneledFusionException e)
+            {
+                throw e.getFusionException();
+            }
         }
 
         /**
@@ -1429,33 +1156,19 @@ final class FusionStruct
             writeAnnotations(out, myAnnotations);
             out.append('{');
 
+            // TODO PERF: Visitor would be more efficient
             boolean comma = false;
-            for (Map.Entry<String, Object> entry : getMap(eval).entrySet())
+            for (Map.Entry<String, Object> entry : getMap(eval))
             {
                 String fieldName = entry.getKey();
+                Object value     = entry.getValue();
 
-                Object value = entry.getValue();
-                if (value instanceof Object[])
-                {
-                    for (Object element : (Object[]) value)
-                    {
-                        if (comma) out.append(',');
+                if (comma) out.append(',');
 
-                        printSymbol(out, fieldName);
-                        out.append(':');
-                        dispatchWrite(eval, out, element);
-                        comma = true;
-                    }
-                }
-                else
-                {
-                    if (comma) out.append(',');
-
-                    printSymbol(out, fieldName);
-                    out.append(':');
-                    dispatchWrite(eval, out, value);
-                    comma = true;
-                }
+                printSymbol(out, fieldName);
+                out.append(':');
+                dispatchWrite(eval, out, value);
+                comma = true;
             }
             out.append('}');
         }
@@ -1466,26 +1179,15 @@ final class FusionStruct
         {
             out.setTypeAnnotations(getAnnotationsAsJavaStrings());
 
+            // TODO PERF: Visitor would be more efficient
             out.stepIn(IonType.STRUCT);
-            for (Map.Entry<String, Object> entry : getMap(eval).entrySet())
+            for (Map.Entry<String, Object> entry : getMap(eval))
             {
                 String fieldName = entry.getKey();
+                Object value     = entry.getValue();
 
-                Object value = entry.getValue();
-                if (value instanceof Object[])
-                {
-                    Object[] children = (Object[]) value;
-                    for (Object child : children)
-                    {
-                        out.setFieldName(fieldName);
-                        dispatchIonize(eval, out, child);
-                    }
-                }
-                else
-                {
-                    out.setFieldName(fieldName);
-                    dispatchIonize(eval, out, value);
-                }
+                out.setFieldName(fieldName);
+                dispatchIonize(eval, out, value);
             }
             out.stepOut();
         }
@@ -1498,60 +1200,30 @@ final class FusionStruct
             IonStruct is = factory.newEmptyStruct();
             is.setTypeAnnotations(getAnnotationsAsJavaStrings());
 
-            for (Map.Entry<String, Object> entry : getMap(null).entrySet())
+            // TODO PERF: Visitor would be more efficient
+            for (Map.Entry<String, Object> entry : getMap(null))
             {
                 String fieldName = entry.getKey();
 
                 Object value = entry.getValue();
-                if (value instanceof Object[])
-                {
-                    Object[] children = (Object[]) value;
-                    for (Object child : children)
-                    {
-                        IonValue ion =
-                            copyToIonValue(child, factory,
-                                           throwOnConversionFailure);
-                        if (ion == null) return null;
-                        is.add(fieldName, ion);
-                    }
-                }
-                else
-                {
-                    IonValue ion = copyToIonValue(value, factory,
-                                                  throwOnConversionFailure);
-                    if (ion == null) return null;
-                    is.add(fieldName, ion);
-                }
+                IonValue ion = copyToIonValue(value, factory,
+                                              throwOnConversionFailure);
+                if (ion == null) return null;
+                is.add(fieldName, ion);
             }
 
             return is;
         }
-
-        protected int computeSizeDifference(Object prior)
-        {
-            if (prior == null)
-            {
-                return 1;
-            }
-            else if (prior instanceof Object[])
-            {
-                return 1 - ((Object[]) prior).length;
-            }
-            else
-            {
-                return 0;
-            }
-        }
     }
 
 
-    static abstract class NonNullImmutableStruct
+    private static abstract class NonNullImmutableStruct
         extends MapBasedStruct
         implements ImmutableStruct
     {
-        private NonNullImmutableStruct(BaseSymbol[] annotations, int size)
+        private NonNullImmutableStruct(BaseSymbol[] annotations)
         {
-            super(annotations, size);
+            super(annotations);
         }
 
         @Override
@@ -1561,18 +1233,16 @@ final class FusionStruct
         }
 
         @Override
-        MapBasedStruct makeSimilar(FunctionalHashTrie<String, Object> map,
-                                   BaseSymbol[] annotations,
-                                   int size)
+        MapBasedStruct makeSimilar(MultiHashTrie<String, Object> map,
+                                   BaseSymbol[] annotations)
         {
-            return immutableStruct(map, annotations, size);
+            return immutableStruct(map, annotations);
         }
 
         @Override
         Object annotate(Evaluator eval, BaseSymbol[] annotations)
-            throws FusionException
         {
-            return makeSimilar(getMap(eval), annotations, size());
+            return makeSimilar(getMap(eval), annotations);
         }
 
         @Override
@@ -1621,38 +1291,32 @@ final class FusionStruct
     private static class FunctionalStruct
         extends NonNullImmutableStruct
     {
-        /**
-         * For repeated fields, the value is Object[] otherwise it's a
-         * non-array Object.
-         */
-        private final FunctionalHashTrie<String, Object> myMap;
+        private final MultiHashTrie<String, Object> myMap;
 
 
-        public FunctionalStruct(FunctionalHashTrie<String, Object> map,
-                                BaseSymbol[] annotations,
-                                int size)
+        private FunctionalStruct(MultiHashTrie<String, Object> map,
+                                 BaseSymbol[] annotations)
         {
-            super(annotations, size);
+            super(annotations);
             myMap = map;
         }
 
-        public FunctionalStruct(Map<String, Object> map,
-                                BaseSymbol[] annotations)
+        /**
+         * Create a struct with one element.
+         */
+        private FunctionalStruct(String key, Object value, BaseSymbol[] annotations)
         {
-            super(annotations, computeSize(map));
-            myMap = FunctionalHashTrie.create(map);
-        }
-
-        public FunctionalStruct(Map<String, Object> map,
-                                BaseSymbol[] annotations,
-                                int size)
-        {
-            super(annotations, size);
-            myMap = FunctionalHashTrie.create(map);
+            this(MultiHashTrie.<String, Object>empty().with1(key, value), annotations);
         }
 
         @Override
-        FunctionalHashTrie<String, Object> getMap(Evaluator eval)
+        public int size()
+        {
+            return myMap.size();
+        }
+
+        @Override
+        public MultiHashTrie<String, Object> getMap(Evaluator eval)
         {
             return myMap;
         }
@@ -1662,20 +1326,23 @@ final class FusionStruct
         extends NonNullImmutableStruct
     {
         /**
-         * For repeated fields, the value is Object[] otherwise it's a
-         * non-array Object.
-         * <p>
          * This map is empty until an element is accessed.
          * Access to this field should be routed through {@link #getMap}
          * to force injection into this map!</b>
          */
-        FunctionalHashTrie<String, Object> myMap;
+        private MultiHashTrie<String, Object> myMap;
         private IonStruct myIonStruct;
 
-        public LazyInjectingStruct(BaseSymbol[] annotations, IonStruct struct)
+        private LazyInjectingStruct(BaseSymbol[] annotations, IonStruct struct)
         {
-            super(annotations, struct.size());
+            super(annotations);
             myIonStruct = struct;
+        }
+
+        @Override
+        public synchronized int size()
+        {
+            return (myIonStruct != null ? myIonStruct.size() : myMap.size());
         }
 
         private synchronized IonStruct getIonStruct()
@@ -1714,12 +1381,11 @@ final class FusionStruct
          * Synchronized so this immutable class is thread-safe for reads.
          */
         @Override
-        synchronized FunctionalHashTrie<String, Object> getMap(Evaluator eval)
+        public synchronized MultiHashTrie<String, Object> getMap(Evaluator eval)
         {
             if (myIonStruct != null)
             {
-                myMap = FunctionalHashTrie.merge(makeInjectingIterator(eval),
-                                                 STRUCT_MERGE_FUNCTION);
+                myMap       = MultiHashTrie.fromEntries(makeInjectingIterator(eval));
                 myIonStruct = null;
             }
 
@@ -1777,81 +1443,59 @@ final class FusionStruct
     private static final class MutableStruct
         extends MapBasedStruct
     {
-        /**
-         * For repeated fields, the value is Object[] otherwise it's a
-         * non-array Object.
-         */
-        private FunctionalHashTrie<String, Object> myMap;
+        private MultiHashTrie<String, Object> myMap;
 
-        public MutableStruct(Map<String, Object> map,
-                             BaseSymbol[] annotations)
+        private MutableStruct(MultiHashTrie<String, Object> map,
+                              BaseSymbol[] annotations)
         {
-            super(annotations, computeSize(map));
-            myMap = FunctionalHashTrie.create(map);
-        }
-
-        public MutableStruct(FunctionalHashTrie<String, Object> map,
-                             BaseSymbol[] annotations)
-        {
-            super(annotations, computeSize(map));
+            super(annotations);
             myMap = map;
         }
 
-        public MutableStruct(Map<String, Object> map,
-                             BaseSymbol[] annotations,
-                             int size)
+        MutableStruct()
         {
-            super(annotations, size);
-            myMap = FunctionalHashTrie.create(map);
+            super(BaseSymbol.EMPTY_ARRAY);
+            myMap = MultiHashTrie.empty();
         }
 
-        public MutableStruct(FunctionalHashTrie<String, Object> map,
-                             BaseSymbol[] annotations,
-                             int size)
-        {
-            super(annotations, size);
-            myMap = map;
-        }
 
-        /**
-         * Recomputes {@link #mySize} based on what's in {@link #myMap}.
-         * This takes time proportional to the number of unique field names.
-         */
-        void updateSize()
+        @Override
+        public int size()
         {
-            mySize = computeSize(myMap);
+            return myMap.size();
         }
 
         @Override
-        FunctionalHashTrie<String, Object> getMap(Evaluator eval)
+        public MultiHashTrie<String, Object> getMap(Evaluator eval)
         {
             return myMap;
         }
 
         @Override
-        MapBasedStruct makeSimilar(FunctionalHashTrie<String, Object> map,
-                                   BaseSymbol[] annotations,
-                                   int size)
+        MapBasedStruct makeSimilar(MultiHashTrie<String, Object> map,
+                                   BaseSymbol[] annotations)
         {
-            return new MutableStruct(map, annotations, size);
+            return new MutableStruct(map, annotations);
+        }
+
+        NonNullImmutableStruct asImmutable()
+        {
+            return new FunctionalStruct(myMap, myAnnotations);
         }
 
         @Override
         Object annotate(Evaluator eval, BaseSymbol[] annotations)
             throws FusionException
         {
-            return makeSimilar(getMap(eval), annotations, size());
+            return makeSimilar(getMap(eval), annotations);
         }
 
         @Override
         public Object putM(Evaluator eval, String key, Object value)
             throws FusionException
         {
-            Object prior = myMap.get(key);
-
-            myMap = myMap.with(key, value);
-            mySize += computeSizeDifference(prior);
-
+            // `put` replaces existing values at the key; don't allow duplicates.
+            myMap = myMap.with1(key, value);
             return this;
         }
 
@@ -1859,9 +1503,7 @@ final class FusionStruct
         public Object putsM(Evaluator eval, String key, Object value)
             throws FusionException
         {
-            myMap = structImplAdd(myMap, key, value);
-            mySize++;
-
+            myMap = myMap.withMulti(key, value);
             return this;
         }
 
@@ -1869,26 +1511,7 @@ final class FusionStruct
         public Object removeKeysM(Evaluator eval, String[] keys)
             throws FusionException
         {
-            if (keys.length != 0)
-            {
-                for (String key : keys)
-                {
-                    Object old = myMap.get(key);
-                    if (old != null)
-                    {
-                        if (old instanceof Object[])
-                        {
-                            mySize -= ((Object[]) old).length;
-                        }
-                        else
-                        {
-                            mySize--;
-                        }
-                        myMap = myMap.without(key);
-                    }
-                }
-            }
-
+            myMap = myMap.withoutKeys(keys);
             return this;
         }
 
@@ -1896,26 +1519,7 @@ final class FusionStruct
         public Object retainKeysM(Evaluator eval, String[] keys)
             throws FusionException
         {
-            if (keys.length == 0)
-            {
-                myMap = FunctionalHashTrie.EMPTY;
-                mySize = 0;
-            }
-            else
-            {
-                Set<String> keysToRetain = new HashSet<>(Arrays.asList(keys));
-                Set<String> existingKeys = myMap.keySet();
-
-                for (String key : existingKeys)
-                {
-                    if (!keysToRetain.contains(key))
-                    {
-                        myMap = myMap.without(key);
-                    }
-                }
-                updateSize();
-            }
-
+            myMap = MultiHashTrie.fromSelectedKeys(myMap, keys);
             return this;
         }
 
@@ -1923,14 +1527,7 @@ final class FusionStruct
         public Object mergeM(Evaluator eval, BaseStruct other)
             throws FusionException
         {
-            int otherSize = other.size();
-            if (otherSize != 0)
-            {
-                MapBasedStruct is = (MapBasedStruct) other;
-                myMap = structImplMerge(myMap, is.getMap(eval));
-                mySize += otherSize;
-            }
-
+            myMap = myMap.mergeMulti(other.getMap(eval));
             return this;
         }
 
@@ -1938,16 +1535,7 @@ final class FusionStruct
         public Object merge1M(Evaluator eval, BaseStruct other)
             throws FusionException
         {
-            // Remove any existing repeated fields.
-            myMap = structImplOneify(myMap);
-
-            if (other.size() != 0)
-            {
-                MapBasedStruct is = (MapBasedStruct) other;
-                myMap = structImplMerge1(myMap, is.getMap(eval));
-            }
-
-            mySize = myMap.size();
+            myMap = myMap.merge1(other.getMap(eval));
             return this;
         }
     }
@@ -2126,26 +1714,16 @@ final class FusionStruct
         extends AbstractIterator
     {
         private final Iterator<Map.Entry<String,Object>> myEntryIterator;
-        private Iterator<Object>                         myMultiIterator;
-        private Object                                   myCurrentKey;
 
-        private StructIterator(Map<String,Object> map)
+        private StructIterator(MultiHashTrie<String,Object> map)
         {
-            myEntryIterator = map.entrySet().iterator();
+            myEntryIterator = map.iterator();
         }
 
         @Override
         boolean hasNext(Evaluator eval)
             throws FusionException
         {
-            if (myMultiIterator != null)
-            {
-                if (myMultiIterator.hasNext())
-                {
-                    return true;
-                }
-                myMultiIterator = null;
-            }
             return myEntryIterator.hasNext();
         }
 
@@ -2153,29 +1731,13 @@ final class FusionStruct
         Object next(Evaluator eval)
             throws FusionException
         {
-            Object value;
-            if (myMultiIterator != null)
-            {
-                value = myMultiIterator.next();
-            }
-            else
-            {
-                Map.Entry<String, Object> entry = myEntryIterator.next();
-                myCurrentKey = makeSymbol(eval, entry.getKey());
+            Map.Entry<String, Object> entry = myEntryIterator.next();
 
-                value = entry.getValue();
-                if (value instanceof Object[])
-                {
-                    Object[] vals = (Object[]) value;
-                    myMultiIterator = Arrays.asList(vals).iterator();
-
-                    // Safe since we have at least 1 element in the array:
-                    value = myMultiIterator.next();
-                }
-            }
+            Object fieldName = makeSymbol(eval, entry.getKey());
+            Object value     = entry.getValue();
 
             // TODO route multi-values through the evaluator
-            return new Object[] { myCurrentKey, value };
+            return new Object[] { fieldName, value };
         }
     }
 
@@ -2189,17 +1751,16 @@ final class FusionStruct
             BaseStruct s = (BaseStruct) struct;
             if (s.size() == 0)
             {
-                return iterate(eval, Arrays.asList().iterator());
+                return iterate(eval, emptyIterator());
             }
 
-            Map<String, Object> map = ((MapBasedStruct) s).getMap(eval);
-            return new StructIterator(map);
+            return new StructIterator(s.getMap(eval));
         }
     }
 
 
 
-    abstract static class BaseStructProc
+    private abstract static class BaseStructProc
         extends Procedure
     {
         void checkArityEven(Object... args)
@@ -2213,28 +1774,40 @@ final class FusionStruct
             }
         }
 
-        abstract Object makeIt(String[] names, Object[] values)
+        abstract Object empty(Evaluator eval)
             throws FusionException;
+
+        abstract Object singleEntry(Evaluator eval, String name, Object value)
+            throws FusionException;
+
+        abstract Object build(Builder builder);
 
         @Override
         final Object doApply(Evaluator eval, Object[] args)
             throws FusionException
         {
+            if (args.length == 0)
+            {
+                return empty(eval);
+            }
+            if (args.length == 2)
+            {
+                String name = checkRequiredTextArg(eval, this, 0, args);
+                return singleEntry(eval, name, args[1]);
+            }
+
             checkArityEven(args);
 
-            int fieldCount = (args.length / 2);
-            String[] names  = new String[fieldCount];
-            Object[] values = new Object[fieldCount];
+            Builder builder = builder(eval);
 
-            int fieldPos = 0;
-            for (int i = 0; i < args.length; i++, fieldPos++)
+            for (int i = 0; i < args.length; i++)
             {
-                names [fieldPos] = checkNonEmptyTextArg(eval, this, i, args);
-                values[fieldPos] = args[++i];
+                String name  = checkRequiredTextArg(eval, this, i, args);
+                Object value = args[++i];
+                builder.add(name, value);
             }
-            assert fieldPos == fieldCount;
 
-            return makeIt(names, values);
+            return build(builder);
         }
     }
 
@@ -2244,10 +1817,23 @@ final class FusionStruct
         extends BaseStructProc
     {
         @Override
-        Object makeIt(String[] names, Object[] values)
+        Object empty(Evaluator eval)
             throws FusionException
         {
-            return immutableStruct(names, values, EMPTY_STRING_ARRAY);
+            return emptyStruct(eval);
+        }
+
+        @Override
+        Object singleEntry(Evaluator eval, String name, Object value)
+            throws FusionException
+        {
+            return immutableStruct(eval, name, value);
+        }
+
+        @Override
+        Object build(Builder builder)
+        {
+            return builder.buildImmutable();
         }
     }
 
@@ -2257,10 +1843,23 @@ final class FusionStruct
         extends BaseStructProc
     {
         @Override
-        Object makeIt(String[] names, Object[] values)
+        Object empty(Evaluator eval)
             throws FusionException
         {
-            return mutableStruct(names, values, EMPTY_STRING_ARRAY);
+            return mutableStruct(eval);
+        }
+
+        @Override
+        Object singleEntry(Evaluator eval, String name, Object value)
+            throws FusionException
+        {
+            return mutableStruct(eval, name, value);
+        }
+
+        @Override
+        Object build(Builder builder)
+        {
+            return builder.buildMutable();
         }
     }
 
@@ -2329,34 +1928,47 @@ final class FusionStruct
     static abstract class AbstractZipProc
         extends Procedure
     {
-        final FunctionalHashTrie<String,Object> _doApply(Evaluator eval, Object[] args)
+        abstract Object empty(Evaluator eval)
+            throws FusionException;
+
+        abstract Object build(Builder builder);
+
+        @Override
+        final Object doApply(Evaluator eval, Object[] args)
             throws FusionException
         {
             checkArityExact(2, args);
             Object names =  checkNullableListArg(eval, this, 0, args);
             Object values = checkNullableListArg(eval, this, 1, args);
 
+            if (unsafeListSize(eval, names) == 0 ||
+                    unsafeListSize(eval, values) == 0)
+            {
+                return empty(eval);
+            }
+
             Iterator<?> fieldIterator = unsafeJavaIterate(eval, names);
             Iterator<?> valueIterator = unsafeJavaIterate(eval, values);
 
-            FunctionalHashTrie<String, Object> map = FunctionalHashTrie.EMPTY;
+            FusionStruct.Builder builder = FusionStruct.builder(eval);
 
             while (fieldIterator.hasNext() && valueIterator.hasNext())
             {
                 Object nameObj = fieldIterator.next();
                 String name = textToJavaString(eval, nameObj);
-                if (name == null || name.isEmpty())
+                if (name == null)
                 {
                     String expectation =
-                        "sequence of non-empty strings or symbols";
+                        "sequence of non-null strings or symbols";
                     throw new ArgumentException(this, expectation, 0, args);
                 }
 
                 Object valueObj = valueIterator.next();
-                map = structImplAdd(map, name, valueObj);
+
+                builder.add(name, valueObj);
             }
 
-            return map;
+            return build(builder);
         }
     }
 
@@ -2365,10 +1977,16 @@ final class FusionStruct
         extends AbstractZipProc
     {
         @Override
-        Object doApply(Evaluator eval, Object[] args)
+        Object empty(Evaluator eval)
             throws FusionException
         {
-            return immutableStruct(_doApply(eval, args));
+            return emptyStruct(eval);
+        }
+
+        @Override
+        Object build(Builder builder)
+        {
+            return builder.buildImmutable();
         }
     }
 
@@ -2377,10 +1995,16 @@ final class FusionStruct
         extends AbstractZipProc
     {
         @Override
-        Object doApply(Evaluator eval, Object[] args)
+        Object empty(Evaluator eval)
             throws FusionException
         {
-            return mutableStruct(_doApply(eval, args));
+            return mutableStruct(eval);
+        }
+
+        @Override
+        Object build(Builder builder)
+        {
+            return builder.buildMutable();
         }
     }
 
@@ -2403,7 +2027,7 @@ final class FusionStruct
             String[] keys = new String[args.length - 1];
             for (int i = 1; i < args.length; i++)
             {
-                keys[i-1] = checkNonEmptyTextArg(eval, this, i, args);
+                keys[i-1] = checkRequiredTextArg(eval, this, i, args);
             }
 
             return doIt(eval, struct, keys);

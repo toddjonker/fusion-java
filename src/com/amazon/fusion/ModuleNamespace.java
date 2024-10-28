@@ -1,12 +1,13 @@
-// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2023 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.BindingSite.makeExportBindingSite;
-import static com.amazon.fusion.GlobalState.DEFINE;
 import static com.amazon.fusion.GlobalState.REQUIRE;
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
+import com.amazon.fusion.util.function.Function;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
@@ -197,7 +198,8 @@ final class ModuleNamespace
             throws AmbiguousBindingFailure
         {
             String name = identifier.stringValue();
-            throw new AmbiguousBindingFailure(DEFINE, name, formForErrors);
+            throw new AmbiguousBindingFailure("module-level definition",
+                                              name, formForErrors);
         }
 
         @Override
@@ -428,31 +430,41 @@ final class ModuleNamespace
     }
 
 
+    /**
+     * Helper to work-around inability of constructors to invoke virtual methods.
+     */
+    private static final Function<Namespace, SyntaxWraps> MAKE_SYNTAX_WRAPS =
+        new Function<Namespace, SyntaxWraps>() {
+            @Override
+            public SyntaxWraps apply(Namespace ns)
+            {
+                return SyntaxWraps.make(new ModuleWrap((ModuleNamespace) ns));
+            }
+        };
+
+
     private final List<BaseSymbol> myDefinedNames = new ArrayList<>();
 
     /**
-     * Constructs a module with a given language.  Bindings provided by the
-     * language can be shadowed by {@code require} or {@code define}.
-     *
+     * Expansion-time namespaces are bootstrapped with bindings from a language.
+     * Language bindings can be shadowed by {@code require} or {@code define}.
+     * <p>
+     * When expansion of a {@code (module ...)} form is complete, the populated
+     * namespace is discarded. A compile-time namespace is later created to
+     * replace it.
+     * </p>
      * @param moduleId identifies this module.
      */
     ModuleNamespace(Evaluator eval,
                     ModuleRegistry registry,
                     SyntaxSymbol lexicalContext,
-                    final ModuleInstance language,
-                    ModuleIdentity moduleId)
+                    ModuleIdentity moduleId,
+                    ModuleIdentity languageId)
         throws FusionException
     {
-        super(registry, moduleId,
-              new Function<Namespace, SyntaxWraps>()
-              {
-                  @Override
-                  public SyntaxWraps apply(Namespace _this) {
-                      ModuleNamespace __this = (ModuleNamespace) _this;
-                      return SyntaxWraps.make(new ModuleWrap(__this));
-                  }
-              });
+        super(registry, moduleId, MAKE_SYNTAX_WRAPS);
 
+        ModuleInstance language = instantiateRequiredModule(eval, languageId);
         for (ProvidedBinding provided : language.providedBindings())
         {
             BaseSymbol name = provided.getName();
@@ -466,6 +478,25 @@ final class ModuleNamespace
     }
 
     /**
+     * Compile-time namespaces don't track bindings.
+     */
+    ModuleNamespace(Evaluator eval,
+                    ModuleRegistry registry,
+                    ModuleIdentity moduleId,
+                    ModuleIdentity[] requiredModules)
+        throws FusionException
+    {
+        super(registry, moduleId, MAKE_SYNTAX_WRAPS);
+
+        for (ModuleIdentity m : requiredModules)
+        {
+            instantiateRequiredModule(eval, m);
+        }
+        assert Arrays.equals(requiredModuleIds(), requiredModules);
+    }
+
+
+    /**
      * Constructs a module that uses no other module. Any bindings will need to
      * be created via {@link #bind(String, Object)}.
      *
@@ -473,14 +504,7 @@ final class ModuleNamespace
      */
     ModuleNamespace(ModuleRegistry registry, ModuleIdentity moduleId)
     {
-        super(registry, moduleId,
-              new Function<Namespace, SyntaxWraps>()
-              {
-                  @Override
-                  public SyntaxWraps apply(Namespace _this) {
-                      return SyntaxWraps.make(new EnvironmentWrap(_this));
-                  }
-              });
+        super(registry, moduleId, MAKE_SYNTAX_WRAPS);
     }
 
 

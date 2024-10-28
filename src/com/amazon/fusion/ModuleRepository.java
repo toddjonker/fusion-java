@@ -1,10 +1,14 @@
-// Copyright (c) 2012-2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 
+import com.amazon.fusion.util.function.Predicate;
+
 /**
  * Provides access to module source code in some (usually persistent) store.
+ * <p>
+ * NOT FOR APPLICATION USE.
  */
 abstract class ModuleRepository
 {
@@ -15,6 +19,12 @@ abstract class ModuleRepository
      */
     abstract String identify();
 
+    /**
+     * Attempts to locate a module within this repository, without forcing its
+     * loading or instantiation.
+     * 
+     * @return the location of a module with the given identity, or null.
+     */
     abstract ModuleLocation locateModule(Evaluator eval, ModuleIdentity id)
         throws FusionException;
 

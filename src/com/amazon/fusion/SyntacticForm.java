@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2023 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -9,7 +9,7 @@ import java.io.IOException;
  * Base class for syntactic forms.
  */
 abstract class SyntacticForm
-    extends NamedValue
+    extends NamedValue    // Primarily for SyntaxChecker to label error messages
 {
     abstract SyntaxValue expand(Expander expander, Environment env,
                                 SyntaxSexp stx)
@@ -42,6 +42,16 @@ abstract class SyntacticForm
         throws FusionException;
 
 
+    /**
+     * Evaluates the expansion-time code of a top-level form.
+     *
+     * @param comp active compiler
+     * @param topNs they namespace in which we're evaluating
+     * @param topStx a fully expanded top-level form.
+     * @throws FusionException
+     *
+     * @see FusionEval#evalCompileTimePartOfTopLevel
+     */
     void evalCompileTimePart(Compiler comp,
                              TopLevelNamespace topNs,
                              SyntaxSexp topStx)

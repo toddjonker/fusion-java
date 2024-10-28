@@ -1,8 +1,9 @@
-// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import java.io.File;
+import java.net.URL;
 
 /**
  * Identifies a source of Fusion code or other data: a file, URL, <em>etc.</em>
@@ -19,11 +20,13 @@ public class SourceName
      *
      * @param path must not be null or empty.
      *
+     * @return a new {@link SourceName} instance
+     *
      * @see #forFile(File)
      */
     public static SourceName forFile(String path)
     {
-        if (path.length() == 0) {
+        if (path.isEmpty()) {
             throw new IllegalArgumentException("path must not be empty");
         }
         return new FileSourceName(new File(path));
@@ -36,6 +39,8 @@ public class SourceName
      * @param path must not be null or empty.
      *
      * @see #forFile(String)
+     *
+     * @return a new {@link SourceName} instance
      */
     public static SourceName forFile(File path)
     {
@@ -44,11 +49,14 @@ public class SourceName
 
     /**
      * Creates a {@link SourceName} that will simply display the given text.
+     *
      * @param display must not be null.
+     *
+     * @return a new {@link SourceName} instance
      */
     public static SourceName forDisplay(String display)
     {
-        if (display.length() == 0) {
+        if (display.isEmpty()) {
             throw new IllegalArgumentException("display must not be empty");
         }
         return new SourceName(display);
@@ -61,7 +69,11 @@ public class SourceName
     }
 
 
-    /** Returns the human-readable source name, for display in messages. */
+    /**
+     * Returns the human-readable source name, for display in messages.
+     *
+     * @return the displayable name of this source
+     */
     public String display()
     {
         return myDisplay;
@@ -80,7 +92,17 @@ public class SourceName
         return null;
     }
 
+    URL getUrl()
+    {
+        return null;
+    }
 
+    /**
+     * It is not guaranteed that the module declaration is the only content of
+     * the file or URL.
+     * The resource could be a script with several modules inside, and modules
+     * declarations will eventually nest.
+     */
     ModuleIdentity getModuleIdentity()
     {
         return null;
@@ -167,5 +189,41 @@ public class SourceName
     {
         assert sourceFile != null;
         return new ModuleSourceName(id, sourceFile);
+    }
+
+
+    //=========================================================================
+
+
+    /**
+     * Identifies a data source using a URL.
+     */
+    private static class UrlSourceName
+        extends SourceName
+    {
+        private final ModuleIdentity myId;
+        private final URL            myUrl;
+
+        private UrlSourceName(ModuleIdentity id, URL url)
+        {
+            super(id + " (at " + url.toExternalForm() + ")");
+            myId  = id;
+            myUrl = url;
+        }
+
+        @Override
+        URL getUrl() { return myUrl; }
+
+        @Override
+        ModuleIdentity getModuleIdentity() { return myId; }
+    }
+
+
+    /**
+     * NOT FOR APPLICATION USE
+     */
+    static SourceName forUrl(ModuleIdentity id, URL url)
+    {
+        return new UrlSourceName(id, url);
     }
 }

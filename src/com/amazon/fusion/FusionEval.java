@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2023 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -120,7 +120,7 @@ final class FusionEval
                     CompiledForm compiled = eval.compile(ns, stx);
                     stx = null; // Don't hold garbage
 
-                    Object r = eval.eval(ns, compiled); // TODO TAIL
+                    Object r = eval.eval(ns, compiled);
 
                     // Don't retain the result value longer than needed.
                     if (forms.isEmpty())
@@ -168,7 +168,7 @@ final class FusionEval
             topLevelForm = enrich(eval, (SyntaxValue) topLevelForm);
         }
 
-        return callCurrentEval(eval, topLevelForm); // TODO TAIL
+        return callCurrentEval(eval, topLevelForm);
     }
 
 
@@ -183,7 +183,7 @@ final class FusionEval
     {
         eval = eval.parameterizeCurrentNamespace(ns);
 
-        return callCurrentEval(eval, source); // TODO TAIL
+        return callCurrentEval(eval, source);
     }
 
 
@@ -200,16 +200,15 @@ final class FusionEval
         if (topLevelForm instanceof SyntaxSexp)
         {
             SyntaxSexp maybeModule = (SyntaxSexp) topLevelForm;
-            if (maybeModule.size() > 1 &&
-                maybeModule.get(eval, 0) instanceof SyntaxSymbol)
+            SyntaxSymbol maybeKeyword = maybeModule.firstIdentifier(eval);
+            if (maybeKeyword != null)
             {
-                SyntaxSymbol maybeKeyword = (SyntaxSymbol)
-                    maybeModule.get(eval, 0);
                 maybeKeyword = (SyntaxSymbol) ns.syntaxIntroduce(maybeKeyword);
                 SyntaxSymbol moduleKeyword =
                     eval.getGlobalState().kernelBoundIdentifier(eval, MODULE);
                 if (maybeKeyword.freeIdentifierEqual(moduleKeyword))
                 {
+                    // Stash the resolved identifier back in the sexp.
                     SyntaxValue[] children = maybeModule.extract(eval);
                     children[0] = maybeKeyword;
                     return maybeModule.copyReplacingChildren(eval, children);
@@ -227,8 +226,14 @@ final class FusionEval
 
 
     /**
+     * Parses the top-level syntax forms in Fusion source code, passing each
+     * resulting syntax object to a procedure.
+     * After all top-level forms are processed, the {@code receiver} is invoked
+     * one more time with {@linkplain FusionIo#eof(Evaluator) the canonical EOF
+     * value}.
+     * <p>
      * See http://docs.racket-lang.org/tools/drracket_eval.html#%28def._%28%28lib._drracket%2Ftool-lib..rkt%29._drracket~3aeval~3atraverse-program%2Fmultiple%29%29
-     *
+     * </p>
      * @param receiver is a 1-argument procedure that accepts a syntax object
      * or EOF.
      */
@@ -303,9 +308,16 @@ final class FusionEval
 
 
     /**
+     * Parses and expands the top-level syntax forms in Fusion source code,
+     * passing each resulting syntax object to a procedure.
+     * After all top-level forms are processed, the {@code receiver} is invoked
+     * one more time with {@linkplain FusionIo#eof(Evaluator) the canonical EOF
+     * value}.
+     * <p>
      * See http://docs.racket-lang.org/tools/drracket_eval.html#%28def._%28%28lib._drracket%2Ftool-lib..rkt%29._drracket~3aeval~3aexpand-program%29%29
-     * @param receiver is a 1-argument procedure that accepts a syntax object
-     * or EOF.
+     * </p>
+     * @param receiver is a 1-argument procedure that accepts a fully-expanded
+     *   syntax object or EOF.
      */
     static void expandProgram(TopLevel        top,
                               String          source,
@@ -340,6 +352,9 @@ final class FusionEval
 
     /**
      * Evaluates the expansion-time code of a top-level form.
+     * This generally means that top-level bindings are created as a result of
+     * require and define forms.  Additionally, module declarations are
+     * compiled and registered, but not visited or instantiated.
      *
      * @param topStx must be a fully-expanded top-level form, excluding
      * {@code begin}.

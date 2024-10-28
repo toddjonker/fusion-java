@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -8,6 +8,8 @@ import static com.amazon.fusion.FusionNull.makeNullNull;
 import static com.amazon.fusion.FusionNumber.makeDecimal;
 import static com.amazon.fusion.FusionNumber.makeFloat;
 import static com.amazon.fusion.FusionNumber.makeInt;
+import static com.amazon.fusion.FusionSexp.emptySexp;
+import static com.amazon.fusion.FusionSexp.pair;
 import static com.amazon.fusion.FusionSexp.sexpFromIonSequence;
 import static com.amazon.fusion.FusionString.makeString;
 import static com.amazon.fusion.FusionStruct.structFromIonStruct;
@@ -56,43 +58,12 @@ class Evaluator
         myContinuationMarks = null;
     }
 
-    private Evaluator(Evaluator outerBindings)
+    Evaluator(Evaluator outerBindings)
     {
         myGlobalState     = outerBindings.myGlobalState;
         mySystem          = outerBindings.mySystem;
         myOuterFrame      = outerBindings;
-        myContinuationMarks = new HashMap<Object, Object>();
-    }
-
-    /**
-     * Construct an evaluator with a single continuation mark.
-     */
-    Evaluator(Evaluator outer, Object key, Object mark)
-    {
-        this(outer);
-
-        // The keys must be hashable and equals-able!
-        assert key instanceof DynamicParameter;
-
-        myContinuationMarks.put(key, mark);
-    }
-
-    /**
-     * Construct an evaluator with multiple continuation marks.
-     */
-    Evaluator(Evaluator outer, Object[] keys, Object[] marks)
-    {
-        this(outer);
-
-        assert keys.length == marks.length;
-
-        for (int i = 0; i < keys.length; i++)
-        {
-            // The keys must be hashable and equals-able!
-            assert keys[i] instanceof DynamicParameter;
-
-            myContinuationMarks.put(keys[i], marks[i]);
-        }
+        myContinuationMarks = new HashMap<>();
     }
 
 
@@ -164,7 +135,7 @@ class Evaluator
             {
                 if (value.isNullValue())
                 {
-                    return makeFloat(this, annotations, (Double) null);
+                    return makeFloat(this, annotations, null);
                 }
                 double d = ((IonFloat)value).doubleValue();
                 return makeFloat(this, annotations, d);
@@ -512,45 +483,92 @@ class Evaluator
 
 
     /**
-     * Collects all marks for {@code key} in the current continuation,
-     * with the most recent mark first.
+     * Collects all marks for {@code key} in the current continuation into a
+     * sexp, with the most recent mark first.
      *
-     * @return a non-null list.
+     * @return a non-null sexp.
      */
-    ArrayList<Object> continuationMarks(Object key)
+    Object continuationMarkSexp(Object key)
+    {
+        Object sexp;
+        if (myOuterFrame != null)
+        {
+            sexp = myOuterFrame.continuationMarkSexp(key);
+        }
+        else
+        {
+            sexp = emptySexp(this);
+        }
+
+        if (myContinuationMarks != null)
+        {
+            Object value = myContinuationMarks.get(key);
+            if (value != null)
+            {
+                sexp = pair(this, value, sexp);
+            }
+        }
+
+        return sexp;
+    }
+
+
+    Evaluator addContinuationFrame()
+    {
+        return new Evaluator(this);
+    }
+
+    private void setMark(Object key, Object mark)
     {
         // The keys must be hashable and equals-able!
         assert key instanceof DynamicParameter;
+        assert mark != null;
+        myContinuationMarks.put(key, mark);
+    }
 
-        ArrayList<Object> results = new ArrayList<>();
+    final Evaluator markedContinuation(Object key, Object mark)
+    {
+        Evaluator e = addContinuationFrame();
+        e.setMark(key, mark);
+        return e;
+    }
 
-        Evaluator e = this;
-        while (e.myOuterFrame != null)
+    final Evaluator markedContinuation(Object[] keys, Object[] marks)
+    {
+        Evaluator e = addContinuationFrame();
+
+        assert keys.length == marks.length;
+        for (int i = 0; i < keys.length; i++)
         {
-            Object value = e.myContinuationMarks.get(key);
-            if (value != null)
-            {
-                results.add(value);
-            }
-            e = e.myOuterFrame;
+            e.setMark(keys[i], marks[i]);
         }
 
-        return results;
+        return e;
     }
 
-
-    Evaluator markedContinuation(Object key, Object mark)
+    final Evaluator markedContinuation(Object[] keyMarkPairs)
     {
-        return new Evaluator(this, key, mark);
-    }
+        Evaluator e = addContinuationFrame();
 
-    Evaluator markedContinuation(Object[] keys, Object[] marks)
-    {
-        return new Evaluator(this, keys, marks);
+        assert keyMarkPairs.length %2 == 0;
+        for (int i = 0; i < keyMarkPairs.length; i++)
+        {
+            Object key  = keyMarkPairs[i++];
+            Object mark = keyMarkPairs[i];
+            e.setMark(key, mark);
+        }
+
+        return e;
     }
 
 
     //========================================================================
+
+    ModuleNameResolver findResolver()
+    {
+        // TODO This should be a parameter.
+        return myGlobalState.myModuleNameResolver;
+    }
 
     Namespace findCurrentNamespace()
     {
@@ -591,6 +609,9 @@ class Evaluator
         return eval(ns, compiled);
     }
 
+    /**
+     * @see FusionEval#evalCompileTimePartOfTopLevel
+     */
     void evalCompileTimePart(TopLevelNamespace topNs, SyntaxValue topStx)
         throws FusionException
     {
@@ -750,7 +771,7 @@ class Evaluator
     }
 
 
-    private final void checkSingleArgResults(Object[] args)
+    private void checkSingleArgResults(Object[] args)
         throws FusionException
     {
         int len = args.length;

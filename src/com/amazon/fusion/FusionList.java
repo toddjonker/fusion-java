@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -500,6 +500,8 @@ final class FusionList
             return back;
         }
 
+        abstract ImmutableList toImmutableList(Evaluator eval);
+
         @Override
         void unsafeCopy(Evaluator eval, int srcPos, Object[] dest, int destPos,
                         int length)
@@ -706,9 +708,9 @@ final class FusionList
         {
             int myLen = size();
             int newLen = myLen;
-            for (int i = 0; i < args.length; i++)
+            for (Object arg : args)
             {
-                newLen += ((BaseSequence) args[i]).size();
+                newLen += ((BaseSequence) arg).size();
             }
 
             if (newLen == myLen) return this; // Nothing to append
@@ -798,6 +800,12 @@ final class FusionList
             return new MutableList(annotations, elements);
         }
 
+        @Override
+        ImmutableList toImmutableList(Evaluator eval)
+        {
+            return new ImmutableList(getAnnotations(), extract(eval));
+        }
+
         /**
          * Assumes ownership of arguments.
          */
@@ -842,6 +850,12 @@ final class FusionList
         BaseList makeSimilar(BaseSymbol[] annotations, Object[] elements)
         {
             return new ImmutableList(annotations, elements);
+        }
+
+        @Override
+        ImmutableList toImmutableList(Evaluator eval)
+        {
+            return this;
         }
 
         @Override
@@ -1208,10 +1222,9 @@ final class FusionList
                     out.stepIn(IonType.LIST);
                     {
                         int len = myValues.length;
-                        for (int i = 0; i < len; i++)
+                        for (Object elt : myValues)
                         {
-                            IonValue iv = (IonValue) myValues[i];
-                            iv.writeTo(out);
+                            ((IonValue) elt).writeTo(out);
                         }
                     }
                     out.stepOut();
@@ -1371,6 +1384,18 @@ final class FusionList
             throws FusionException
         {
             return stretchyList(eval, args);
+        }
+    }
+
+
+    static final class UnsafeListToImmutableListProc
+        extends Procedure1
+    {
+        @Override
+        Object doApply(Evaluator eval, Object list)
+            throws FusionException
+        {
+            return ((BaseList) list).toImmutableList(eval);
         }
     }
 

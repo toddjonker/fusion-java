@@ -1,11 +1,13 @@
-// Copyright (c) 2012-2018 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion.junit;
 
+import static com.amazon.fusion.CoreTestCase.ftstRepositoryDirectory;
+import static com.amazon.fusion.CoreTestCase.ftstScriptDirectory;
+import static com.amazon.fusion.CoreTestCase.fusionBootstrapDirectory;
 import com.amazon.fusion.FusionException;
 import com.amazon.fusion.FusionRuntime;
 import com.amazon.fusion.FusionRuntimeBuilder;
-import com.amazon.fusion.TopLevel;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -69,13 +71,21 @@ public class SimpleScriptRunner
 
         FusionRuntimeBuilder b = FusionRuntimeBuilder.standard();
 
-        // The former default works in an IDE, the latter overrides it
-        // during scripted builds.
-        b = b.withBootstrapRepository(new File("fusion"));
+        // This allows tests to run in an IDE, so that we don't have to copy the
+        // bootstrap repo into the classpath.  In scripted builds, this has no
+        // effect since the classpath includes the code, which will shadow the
+        // content of this directory.
+        b = b.withBootstrapRepository(fusionBootstrapDirectory().toFile());
+
+        // Enable this to have coverage collected during an IDE run.
+//      b = b.withCoverageDataDirectory(new File("build/private/fcoverage"));
+
+        // This has no effect in an IDE, since this file is not on its copy of
+        // the test classpath.  In scripted builds, this provides the coverage
+        // configuration. Historically, it also provided the bootstrap repo.
         b = b.withConfigProperties(testClass, "/fusion.properties");
 
-        File tstRepo = new File("ftst/repo");
-        b.addRepositoryDirectory(tstRepo);
+        b.addRepositoryDirectory(ftstRepositoryDirectory().toFile());
 
         myRuntime = b.build();
     }
@@ -90,7 +100,7 @@ public class SimpleScriptRunner
     protected List<File> getChildren()
     {
         ArrayList<File> files = new ArrayList<>();
-        gatherFiles(files, new File("ftst"));
+        gatherFiles(files, ftstScriptDirectory().toFile());
         return files;
     }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2023 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -10,6 +10,7 @@ import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import com.amazon.fusion.ModuleNamespace.ModuleDefinedBinding;
 import com.amazon.fusion.ModuleNamespace.ProvidedBinding;
 import com.amazon.fusion.TopLevelNamespace.TopLevelDefinedBinding;
+import com.amazon.fusion.util.function.Function;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -401,7 +402,7 @@ abstract class Namespace
      *
      * @return null if there's no binding in this namespace.
      */
-    private final NsBinding resolveBoundMaybe(SyntaxSymbol identifier)
+    private NsBinding resolveBoundMaybe(SyntaxSymbol identifier)
     {
         return myBindings.get(identifier);
     }
@@ -589,8 +590,8 @@ abstract class Namespace
      */
     static final class RequireRenameMapping
     {
-        final SyntaxSymbol myLocalIdentifier;
-        final BaseSymbol   myExportedIdentifier;
+        private final SyntaxSymbol myLocalIdentifier;
+        private final BaseSymbol   myExportedIdentifier;
 
         RequireRenameMapping(SyntaxSymbol localIdentifier,
                              BaseSymbol exportedIdentifier)
@@ -609,19 +610,83 @@ abstract class Namespace
 
 
     /**
+     * Record a previously-instantiated module in our list of dependencies,
+     * allocating it an address for runtime access to bindings.
+     */
+    final synchronized int recordRequiredModule(ModuleIdentity moduleId,
+                                                ModuleInstance module)
+    {
+        Integer addr = myRequiredModules.get(moduleId);
+        if (addr != null) return addr;
+
+        if (module == null) module = myRegistry.lookup(moduleId);
+
+        addr = myRequiredModules.size();
+        myRequiredModules.put(moduleId, addr);
+        myRequiredModuleStores.add(module.getStore());
+        return addr;
+    }
+
+    final ModuleInstance instantiateRequiredModule(Evaluator eval,
+                                                   ModuleIdentity moduleId)
+        throws FusionException
+    {
+        ModuleInstance module = myRegistry.instantiate(eval, moduleId);
+        recordRequiredModule(moduleId, module);
+        return module;
+    }
+
+
+    /**
+     * Loads a module definition into this namespace's registry, without
+     * instantiating it.
+     *
+     * @param modulePath is an absolute or relative module path.
+     */
+    final ModuleIdentity resolveAndLoadModule(Evaluator eval, String modulePath)
+        throws FusionException
+    {
+        // Make sure the resolver uses our registry.
+        eval = eval.parameterizeCurrentNamespace(this);
+
+        return eval.findResolver().resolveModulePath(eval,
+                                                     getModuleId(),
+                                                     modulePath,
+                                                     true /* load */,
+                                                     null /* stxForErrors */);
+    }
+
+    void attachModule(Evaluator eval, Namespace srcNamespace, String modulePath)
+        throws FusionException
+    {
+        ModuleNameResolver resolver = eval.findResolver();
+
+        // Resolve the path WRT the *source* registry, so we can locate
+        // manually-declared modules loaded into it.
+        // See the file rkt/ns-attach.rkt for demonstration test case.
+        eval = eval.parameterizeCurrentNamespace(srcNamespace);
+
+        ModuleIdentity id =
+            resolver.resolveModulePath(eval, myModuleId, modulePath, false, null);
+
+        myRegistry.attach(resolver, srcNamespace.getRegistry(), id);
+    }
+
+
+    /**
+     * Instantiates a module into this namespace's registry, then imports all
+     * exported bindings from it.
+     *
      * @param modulePath is an absolute or relative module path.
      */
     final void require(Evaluator eval, String modulePath)
         throws FusionException
     {
-        ModuleNameResolver resolver =
-            eval.getGlobalState().myModuleNameResolver;
-        ModuleIdentity id =
-            resolver.resolveModulePath(eval,
-                                       getModuleId(),
-                                       modulePath,
-                                       true /* load */,
-                                       null /* stxForErrors */);
+        // Make sure the resolver uses our registry.
+        eval = eval.parameterizeCurrentNamespace(this);
+
+        ModuleIdentity id = resolveAndLoadModule(eval, modulePath);
+
         require(eval, null /* lexical context */, id);
     }
 
@@ -630,11 +695,11 @@ abstract class Namespace
      * This is used by {@code (require module_path)}.
      */
     final void require(Evaluator      eval,
-                       SyntaxSymbol   context,
+                       SyntaxText     context,
                        ModuleIdentity moduleId)
         throws FusionException
     {
-        ModuleInstance module = myRegistry.instantiate(eval, moduleId);
+        ModuleInstance module = instantiateRequiredModule(eval, moduleId);
 
         for (ProvidedBinding provided : module.providedBindings())
         {
@@ -649,7 +714,7 @@ abstract class Namespace
                        Iterator<RequireRenameMapping> mappings)
         throws FusionException
     {
-        ModuleInstance module = myRegistry.instantiate(eval, moduleId);
+        ModuleInstance module = instantiateRequiredModule(eval, moduleId);
 
         while (mappings.hasNext())
         {
@@ -792,37 +857,32 @@ abstract class Namespace
     /**
      * Translates a required module identity into an integer address for use
      * by compiled forms.  Note that some required modules may not be
-     * explicitly declared in the source of the module, since they may come in
-     * via macro expansion.
+     * explicitly declared in the source of the module, since they may be needed
+     * to access variables imported from one module but defined in another, and
+     * since such variables may come in via macro expansion.
      * <p>
-     * Building this list is delayed to compile-time to avoid compiling
-     * addresses for modules that are declared but never used.
-     * This may be a useless optimization.
-     * <p>
+     * Also note that we may need to dereference variables from other modules
+     * at somewhat-arbitrary points during expansion and compilation, and that
+     * expansion may trigger partial compilation and execution (eg when handling
+     * `define-syntax`).
+     * </p>
      * @return a zero-based address for the module, valid only within this
      * namespace (or its compiled form).
      */
-    final synchronized int requiredModuleAddress(ModuleIdentity moduleId)
+    final int requiredModuleAddress(ModuleIdentity moduleId)
     {
-        Integer id = myRequiredModules.get(moduleId);
-        if (id == null)
-        {
-            ModuleInstance module = myRegistry.lookup(moduleId);
-
-            id = myRequiredModules.size();
-            myRequiredModules.put(moduleId, id);
-            myRequiredModuleStores.add(module.getStore());
-        }
-        return id;
+        return recordRequiredModule(moduleId, null);
     }
 
     final synchronized ModuleIdentity[] requiredModuleIds()
     {
+        assert myRequiredModules.size() == myRequiredModuleStores.size();
         ModuleIdentity[] ids = new ModuleIdentity[myRequiredModules.size()];
         for (Map.Entry<ModuleIdentity, Integer> entry
                 : myRequiredModules.entrySet())
         {
             int address = entry.getValue();
+            assert ids[address] == null;
             ids[address] = entry.getKey();
         }
         return ids;
@@ -857,7 +917,7 @@ abstract class Namespace
     {
         if (myBindingDocs == null)
         {
-            myBindingDocs = new ArrayList<BindingDoc>();
+            myBindingDocs = new ArrayList<>();
         }
         set(myBindingDocs, address, doc);
     }
@@ -951,6 +1011,7 @@ abstract class Namespace
         Object processValue(Evaluator eval, Store store, Object value)
             throws FusionException
         {
+            eval.checkSingleResult(value, "module-level definition");
             return value;
         }
     }
@@ -983,6 +1044,70 @@ abstract class Namespace
             }
 
             return value;
+        }
+    }
+
+
+    /**
+     * Interprets non-single-binding {@code define_values} at module-level.
+     * Single-binding forms are interpreted by {@link CompiledNsDefine}.
+     */
+    static class CompiledNsDefineValues
+        implements CompiledForm
+    {
+        private final String[]     myNames;
+        private final int[]        myAddresses;
+        private final CompiledForm myValuesForm;
+
+        CompiledNsDefineValues(String[] names,
+                               int[] addresses,
+                               CompiledForm valuesForm)
+        {
+            assert names.length != 1;
+            myNames      = names;
+            myAddresses  = addresses;
+            myValuesForm = valuesForm;
+        }
+
+        @Override
+        public final Object doEval(Evaluator eval, Store store)
+            throws FusionException
+        {
+            int expectedCount = myNames.length;
+
+            Object values = eval.eval(store, myValuesForm);
+            if (values instanceof Object[])
+            {
+                Object[] vals = (Object[]) values;
+                int actualCount = vals.length;
+                if (expectedCount != actualCount)
+                {
+                    String expectation =
+                        expectedCount + " results but received " + actualCount;
+                    throw new ResultFailure("module-level definition",
+                                            expectation, -1, vals);
+                }
+
+                NamespaceStore ns = store.namespace();
+
+                for (int i = 0; i < expectedCount; i++)
+                {
+                    Object value = vals[i];
+                    ns.set(myAddresses[i], value);
+                    if (value instanceof NamedValue)
+                    {
+                        ((NamedValue)value).inferName(myNames[i]);
+                    }
+                }
+            }
+            else
+            {
+                String expectation = expectedCount + " results but received 1";
+                throw new ResultFailure("module-level definition",
+                                        expectation, -1, values);
+            }
+
+            return voidValue(eval);
         }
     }
 }

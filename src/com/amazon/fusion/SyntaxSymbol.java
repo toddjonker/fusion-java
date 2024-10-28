@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2020 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2023 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -6,12 +6,13 @@ import static com.amazon.fusion.FusionBool.makeBool;
 import static com.amazon.fusion.FusionSymbol.makeSymbol;
 import static com.amazon.fusion.FusionSyntax.checkIdentifierArg;
 import static com.amazon.fusion.FusionUtils.EMPTY_OBJECT_ARRAY;
+import static com.amazon.ion.util.IonTextUtils.printQuotedSymbol;
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import java.util.Collections;
 import java.util.Set;
 
 final class SyntaxSymbol
-    extends SyntaxText
+    extends SyntaxText<SyntaxSymbol>
 {
     /** A zero-length array of {@link SyntaxSymbol}. */
     static final SyntaxSymbol[] EMPTY_ARRAY = new SyntaxSymbol[0];
@@ -38,8 +39,6 @@ final class SyntaxSymbol
     /** Initialized during {@link #doExpand} */
     private BoundIdentifier myBoundId;
 
-    private final SyntaxWraps myWraps;   // TODO make non-null to streamline logic.
-
     /**
      * @param datum must not be null.
      */
@@ -49,8 +48,7 @@ final class SyntaxSymbol
                          Object[]       properties,
                          BaseSymbol     datum)
     {
-        super(loc, properties, datum);
-        myWraps = wraps;
+        super(wraps, loc, properties, datum);
     }
 
 
@@ -126,7 +124,8 @@ final class SyntaxSymbol
     /**
      * @param wraps may be null.
      */
-    private SyntaxSymbol copyReplacingWraps(SyntaxWraps wraps)
+    @Override
+    SyntaxSymbol copyReplacingWraps(SyntaxWraps wraps)
     {
         // We intentionally don't copy the binding, since the wraps are
         // probably different, so the binding may be different.
@@ -155,55 +154,6 @@ final class SyntaxSymbol
         return (BaseSymbol) myDatum;
     }
 
-    @Override
-    SyntaxSymbol addWrap(SyntaxWrap wrap)
-    {
-        SyntaxWraps newWraps;
-        if (myWraps == null)
-        {
-            newWraps = SyntaxWraps.make(wrap);
-        }
-        else
-        {
-            newWraps = myWraps.addWrap(wrap);
-        }
-        return copyReplacingWraps(newWraps);
-    }
-
-    @Override
-    SyntaxSymbol addWraps(SyntaxWraps wraps)
-    {
-        SyntaxWraps newWraps;
-        if (myWraps == null)
-        {
-            newWraps = wraps;
-        }
-        else
-        {
-            newWraps = myWraps.addWraps(wraps);
-        }
-        return copyReplacingWraps(newWraps);
-    }
-
-
-    @Override
-    SyntaxSymbol stripWraps(Evaluator eval)
-    {
-        if (myWraps == null) return this;
-        return copyReplacingWraps(null);
-    }
-
-    /**
-     * Adds the wraps on this symbol onto those already on another value.
-     * @return syntax matching the source, after adding the wraps from this
-     * symbol.
-     */
-    SyntaxValue copyWrapsTo(SyntaxValue source)
-        throws FusionException
-    {
-        if (myWraps == null) return source;
-        return source.addWraps(myWraps);
-    }
 
     /**
      * @return not null.
@@ -219,7 +169,7 @@ final class SyntaxSymbol
     boolean hasMarks(Evaluator eval)
     {
         if (myBoundId != null) return myBoundId.hasMarks();
-        return (myWraps == null ? false : myWraps.hasMarks(eval));
+        return super.hasMarks(eval);
     }
 
 
@@ -356,16 +306,14 @@ final class SyntaxSymbol
             if (text == null)
             {
                 String message =
-                    "null.symbol is not an expression. " +
-                    "You probably want to quote this.";
+                    "`null.symbol` is not a valid expression; use `(quote null.symbol)` instead.";
                 throw new SyntaxException(null, message, this);
             }
 
             if (text.length() == 0)
             {
                 String message =
-                    "Not an expression. " +
-                    "You probably want to quote this.";
+                    "The empty symbol is not a valid expression; use `(quote '')` instead.";
                 throw new SyntaxException(null, message, this);
             }
 
@@ -409,6 +357,38 @@ final class SyntaxSymbol
         Binding thisBinding = this.uncachedResolve();
         Binding thatBinding = that.uncachedResolve();
         return thisBinding.sameTarget(thatBinding);
+    }
+
+
+    /**
+     * Verifies that a set of identifiers are unique with respect to
+     * {@link #boundIdentifierEqual)}.
+     *
+     * @param identifiers must not be null.
+     * @param formForErrors the syntax form to be implicated in error messages.
+     *
+     * @throws SyntaxException if a duplicate is found.
+     */
+    static void ensureUniqueIdentifiers(SyntaxSymbol[] identifiers,
+                                        SyntaxValue    formForErrors)
+        throws SyntaxException
+    {
+        // TODO Avoid a hashmap when count==2, do a simple comparison.
+        BoundIdMap<SyntaxSymbol> ids = new BoundIdMap<>();
+        for (SyntaxSymbol id : identifiers)
+        {
+            SyntaxSymbol dupe = ids.put(id, id);
+            if (dupe != null)
+            {
+                String message =
+                    "duplicate binding identifier: " +
+                        printQuotedSymbol(id.stringValue());
+
+                SyntaxException ex = new SyntaxException(null, message, id);
+                ex.addContext(formForErrors);
+                throw ex;
+            }
+        }
     }
 
 

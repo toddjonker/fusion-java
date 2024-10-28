@@ -1,10 +1,11 @@
-// Copyright (c) 2013-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2013-2023 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionVoid.voidValue;
 import com.amazon.fusion.FusionSymbol.BaseSymbol;
 import com.amazon.fusion.ModuleNamespace.ProvidedBinding;
+import com.amazon.fusion.util.function.Function;
 import java.util.Iterator;
 import java.util.Set;
 
@@ -218,13 +219,13 @@ final class TopLevelNamespace
     //========================================================================
     // Compiled Forms
 
-    static final class CompiledFreeDefine
+    static final class CompiledTopDefine
         implements CompiledForm
     {
         private final SyntaxSymbol myId;
         private final CompiledForm myValueForm;
 
-        CompiledFreeDefine(SyntaxSymbol id, CompiledForm valueForm)
+        CompiledTopDefine(SyntaxSymbol id, CompiledForm valueForm)
         {
             myId = id;
             myValueForm = valueForm;
@@ -235,7 +236,6 @@ final class TopLevelNamespace
             throws FusionException
         {
             Object value = eval.eval(store, myValueForm);
-
             value = processValue(eval, store, value);
 
             TopLevelNamespace ns = (TopLevelNamespace) store.namespace();
@@ -255,7 +255,87 @@ final class TopLevelNamespace
         Object processValue(Evaluator eval, Store store, Object value)
             throws FusionException
         {
+            eval.checkSingleResult(value, "top-level definition");
             return value;
+        }
+    }
+
+
+    /**
+     * Interprets non-single-binding {@code define_values} at top-level.
+     * Single-binding forms are interpreted by {@link CompiledTopDefine}.
+     */
+    static final class CompiledTopDefineValues
+        implements CompiledForm
+    {
+        private final SyntaxSymbol[] myIds;
+        private final CompiledForm myValuesForm;
+
+        CompiledTopDefineValues(SyntaxSymbol[] ids, CompiledForm valuesForm)
+        {
+            myIds        = ids;
+            myValuesForm = valuesForm;
+        }
+
+        @Override
+        public Object doEval(Evaluator eval, Store store)
+            throws FusionException
+        {
+            Object values = eval.eval(store, myValuesForm);
+
+            TopLevelNamespace ns = (TopLevelNamespace) store.namespace();
+
+            int expectedCount = myIds.length;
+            if (expectedCount == 1)
+            {
+                eval.checkSingleResult(values, "top-level definition");
+                defineAndBind(ns, 0, values);
+            }
+            else if (values instanceof Object[])
+            {
+                Object[] vals = (Object[]) values;
+                int actualCount = vals.length;
+                if (expectedCount != actualCount)
+                {
+                    String expectation =
+                        expectedCount + " results but received " +
+                            actualCount;
+                    throw new ResultFailure("top-level definition",
+                                            expectation, -1, vals);
+                }
+
+                for (int i = 0; i < expectedCount; i++)
+                {
+                    Object       value   = vals[i];
+                    defineAndBind(ns, i, value);
+                }
+            }
+            else
+            {
+                String expectation =
+                    expectedCount + " results but received 1";
+                throw new ResultFailure("top-level definition",
+                                        expectation, -1, values);
+            }
+
+            return voidValue(eval);
+        }
+
+        private void defineAndBind(TopLevelNamespace ns, int i, Object value)
+            throws FusionException
+        {
+            SyntaxSymbol boundId = myIds[i];
+            boundId = ns.predefine(boundId, boundId);
+
+            TopLevelDefinedBinding binding =
+                (TopLevelDefinedBinding) boundId.getBinding();
+
+            ns.set(binding.myAddress, value);
+
+            if (value instanceof NamedValue)
+            {
+                ((NamedValue) value).inferName(boundId.stringValue());
+            }
         }
     }
 
@@ -336,8 +416,6 @@ final class TopLevelNamespace
                 address = myAddress;
             }
 
-            Object result = ns.lookup(address);
-
             // There's a potential failure here: the binding may have had an
             // address assigned, but not yet a value. That could happen when
             // another thread is in the midst of defining the binding.
@@ -347,7 +425,7 @@ final class TopLevelNamespace
             // violation since Fusion doesn't promise that concurrent
             // mutation of a top-level namespace is thread-safe.
 
-            return result;
+            return ns.lookup(address);
         }
     }
 }

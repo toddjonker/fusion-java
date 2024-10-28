@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2018 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2022 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -81,6 +81,9 @@ final class RequireForm
         return stx.copyReplacingChildren(eval, children);
     }
 
+    /**
+     * Expand a declaration of the form {@code (require TEXT)}.
+     */
     private void expandRequireModule(Evaluator eval,
                                      SyntaxChecker requireCheck,
                                      SyntaxValue spec,
@@ -94,6 +97,9 @@ final class RequireForm
         expandedSpecs.add(spec);
     }
 
+    /**
+     * Expand a declaration of the form {@code (require (OP ARG...))}.
+     */
     private void expandRequireSexp(Expander expander,
                                    Evaluator eval,
                                    SyntaxChecker requireCheck,
@@ -157,6 +163,9 @@ final class RequireForm
             String path = check.requiredText(eval, "module path", 1);
             checkValidModulePath(eval, check, path);
 
+            // NOTE: This doesn't follow Racket, which imports everything.
+            // Unfortunately, we can't fix this without risking breakage to existing code.
+
             final Set<String> localIdsSoFar = new HashSet<>();
             for (int i = 2; i < arity; i++)
             {
@@ -165,8 +174,8 @@ final class RequireForm
                 SyntaxChecker renamePairChecker = new SyntaxChecker(eval, renamePair);
                 renamePairChecker.arityExact(2);
 
-                // In Racket,
-                // the rename sub-form has the identifiers in reverse order compared to rename-in.
+                // The rename sub-form has the identifiers in reverse order compared to rename-in,
+                // and only handles one binding per clause.
                 SyntaxSymbol exportedId = renamePairChecker.requiredIdentifier("exported_id", 0);
                 SyntaxSymbol localId = renamePairChecker.requiredIdentifier("local_id", 1);
 
@@ -247,7 +256,6 @@ final class RequireForm
         int arity = stx.size();
 
         SyntaxChecker check = new SyntaxChecker(eval, REQUIRE, stx);
-        SyntaxSymbol requireSym = (SyntaxSymbol) stx.get(eval, 0);
 
         CompiledRequireSpec[] compiledSpecs =
             new CompiledRequireSpec[arity - 1];
@@ -262,7 +270,7 @@ final class RequireForm
             try
             {
                 compiledSpecs[i] =
-                    compileSpec(eval, env, baseModule, check, requireSym, spec);
+                    compileSpec(eval, env, baseModule, check, spec);
             }
             catch (FusionException e)
             {
@@ -278,7 +286,6 @@ final class RequireForm
                                             Environment env,
                                             ModuleIdentity baseModule,
                                             SyntaxChecker requireCheck,
-                                            SyntaxSymbol lexicalContext,
                                             SyntaxValue spec)
         throws FusionException
     {
@@ -289,9 +296,14 @@ final class RequireForm
             {
                 case "only":
                 {
+                    SyntaxValue pathStx = sexp.get(eval, 1);
+
                     ModuleIdentity moduleId =
                         myModuleNameResolver.resolve(eval, baseModule,
-                                                     sexp.get(eval, 1), true);
+                                                     pathStx, true);
+
+                    // Resolver has type-checked the module-path for us.
+                    SyntaxText context = (SyntaxText) pathStx;
 
                     int idCount = sexp.size() - 2;
                     RequireRenameMapping[] mappings =
@@ -299,8 +311,13 @@ final class RequireForm
                     for (int i = 0; i < idCount; i++)
                     {
                         SyntaxSymbol id = (SyntaxSymbol) sexp.get(eval, i + 2);
-                        mappings[i] =
-                            new RequireRenameMapping(id, id.getName());
+                        FusionSymbol.BaseSymbol name = id.getName();
+
+                        // Mint a fresh identifier with only the context from the module path.
+                        SyntaxSymbol localId = SyntaxSymbol.make(eval, id.getLocation(), name);
+                        localId = (SyntaxSymbol) Syntax.applyContext(eval, context, localId);
+
+                        mappings[i] = new RequireRenameMapping(localId, name);
                     }
 
                     return new CompiledPartialRequire(moduleId, mappings);
@@ -308,12 +325,16 @@ final class RequireForm
                 case "prefix":
                 {
                     SyntaxSymbol prefixId = (SyntaxSymbol) sexp.get(eval, 1);
+                    SyntaxValue pathStx = sexp.get(eval, 2);
 
                     ModuleIdentity moduleId =
                             myModuleNameResolver.resolve(eval,
                                                          baseModule,
-                                                         sexp.get(eval, 2),
+                                                         pathStx,
                                                          true);
+
+                    // Resolver has type-checked the module-path for us.
+                    SyntaxText context = (SyntaxText) pathStx;
 
                     ModuleInstance moduleInstance =
                             env.namespace().getRegistry().instantiate(eval, moduleId);
@@ -323,20 +344,26 @@ final class RequireForm
                     int i = 0;
                     for (FusionSymbol.BaseSymbol providedName : moduleInstance.providedNames())
                     {
+                        // Mint a fresh identifier with only the context from the module path.
                         String newBindingName = prefixId.stringValue() + providedName.stringValue();
-                        SyntaxSymbol newBindingSymbol = SyntaxSymbol.make(eval, newBindingName);
-                        mappings[i] = new RequireRenameMapping(newBindingSymbol, providedName);
+                        SyntaxSymbol localId = SyntaxSymbol.make(eval, newBindingName);
+                        localId = (SyntaxSymbol) Syntax.applyContext(eval, context, localId);
+
+                        mappings[i] = new RequireRenameMapping(localId, providedName);
                         i++;
                     }
                     return new CompiledPartialRequire(moduleId, mappings);
                 }
                 case "rename":
                 {
+                    // Here we are loading but not instantiating the required module.
                     ModuleIdentity moduleId =
                             myModuleNameResolver.resolve(eval,
                                                          baseModule,
                                                          sexp.get(eval, 1),
                                                          true);
+
+                    // In this form, we retain the lexical context from the localId.
                     SyntaxSymbol localId = (SyntaxSymbol) sexp.get(eval, 2);
                     SyntaxSymbol exportedId = (SyntaxSymbol) sexp.get(eval, 3);
                     RequireRenameMapping[] mappings =
@@ -351,9 +378,13 @@ final class RequireForm
         }
         else // It's a (string or symbol) module path.
         {
+            // Here we are loading but not instantiating the required module.
             ModuleIdentity moduleId =
                 myModuleNameResolver.resolve(eval, baseModule, spec, true);
-            return new CompiledFullRequire(moduleId, lexicalContext);
+
+            // "The lexical context of the module-path form determines the
+            // context of the introduced identifiers"
+            return new CompiledFullRequire(moduleId, (SyntaxText<?>) spec);
         }
     }
 
@@ -444,10 +475,10 @@ final class RequireForm
     private static final class CompiledFullRequire
         extends CompiledRequireSpec
     {
-        private final SyntaxSymbol myLexicalContext;
+        private final SyntaxText myLexicalContext;
 
         private CompiledFullRequire(ModuleIdentity usedModuleId,
-                                    SyntaxSymbol lexicalContext)
+                                    SyntaxText     lexicalContext)
         {
             super(usedModuleId);
             myLexicalContext = lexicalContext;

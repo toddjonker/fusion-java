@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2016 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2023 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -116,6 +116,15 @@ class SyntaxChecker
     }
 
 
+    final SyntaxString requiredString(String expectation, int argNum)
+        throws FusionException
+    {
+        SyntaxValue form = requiredForm(expectation, argNum);
+        return checkSyntax(SyntaxString.class, expectation,
+                           false /* nullable */, form);
+    }
+
+
     // TODO problematic WRT keywords
     @Deprecated
     final SyntaxSymbol requiredSymbol(String expectation, int argNum)
@@ -152,9 +161,16 @@ class SyntaxChecker
                 "expected " + expectation + ", not a keyword";
             throw failure(message, form);
         }
-        // TODO FUSION-204 check emptyness
-        return checkSyntax(SyntaxSymbol.class, expectation,
-                           false /* nullable */, form);
+
+        SyntaxSymbol id = checkSyntax(SyntaxSymbol.class, expectation,
+                                      false /* nullable */, form);
+        if (! id.getName().isNonEmpty())
+        {
+            String message = "expected non-empty identifier";
+            throw failure(message, form);
+        }
+
+        return id;
     }
 
     final SyntaxSymbol requiredIdentifier(int argNum)
@@ -185,7 +201,8 @@ class SyntaxChecker
     //========================================================================
 
     /**
-     * Checks that this form has an element at the given index that's an sexp.
+     * Checks that this form has an element at the given index that's an
+     * actual sexp.
      *
      * @param description
      * @param index

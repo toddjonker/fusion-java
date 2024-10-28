@@ -1,9 +1,8 @@
-// Copyright (c) 2012-2017 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.FusionString.stringToJavaString;
-import java.util.List;
 
 
 /**
@@ -35,19 +34,6 @@ class DynamicParameter
     }
 
 
-    // TODO This feature doesn't seem to exist in Racket.
-    //   It's available on continuation marks: continuation-mark-set->list
-    <T> List<T> allValues(Evaluator eval)
-    {
-        @SuppressWarnings("unchecked")
-        List<T> marks = (List<T>) eval.continuationMarks(this);
-
-        // TODO add initial value?
-
-        return marks;
-    }
-
-
     String asString(Evaluator eval)
         throws FusionException
     {
@@ -61,5 +47,17 @@ class DynamicParameter
         throws FusionException
     {
         return currentValue(eval);
+    }
+
+
+    static final class CurrentMarkSexp
+        extends Procedure1
+    {
+        @Override
+        Object doApply(Evaluator eval, Object key)
+            throws FusionException
+        {
+            return eval.continuationMarkSexp(key);
+        }
     }
 }

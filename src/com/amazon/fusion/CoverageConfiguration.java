@@ -1,8 +1,9 @@
-// Copyright (c) 2014 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2014-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
 import static com.amazon.fusion.ModuleIdentity.isValidAbsoluteModulePath;
+import com.amazon.fusion.util.function.Predicate;
 import java.io.File;
 import java.io.IOException;
 import java.util.HashSet;
@@ -36,9 +37,13 @@ import java.util.Set;
  *   <li>{@value #PROPERTY_INCLUDED_SOURCES} holds a list of directory paths,
  *       separated by the platform path separator.
  *       All code read from files under a given directory is instrumented.
- *       If not provided, only modules chosen by IncludedModules are
- *       instrumented.
- * <ul>
+ *       This is generally used to instrument non-repository scripts, such as
+ *       unit tests, that are evaluated via {@code load}, as opposed to
+ *       {@code require}d modules.
+ * </ul>
+ * Modules declared encountered while {@code load}ing scripts are assigned
+ * synthetic, unresolvable module paths that cannot be selected via the
+ * module-based properties above.
  */
 final class CoverageConfiguration
 {
@@ -56,6 +61,18 @@ final class CoverageConfiguration
     private Set<String> myIncludedSources;
 
 
+    /**
+     * Parses a property's value as a colon-separated set of absolute module paths.
+     *
+     * @param configFile where the {@code props} came from; used only for error messages.
+     * @param props must not be null.
+     * @param propertyName must not be null.
+     *
+     * @return a set of absolute module paths, or null if the {@code propertyName}
+     * doesn't have an entry in the {@code props}.
+     *
+     * @throws FusionException if an entry is not an absolute module path.
+     */
     private static Set<String> readModuleSet(File       configFile,
                                              Properties props,
                                              String     propertyName)
@@ -139,7 +156,7 @@ final class CoverageConfiguration
 
 
     /**
-     * @return may be null.
+     * @return may be null, which is the same as empty-set.
      */
     Set<String> getIncludedSourceDirs()
     {
@@ -156,6 +173,12 @@ final class CoverageConfiguration
     }
 
 
+    /**
+     * A file is selected for coverage if our {@value #PROPERTY_INCLUDED_SOURCES}
+     * property includes it or a directory containing it.
+     *
+     * @param file may be null.
+     */
     boolean fileIsSelected(File file)
     {
         if (file != null)
@@ -175,6 +198,15 @@ final class CoverageConfiguration
     }
 
 
+    /**
+     * A {@link SourceLocation} is selected for coverage if it has a
+     * {@link SourceName} and either its {@link ModuleIdentity} or its file is
+     * selected.
+     *
+     * @param loc must not be null.
+     *
+     * @return true iff the location should be instrumented.
+     */
     boolean locationIsSelected(SourceLocation loc)
     {
         SourceName name = loc.getSourceName();
@@ -190,6 +222,7 @@ final class CoverageConfiguration
     //=========================================================================
 
 
+    // TODO JAVA8 makes this unnecessary; use a trivial lambda instead.
     private static class TrueModuleIdentitySelector
         implements Predicate<ModuleIdentity>
     {
@@ -201,6 +234,10 @@ final class CoverageConfiguration
     }
 
 
+    /**
+     * A predicate testing whether a given module should be instrumented for
+     * code coverage, based on included and excluded sets.
+     */
     private static class SimpleModuleIdentitySelector
         implements Predicate<ModuleIdentity>
     {
@@ -215,6 +252,14 @@ final class CoverageConfiguration
         private final Set<String> myExcludedModules;
 
 
+        /**
+         * Reads the included and excluded module sets from the properties.
+         *
+         * @param configFile where the {@code props} came from; used only for error messages.
+         * @param props must not be null.
+         *
+         * @throws FusionException if an entry is not an absolute module path.
+         */
         public SimpleModuleIdentitySelector(File configFile, Properties props)
             throws FusionException
         {
@@ -244,7 +289,7 @@ final class CoverageConfiguration
         {
             String path = id.absolutePath();
 
-            // By default, all modules are included.
+            // By default, all repository-loaded modules are included.
             if (myIncludedModules != null)
             {
                 if (! setContainsModule(myIncludedModules, path)) return false;
