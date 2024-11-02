@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2014-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -14,10 +14,11 @@ import com.amazon.ion.SpanProvider;
 import com.amazon.ion.Timestamp;
 import com.amazon.ion.system.IonSystemBuilder;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
+import java.net.URL;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -87,10 +88,7 @@ public final class _Private_CoverageWriter
 
             BigDecimal numerator = new BigDecimal(coveredExpressions * 100);
 
-            final BigDecimal percentCovered =
-                numerator.divide(new BigDecimal(total), 2, HALF_EVEN);
-
-            return percentCovered;
+            return numerator.divide(new BigDecimal(total), 2, HALF_EVEN);
         }
 
         void renderCoveragePercentage(HtmlWriter htmlWriter)
@@ -153,7 +151,7 @@ public final class _Private_CoverageWriter
     private final Map<SourceName, String>           myRelativeNamesForSources;
 
     private final CoverageInfoPair myGlobalCoverage = new CoverageInfoPair();
-    private       int              myUnloadedEntries;
+    private       long             myUnloadedEntries;
 
     // For rendering highlighted source files
     private final IonSystem mySystem = IonSystemBuilder.standard().build();
@@ -221,20 +219,36 @@ public final class _Private_CoverageWriter
                     : a.getFileSystem().getPath(""));
     }
 
+    /**
+     * Determine the number of leading {@Link Path} name elements common to all
+     * files of the given {@link SourceName}s.  We omit this prefix from the
+     * directory tree of generated HTML files.
+     * <p>
+     * TODO It would be better to use paths relative to repository roots, to
+     *   avoid exposing details of the build-time environment.  This suggests
+     *   that {@code SourceName} should track the repository holding the source.
+     *
+     * @param sourceNames must not be null.
+     */
     private int commonPrefixLen(Set<SourceName> sourceNames)
         throws IOException
     {
         Path prefix = null;
         for (SourceName sourceName : sourceNames)
         {
-            Path path = sourceName.getFile().getCanonicalFile().toPath();
-            Path parent = path.getParent();
-            if (prefix == null)
+            // Skip URL-based sources.
+            File file = sourceName.getFile();
+            if (file != null)
             {
-                prefix = parent;
-            }
-            else {
-                prefix = commonPrefix(prefix, parent);
+                Path path   = file.getCanonicalFile().toPath();
+                Path parent = path.getParent();
+                if (prefix == null)
+                {
+                    prefix = parent;
+                }
+                else {
+                    prefix = commonPrefix(prefix, parent);
+                }
             }
         }
         return prefix == null ? 0 : prefix.getNameCount();
@@ -248,13 +262,29 @@ public final class _Private_CoverageWriter
 
         for (SourceName sourceName : sourceNames)
         {
-            Path path = sourceName.getFile().getCanonicalFile().toPath();
-            Path shorterPath = path.subpath(prefixLen, path.getNameCount());
-            myRelativeNamesForSources.put(sourceName, shorterPath.toString());
+            // TODO Determine this on demand, it's only needed twice per source.
+            //      so this code is more complicated than its worth.
+            File file = sourceName.getFile();
+            if (file != null)
+            {
+                Path path        = file.getCanonicalFile().toPath();
+                Path shorterPath = path.subpath(prefixLen, path.getNameCount());
+                myRelativeNamesForSources.put(sourceName, shorterPath.toString());
+            }
         }
     }
 
 
+    /**
+     * Collects relevant modules into {@link #myModules}, source files
+     * into {@link #mySourceFiles}, and map covered modules and files to
+     * {@link SourceName}s via {@link #myNamesForModules} and
+     * {@link #myNamesForFiles}.
+     * <p>
+     * TODO Rename to be more informative; maybe collectModulesAndSources()?
+     *
+     * @throws FusionException if an error occurs.
+     */
     private void analyze()
         throws FusionException
     {
@@ -267,14 +297,16 @@ public final class _Private_CoverageWriter
             }
         };
 
+        // Collect all the modules the repositories can discover, so we can find
+        // modules that are not used and don't appear in the database.
         for (File f : myDatabase.getRepositories())
         {
-            // TODO FUSION-214 Push this into the repo impl
-            File src = new File(f, "src");
-            ModuleRepository repo = new FileSystemModuleRepository(src);
+            ModuleRepository repo = new FileSystemModuleRepository(f);
             repo.collectModules(myConfig.myModuleSelector, consumer);
         }
 
+        // Now do the same thing for non-repository source trees.
+        // TODO Why aren't these dirs recorded in the database like modules?
         Set<String> includedSourceDirs = myConfig.getIncludedSourceDirs();
         if (includedSourceDirs != null)
         {
@@ -287,16 +319,21 @@ public final class _Private_CoverageWriter
 
         for (SourceLocation loc : myDatabase.locations())
         {
+            // TODO Assert that a name exists. There's no use in persisting
+            //      nameless locations that we can't report.
             SourceName sourceName = loc.getSourceName();
             if (sourceName != null)
             {
                 ModuleIdentity id = sourceName.getModuleIdentity();
+                // TODO Why doesn't this use myConfig.moduleIsSelected(id) ?
+                // TODO Why would this selector differ from the collection-time?
                 if (id != null && myConfig.myModuleSelector.test(id))
                 {
                     myModules.add(id);
 
                     SourceName prior = myNamesForModules.put(id, sourceName);
-                    assert prior == null || prior == sourceName;
+                    assert prior == null || prior == sourceName :
+                        "SourceName instance has changed for module " + id;
                 }
                 else
                 {
@@ -306,7 +343,10 @@ public final class _Private_CoverageWriter
                         mySourceFiles.add(f);
 
                         SourceName prior = myNamesForFiles.put(f, sourceName);
-                        assert prior == null || prior == sourceName;
+                        assert prior == null || prior == sourceName :
+                            "SourceName instance has changed for file " + f +
+                                "\nThis can happen if you `load` a module's file " +
+                                "within a registered repository.";
                     }
                 }
             }
@@ -389,13 +429,19 @@ public final class _Private_CoverageWriter
         coverageState = covered;
     }
 
+    private InputStream readSource(SourceName source)
+        throws IOException
+    {
+        URL url = source.getUrl();
+        if (url != null) return url.openStream();
+
+        return Files.newInputStream(source.getFile().toPath());
+    }
 
     private void renderSource(HtmlWriter sourceHtml,
                               SourceName name)
         throws IOException
     {
-        File sourceFile = name.getFile();
-
         sourceHtml.renderHeadWithInlineCss("Fusion Code Coverage", CSS);
         {
             sourceHtml.append("<h1>");
@@ -406,8 +452,19 @@ public final class _Private_CoverageWriter
                 sourceHtml.append(id.absolutePath());
                 sourceHtml.append("</h1>\n");
 
-                String path = sourceFile.getAbsolutePath();
                 sourceHtml.append("at ");
+
+                String path;
+                File file = name.getFile();
+                if (file != null)
+                {
+                    path = file.getAbsolutePath();
+                }
+                else
+                {
+                    // TODO improve this rendering
+                    path = name.getUrl().toExternalForm();
+                }
                 sourceHtml.append(sourceHtml.escapeString(path));
             }
             else
@@ -427,12 +484,13 @@ public final class _Private_CoverageWriter
         sourceHtml.append("\n<hr/>\n");
         sourceHtml.append("<pre>");
 
-        try (InputStream myIonBytes = new FileInputStream(sourceFile))
+        // Copy the document in chunks separated by coverage state changes.
+        // At each change, we insert appropriate HTML <span> markup.
+        try (InputStream ionBytes = readSource(name))
         {
             myIonBytesRead = 0;
 
-            try (IonReader ionReader =
-                    mySystem.newReader(new FileInputStream(sourceFile)))
+            try (IonReader ionReader = mySystem.newReader(readSource(name)))
             {
                 SpanProvider spanProvider =
                     ionReader.asFacet(SpanProvider.class);
@@ -457,7 +515,7 @@ public final class _Private_CoverageWriter
                     {
                         boolean covered =
                             myDatabase.locationCovered(coverageLoc);
-                        setCoverageState(sourceHtml, myIonBytes, spanProvider,
+                        setCoverageState(sourceHtml, ionBytes, spanProvider,
                                          covered);
                         locationIndex++;
 
@@ -485,7 +543,7 @@ public final class _Private_CoverageWriter
                     : "Not all locations were counted";
 
                 // Copy the rest of the Ion source.
-                copySourceThroughOffset(sourceHtml, myIonBytes, Long.MAX_VALUE);
+                copySourceThroughOffset(sourceHtml, ionBytes, Long.MAX_VALUE);
 
                 sourceHtml.append("</span>");
             }
@@ -501,7 +559,23 @@ public final class _Private_CoverageWriter
 
     private String relativeName(SourceName name)
     {
-        return myRelativeNamesForSources.get(name) + ".html";
+        String resource;
+        if (name.getFile() != null)
+        {
+            resource = myRelativeNamesForSources.get(name);
+        }
+        else
+        {
+            URL url = name.getUrl();
+            assert (url.getProtocol().equalsIgnoreCase("jar"));
+            String path = url.getPath();
+            int    bang = path.indexOf("!/");
+            assert bang > 1;
+            resource = path.substring(bang + 2);
+            assert !resource.isEmpty();
+            assert !resource.startsWith("/");
+        }
+        return resource + ".html";
     }
 
 
@@ -525,8 +599,8 @@ public final class _Private_CoverageWriter
                                 Map<T, SourceName> keyToNames)
         throws IOException
     {
-        int totalExpressions = 0;
-        int unloadedCount = 0;
+        long totalExpressions = 0;
+        long unloadedCount = 0;
 
         boolean first = true;
         for (T key : keys)
@@ -563,6 +637,7 @@ public final class _Private_CoverageWriter
 
             if (name != null)
             {
+                // TODO Exclude the common prefix when key is a script File.
                 indexHtml.append("<a href=\"" + relativeName(name) + "\">");
                 indexHtml.append(key.toString());
                 indexHtml.append("</a>");
@@ -577,9 +652,9 @@ public final class _Private_CoverageWriter
 
         if (unloadedCount != 0)
         {
-            int loadedCount = keys.length - unloadedCount;
-            int average = (loadedCount == 0
-                               ? 500                        // Totally made up
+            long loadedCount = keys.length - unloadedCount;
+            long average = (loadedCount == 0
+                               ? 500                        // TODO Totally made up
                                : totalExpressions / loadedCount);
 
             myGlobalCoverage.uncoveredExpressions += (unloadedCount * average);
@@ -613,7 +688,7 @@ public final class _Private_CoverageWriter
             if (myUnloadedEntries != 0)
             {
                 indexHtml.append(" (estimate since ");
-                indexHtml.append(Integer.toString(myUnloadedEntries));
+                indexHtml.append(Long.toString(myUnloadedEntries));
                 indexHtml.append(" files were not loaded)");
             }
         }

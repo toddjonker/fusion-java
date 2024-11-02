@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2020 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2014-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -17,6 +17,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -26,9 +27,22 @@ import java.util.Map;
 import java.util.Set;
 
 
+/**
+ * Records and persists coverage instrumentation data.
+ * <p>
+ * Instances are tied to a specific filesystem directory, and assumes full
+ * control of its content.  In particular, no other process, and no other
+ * {@code CoverageDatabase} instance, should access the directory until the
+ * database is flushed via {@link #write()}.  This implies that instances need
+ * to be interned or otherwise deduplicated, based on physical directory.
+ * At present, {@link _Private_CoverageCollectorImpl} implements these
+ * constraints.
+ * <p>
+ * TODO: The flushing protocol would be more obvious if this class implemented
+ *       {@link java.io.Closeable}.
+ */
 class CoverageDatabase
 {
-
     private static final class SourceNameComparator
         implements Comparator<SourceName>
     {
@@ -43,6 +57,9 @@ class CoverageDatabase
         new SourceNameComparator();
 
 
+    /**
+     * Compares locations by line/column, ignoring the offset.
+     */
     private static final class SourceLocationComparator
         implements Comparator<SourceLocation>
     {
@@ -85,8 +102,20 @@ class CoverageDatabase
     }
 
 
+    /**
+     * Records a Fusion repository that was used by a runtime while collecting
+     * coverage data.
+     * The coverage analyzer uses these to synthesize File repositories
+     * in order to discover modules that would have been instrumented but were
+     * never loaded.
+     * <p>
+     * TODO: This mechanism should be enhanced to support Jar repositories.
+     *
+     * @param repoDir must not be null.
+     */
     synchronized void noteRepository(File repoDir)
     {
+        assert repoDir != null : "repoDir is null";
         myRepositories.add(repoDir);
     }
 
@@ -97,11 +126,28 @@ class CoverageDatabase
     }
 
 
-    synchronized void noteCoverableLocation(SourceLocation loc)
+    /**
+     * Indicates whether this database can record the given location.
+     */
+    boolean locationIsRecordable(SourceLocation loc)
+    {
+        // We can record a location with either a file or a URL.
+        SourceName name = loc.getSourceName();
+        return name != null && (name.getFile() != null || name.getUrl() != null);
+    }
+
+
+    /**
+     * Records that the code at some location has been instrumented.
+     *
+     * @param loc must be {@linkplain #locationIsRecordable recordable}.
+     */
+    synchronized void locationInstrumented(SourceLocation loc)
     {
         Boolean prev = myLocations.put(loc, Boolean.FALSE);
 
         // If already covered, don't un-cover it!
+        // TODO This is expensive for repeatedly compiled sources.
         if (prev != null && prev)
         {
             myLocations.put(loc, prev);
@@ -109,7 +155,12 @@ class CoverageDatabase
     }
 
 
-    synchronized void coverLocation(SourceLocation loc)
+    /**
+     * Records that the code at some location is about to be evaluated.
+     *
+     * @param loc must have been {@linkplain #locationInstrumented instrumented}.
+     */
+    synchronized void locationEvaluated(SourceLocation loc)
     {
         myLocations.put(loc, Boolean.TRUE);
     }
@@ -123,6 +174,7 @@ class CoverageDatabase
     }
 
 
+    // TODO Collect this eagerly
     synchronized Set<SourceName> sourceNames()
     {
         Set<SourceName> names = new HashSet<>();
@@ -187,6 +239,7 @@ class CoverageDatabase
     private void writeRepositories(IonWriter iw)
         throws IOException
     {
+        iw.addTypeAnnotation("Recorded repositories");
         iw.stepIn(IonType.LIST);
         {
             for (File f : myRepositories)
@@ -204,8 +257,18 @@ class CoverageDatabase
     {
         iw.stepIn(STRUCT);
         {
-            iw.setFieldName("file");
-            iw.writeString(name.getFile().getPath());
+            File file = name.getFile();
+            if (file != null)
+            {
+                iw.setFieldName("file");
+                iw.writeString(file.getPath());
+            }
+            else
+            {
+                URL url = name.getUrl();
+                iw.setFieldName("url");
+                iw.writeString(url.toExternalForm());
+            }
 
             ModuleIdentity id = name.getModuleIdentity();
             if (id != null)
@@ -279,16 +342,16 @@ class CoverageDatabase
         FusionUtils.createParentDirs(myCoverageFile);
         try (OutputStream out = new FileOutputStream(myCoverageFile))
         {
-            try (IonWriter iw = IonTextWriterBuilder.minimal().build(out))
+            IonTextWriterBuilder builder =
+                IonTextWriterBuilder.minimal()
+                                    .withWriteTopLevelValuesOnNewLines(true);
+            try (IonWriter iw = builder.build(out))
             {
                 writeRepositories(iw);
 
                 for (SourceName name : sourceNames())
                 {
-                    if (name.getFile() != null)
-                    {
-                        writeSource(iw, name);
-                    }
+                    writeSource(iw, name);
                 }
             }
         }
@@ -322,8 +385,9 @@ class CoverageDatabase
         assert in.getType() == STRUCT;
         in.stepIn();
         {
-            String file = null;
-            ModuleIdentity id = null;
+            String file   = null;
+            URL    url    = null;
+            String module = null;
 
             while (in.next() != null)
             {
@@ -331,16 +395,20 @@ class CoverageDatabase
 
                 switch (in.getFieldName())
                 {
+                    // TODO Defend against repeated fields.
                     case "file":
                     {
                         file = path;
                         break;
                     }
+                    case "url":
+                    {
+                        url = new URL(path);
+                        break;
+                    }
                     case "module":
                     {
-                        // TODO I'm too lazy to handle out-of-order fields.
-                        assert file != null;
-                        id = ModuleIdentity.forAbsolutePath(path);
+                        module = path;
                         break;
                     }
                     default:
@@ -351,12 +419,23 @@ class CoverageDatabase
                 }
             }
 
-            if (id != null)
+            if (module != null)
             {
-                name = SourceName.forModule(id, new File(file));
+                ModuleIdentity id = ModuleIdentity.forAbsolutePath(module);
+                if (file != null)
+                {
+                    name = SourceName.forModule(id, new File(file));
+                }
+                else
+                {
+                    assert url != null;
+                    name = SourceName.forUrl(id, url);
+                }
             }
             else
             {
+                // Without a module ID, this must've been a file-system script.
+                assert file != null && url == null;
                 name = SourceName.forFile(file);
             }
         }
@@ -407,10 +486,10 @@ class CoverageDatabase
                 SourceLocation.forLineColumn(line, column, name);
             assert loc != null;
 
-            noteCoverableLocation(loc);
+            locationInstrumented(loc);
             if (covered)
             {
-                coverLocation(loc);
+                locationEvaluated(loc);
             }
         }
         in.stepOut();

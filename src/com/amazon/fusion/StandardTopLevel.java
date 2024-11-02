@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2022 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -172,7 +172,8 @@ final class StandardTopLevel
             ModuleIdentity id =
                 ModuleIdentity.forAbsolutePath(absoluteModulePath);
             ModuleLocation loc =
-                new IonReaderModuleLocation(source, name);
+                ModuleLocation.forIonReader(source, name);
+
             resolver.loadModule(eval, id, loc, true /* reload it */);
         }
         catch (FusionInterrupt e)

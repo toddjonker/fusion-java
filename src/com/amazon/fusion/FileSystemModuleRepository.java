@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2022 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -6,14 +6,13 @@ import static com.amazon.fusion.GlobalState.FUSION_SOURCE_EXTENSION;
 import static com.amazon.fusion.ModuleIdentity.isValidModuleName;
 import com.amazon.fusion.util.function.Predicate;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
+
 
 final class FileSystemModuleRepository
     extends ModuleRepository
 {
     private final File myRepoDir;
+    private final File mySrcDir;
 
     /**
      * @param repoDir must be absolute.
@@ -22,6 +21,9 @@ final class FileSystemModuleRepository
     {
         assert repoDir.isAbsolute();
         myRepoDir = repoDir;
+
+        File src = new File(repoDir, "src");
+        mySrcDir = (src.isDirectory() ? src : null);
     }
 
 
@@ -34,40 +36,16 @@ final class FileSystemModuleRepository
 
     @Override
     ModuleLocation locateModule(Evaluator eval, final ModuleIdentity id)
-        throws FusionException
     {
+        if (mySrcDir == null) return null;
+
         String path = id.absolutePath();
         String fileName = path.substring(1) + FUSION_SOURCE_EXTENSION;
 
-        final File libFile = new File(myRepoDir, fileName);
+        final File libFile = new File(mySrcDir, fileName);
         if (libFile.exists())
         {
-            ModuleLocation loc = new InputStreamModuleLocation()
-            {
-                private final SourceName myName =
-                    SourceName.forModule(id, libFile);
-
-                @Override
-                SourceName sourceName()
-                {
-                    return myName;
-                }
-
-                @Override
-                InputStream open()
-                    throws IOException
-                {
-                    return new FileInputStream(libFile);
-                }
-
-                @Override
-                String parentDirectory()
-                {
-                    return libFile.getParentFile().getAbsolutePath();
-                }
-            };
-
-            return loc;
+            return ModuleLocation.forFile(id, libFile);
         }
 
         return null;
@@ -136,6 +114,9 @@ final class FileSystemModuleRepository
                         Consumer<ModuleIdentity>  results)
         throws FusionException
     {
-        collectModules(selector, null, myRepoDir, results);
+        if (mySrcDir != null)
+        {
+            collectModules(selector, null, mySrcDir, results);
+        }
     }
 }

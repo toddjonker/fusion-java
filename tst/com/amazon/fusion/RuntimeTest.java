@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2019 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -52,8 +52,8 @@ public class RuntimeTest
         loadFile("tst-data/trivialDefine.fusion");
         assertEval(3328, "x");
 
-        // Test eval'ing a module
-        loadFile("ftst/repo/src/grain.fusion");
+        // Test loading a script with top-level modules
+        loadFile(ftstScriptDirectory().resolve("topmodules.test.fusion"));
     }
 
 

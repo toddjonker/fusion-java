@@ -1,4 +1,4 @@
-// Copyright (c) 2012-2020 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2012-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -12,34 +12,41 @@ import static com.amazon.fusion.junit.Reflect.witherFor;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.OutputStream;
-import java.lang.reflect.Method;
 import com.amazon.ion.IonCatalog;
 import com.amazon.ion.system.SimpleCatalog;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
+import org.junit.rules.TemporaryFolder;
 
 
 public class FusionRuntimeBuilderTest
+    extends CoreTestCase
 {
-    private static final File TEST_REPO = new File("tst-repo");
-
     @Rule
     public ExpectedException thrown = ExpectedException.none();
+
+    @Rule
+    public TemporaryFolder tmpDir = new TemporaryFolder();
 
 
     private FusionRuntime build(FusionRuntimeBuilder b)
         throws FusionException
     {
-        b = b.withBootstrapRepository(new File("fusion"));
+        b = b.withBootstrapRepository(fusionBootstrapDirectory().toFile());
         return b.build();
     }
 
@@ -70,11 +77,13 @@ public class FusionRuntimeBuilderTest
         FusionRuntimeBuilder b = orig.copy();
         invoke(b, setter, newValue);
         assertEquals(expectedNormalizedValue, invoke(b, getter));
+        assertEquals(defaultValue, invoke(orig, getter));  // No aliasing w/orig
         assertCopiesAreEqual(b);
 
         FusionRuntimeBuilder c = orig.copy();
         assertSame(c, invoke(c, wither, newValue));
         assertEqualProperties(b, c);
+        assertEquals(defaultValue, invoke(orig, getter));  // No aliasing w/orig
         assertCopiesAreEqual(c);
 
         // Immutable builder is copied on modification
@@ -94,6 +103,41 @@ public class FusionRuntimeBuilderTest
         assertEquals(defaultValue, invoke(c, getter));
         assertEqualProperties(orig, c);
         assertCopiesAreEqual(c);
+    }
+
+
+    /**
+     * Creates a temporary normal (non-directory) file.
+     *
+     * @return a file that exists.
+     */
+    private File normalFile()
+    {
+        try
+        {
+            // JUnit docs aren't explicit that newFile() creates a physical
+            // file, not just a File reference, so assert that assumption.
+            File file = tmpDir.newFile();
+            assertTrue(file.exists());
+            return file;
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException(e);
+        }
+
+    }
+
+    /**
+     * Generates a path to a non-existing file.
+     *
+     * @return a file that doesn't exist.
+     */
+    private File noSuchFile()
+    {
+        Path p = tmpDir.getRoot().toPath().resolve("no-such-file");
+        assertTrue(Files.notExists(p));
+        return p.toFile();
     }
 
 
@@ -282,10 +326,7 @@ public class FusionRuntimeBuilderTest
     @Test
     public void testSetInitialCurrentDirectory()
     {
-        File dir = new File("src");
-        assertTrue(dir.isDirectory());
-
-        changeInitialCurrentDirectory(standard(), dir);
+        changeInitialCurrentDirectory(standard(), tmpDir.getRoot());
     }
 
 
@@ -305,37 +346,31 @@ public class FusionRuntimeBuilderTest
         FusionRuntimeBuilder b = standard();
         checkCurrentDirectory(System.getProperty("user.dir"), b);
 
-        File tst = new File("tst");
-        b.setInitialCurrentDirectory(tst);
-        checkCurrentDirectory(tst.getAbsolutePath(), b);
+        b.setInitialCurrentDirectory(tmpDir.getRoot());
+        checkCurrentDirectory(tmpDir.getRoot().getAbsolutePath(), b);
     }
 
 
     @Test
     public void testCurrentDirectoryDoesNotExist()
     {
-        File file = new File("no-such-file");
-        assertFalse(file.exists());
         thrown.expect(IllegalArgumentException.class);
-        standard().setInitialCurrentDirectory(file);
+        standard().setInitialCurrentDirectory(noSuchFile());
     }
 
 
     @Test
     public void testCurrentDirectoryIsNormalFile()
     {
-        File file = new File("build.xml");
-        assertTrue(file.isFile());
-
         thrown.expect(IllegalArgumentException.class);
-        standard().setInitialCurrentDirectory(file);
+        standard().setInitialCurrentDirectory(normalFile());
     }
 
     @Test
     public void testInitialCurrentDirectoryImmutability()
     {
         thrown.expect(UnsupportedOperationException.class);
-        standard().immutable().setInitialCurrentDirectory(TEST_REPO);
+        standard().immutable().setInitialCurrentDirectory(tmpDir.getRoot());
     }
 
 
@@ -352,49 +387,30 @@ public class FusionRuntimeBuilderTest
     @Test
     public void testSetBootstrapRepository()
     {
-        File dir = new File("fusion");
-        assertTrue(dir.isDirectory());
-
-        changeBootstrapRepository(standard(), dir);
+        changeBootstrapRepository(standard(), fusionBootstrapDirectory().toFile());
     }
 
 
     @Test
     public void testBootstrapRepositoryDoesNotExist()
     {
-        File file = new File("no-such-file");
-        assertFalse(file.exists());
-
         thrown.expect(IllegalArgumentException.class);
-        standard().setBootstrapRepository(file);
+        standard().setBootstrapRepository(noSuchFile());
     }
 
-    @Test
-    public void testBootstrapRepositoryIsNotValid()
-    {
-        // This is a Fusion repo, but not a bootstrap repository.
-        File file = new File("ftst/repo");
-
-        thrown.expect(IllegalArgumentException.class);
-        thrown.expectMessage("Not a Fusion bootstrap repository: ");
-        standard().setBootstrapRepository(file);
-    }
 
     @Test
     public void testBootstrapRepositoryIsNormalFile()
     {
-        File file = new File("build.xml");
-        assertTrue(file.isFile());
-
         thrown.expect(IllegalArgumentException.class);
-        standard().setBootstrapRepository(file);
+        standard().setBootstrapRepository(normalFile());
     }
 
     @Test
     public void testBootstrapRepositoryImmutability()
     {
         thrown.expect(UnsupportedOperationException.class);
-        standard().immutable().setBootstrapRepository(TEST_REPO);
+        standard().immutable().setBootstrapRepository(tmpDir.getRoot());
     }
 
 
@@ -412,32 +428,59 @@ public class FusionRuntimeBuilderTest
     @Test
     public void testSetCoverageDataDirectory()
     {
-        File dir = new File("src");
-        assertTrue(dir.isDirectory());
+        changeCoverageDataDirectory(standard(), tmpDir.getRoot());
+    }
 
-        changeCoverageDataDirectory(standard(), dir);
+
+    /**
+     * Ensures that different paths to the same directory don't result in
+     * different collectors that would interfere with each other.
+     */
+    @Test
+    public void testCoverageDataDirectoryCanonicalization()
+        throws Exception
+    {
+        Path dir1 = tmpDir.getRoot().toPath();
+        Path dir2 = tmpDir.newFolder("linkholder").toPath();
+
+        Path link = dir2.resolve("link");
+        Files.createSymbolicLink(link, dir1);
+
+        _Private_CoverageCollector c1 = makeCollector(dir1);
+        _Private_CoverageCollector c2 = makeCollector(dir2);
+        _Private_CoverageCollector c3 = makeCollector(link);
+
+        assertNotSame("different dirs", c1, c2);
+        assertSame("canonicalized symlink", c1, c3);
+    }
+
+    private _Private_CoverageCollector makeCollector(Path dir)
+        throws FusionException
+    {
+        FusionRuntime r =
+            runtimeBuilder().copy()
+                            .withCoverageDataDirectory(dir.toFile())
+                            .build();
+        _Private_CoverageCollector c =
+            ((StandardRuntime) r).getCoverageCollector();
+        assertNotNull(c);
+        return c;
     }
 
 
     @Test
     public void testCoverageDataDirectoryDoesNotExist()
     {
-        File file = new File("no-such-file");
-        assertFalse(file.exists());
-
         // Directory doesn't have to exist
-        changeCoverageDataDirectory(standard(), file);
+        changeCoverageDataDirectory(standard(), noSuchFile());
     }
 
 
     @Test
     public void testCoverageDataDirectoryIsNormalFile()
     {
-        File file = new File("build.xml");
-        assertTrue(file.isFile());
-
         thrown.expect(IllegalArgumentException.class);
-        standard().setCoverageDataDirectory(file);
+        standard().setCoverageDataDirectory(normalFile());
     }
 
 
@@ -445,7 +488,7 @@ public class FusionRuntimeBuilderTest
     public void testCoverageDataDirectoryImmutability()
     {
         thrown.expect(UnsupportedOperationException.class);
-        standard().immutable().setCoverageDataDirectory(TEST_REPO);
+        standard().immutable().setCoverageDataDirectory(tmpDir.getRoot());
     }
 
 

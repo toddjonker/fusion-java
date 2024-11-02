@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2022 Amazon.com, Inc.  All rights reserved.
+// Copyright (c) 2014-2024 Amazon.com, Inc.  All rights reserved.
 
 package com.amazon.fusion;
 
@@ -58,9 +58,11 @@ final class CoverageEvaluator
             SourceLocation loc = source.getLocation();
             if (loc != null)
             {
-                if (myCollector.coverableLocation(loc))
+                if (myCollector.locationIsRecordable(loc))
                 {
                     form = new CoverageCompiledForm(loc, form);
+
+                    myCollector.locationInstrumented(loc);
                 }
             }
 
@@ -92,8 +94,9 @@ final class CoverageEvaluator
         {
             _Private_CoverageCollector collector =
                 ((CoverageEvaluator) eval).myCollector;
-            collector.coverLocation(myLocation);
+            collector.locationEvaluated(myLocation);
 
+            // TODO Eliminate tail-call?
             return myForm.doEval(eval, store);
         }
     }
