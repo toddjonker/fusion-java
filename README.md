@@ -166,7 +166,7 @@ going.  We are deeply grateful to our many [contributors](CONTRIBUTORS.md).
 <table>
   <tbody>
     <tr>
-      <td align="center" valign="top" width="14.28%"><a href="https://github.com/toddjonker"><img src="https://avatars.githubusercontent.com/u/2058215?v=4?s=100" width="100px;" alt="Todd V. Jonker"/><br /><sub><b>Todd V. Jonker</b></sub></a><br /><a href="#code-toddjonker" title="Code">💻</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/toddjonker"><img src="https://avatars.githubusercontent.com/u/2058215?v=4?s=100" width="100px;" alt="Todd V. Jonker"/><br /><sub><b>Todd V. Jonker</b></sub></a><br /><a href="#code-toddjonker" title="Code">💻</a> <a href="#doc-toddjonker" title="Documentation">📖</a> <a href="#design-toddjonker" title="Design">🎨</a></td>
     </tr>
   </tbody>
 </table>

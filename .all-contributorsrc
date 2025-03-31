@@ -14,7 +14,9 @@
       "avatar_url": "https://avatars.githubusercontent.com/u/2058215?v=4",
       "profile": "https://github.com/toddjonker",
       "contributions": [
-        "code"
+        "code",
+        "doc",
+        "design"
       ]
     }
   ]
