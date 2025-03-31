@@ -1,6 +1,8 @@
 <!-- Copyright Ion Fusion contributors. All rights reserved. -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
+[![All Contributors](https://img.shields.io/github/all-contributors/toddjonker/fusion-java?color=ee8449&style=flat-square)](#contributors)
+
 **Ion Fusion** is a programmable programming language for working with JSON and [Amazon Ion][ion]
 data. Its goal is to simplify data processing by eliminating impedance mismatch and enabling
 domain-specific custom syntax. Among its interesting characteristics:
