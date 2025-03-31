@@ -43,6 +43,7 @@ chronological order:
   <tbody>
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/toddjonker"><img src="https://avatars.githubusercontent.com/u/2058215?v=4?s=100" width="100px;" alt="Todd V. Jonker"/><br /><sub><b>Todd V. Jonker</b></sub></a><br /><a href="#code-toddjonker" title="Code">💻</a> <a href="#doc-toddjonker" title="Documentation">📖</a> <a href="#design-toddjonker" title="Design">🎨</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/SharkBaitDLS"><img src="https://avatars.githubusercontent.com/u/1068559?v=4?s=100" width="100px;" alt="Isaac M. Good"/><br /><sub><b>Isaac M. Good</b></sub></a><br /><a href="#review-SharkBaitDLS" title="Reviewed Pull Requests">👀</a></td>
     </tr>
   </tbody>
 </table>
