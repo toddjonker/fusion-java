@@ -106,9 +106,7 @@ final class FileSystemModuleRepository
             }
         }
 
-        // TODO I don't think this needs to be two passes, but I'm keeping it
-        // parallel to code in ModuleDoc until determining whether that can
-        // use this new approach.
+        // TODO I don't think this needs to be two passes
     }
 
 
