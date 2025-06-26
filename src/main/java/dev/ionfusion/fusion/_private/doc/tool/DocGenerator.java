@@ -4,7 +4,6 @@
 package dev.ionfusion.fusion._private.doc.tool;
 
 import static com.amazon.ion.system.IonTextWriterBuilder.UTF8;
-import static dev.ionfusion.fusion._private.doc.model.DocTreeNode.buildDocTree;
 import static dev.ionfusion.fusion._private.doc.tool.DocIndex.buildDocIndex;
 
 import com.amazon.ion.Timestamp;
@@ -53,7 +52,9 @@ public final class DocGenerator
         throws IOException, FusionException
     {
         log("Building module docs");
-        DocTreeNode doc = buildDocTree(runtime, filter, repoDir);
+        DocTreeBuilder docBuilder =
+            new DocTreeBuilder(runtime.makeTopLevel(), filter);
+        DocTreeNode doc = docBuilder.build(repoDir.toPath());
 
         log("Writing module docs");
         writeModuleTree(filter, outputDir, ".", doc);
@@ -66,7 +67,8 @@ public final class DocGenerator
         writePermutedIndexFile(filter, outputDir, index);
 
         log("Writing Markdown pages");
-        writeMarkdownPages(outputDir, ".", repoDir);
+        // TODO Path extension is messy magic.
+        writeMarkdownPages(outputDir, ".", new File(repoDir, "src"));
 
         log("DONE writing HTML docs to " + outputDir);
     }
