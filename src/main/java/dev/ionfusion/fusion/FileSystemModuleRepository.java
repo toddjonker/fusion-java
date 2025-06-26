@@ -18,12 +18,11 @@ final class FileSystemModuleRepository
     private final File mySrcDir;
 
     /**
-     * @param repoDir must be absolute.
+     * @param repoDir is converted to absolute if it's not already.
      */
     FileSystemModuleRepository(File repoDir)
     {
-        assert repoDir.isAbsolute();
-        myRepoDir = repoDir;
+        myRepoDir = repoDir.getAbsoluteFile();
 
         File src = new File(repoDir, "src");
         mySrcDir = (src.isDirectory() ? src : null);
