@@ -1,3 +1,5 @@
+package dev.ionfusion.fusion._private;
+
 import java.util.concurrent.ConcurrentHashMap;
 import java.lang.ref.WeakReference;
 import java.lang.ref.ReferenceQueue;

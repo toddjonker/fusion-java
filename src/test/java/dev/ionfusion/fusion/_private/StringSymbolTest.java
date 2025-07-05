@@ -1,3 +1,5 @@
+package dev.ionfusion.fusion._private;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import static org.junit.jupiter.api.Assertions.*;
@@ -177,9 +179,14 @@ class StringSymbolTest {
     @Test
     void testLongStrings() {
         // Test with long strings to ensure no issues with large content
-        String long1 = "a".repeat(1000) + "1";
-        String long2 = "a".repeat(1000) + "2";
-        
+        StringBuilder sb = new StringBuilder(1000);
+        for (int i = 0; i < 1000; i++) {
+            sb.append('a');
+        }
+        String base = sb.toString();
+        String long1 = base + "1";
+        String long2 = base + "2";
+
         StringSymbol sym1a = interner.intern(long1);
         StringSymbol sym1b = interner.intern(long1);
         StringSymbol sym2 = interner.intern(long2);
