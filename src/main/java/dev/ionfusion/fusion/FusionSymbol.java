@@ -8,13 +8,15 @@ import static dev.ionfusion.fusion.FusionBool.makeBool;
 import static dev.ionfusion.fusion.FusionBool.trueBool;
 import static dev.ionfusion.fusion.FusionString.makeString;
 import static dev.ionfusion.fusion.FusionUtils.EMPTY_STRING_ARRAY;
-import dev.ionfusion.fusion.FusionBool.BaseBool;
+
 import com.amazon.ion.IonException;
 import com.amazon.ion.IonType;
 import com.amazon.ion.IonValue;
 import com.amazon.ion.IonWriter;
 import com.amazon.ion.ValueFactory;
 import com.amazon.ion.util.IonTextUtils;
+import dev.ionfusion.fusion.FusionBool.BaseBool;
+import dev.ionfusion.fusion._private.InternMap;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.util.Arrays;
@@ -43,26 +45,7 @@ final class FusionSymbol
         {
             if (value == null) return NULL_SYMBOL;
 
-            ActualSymbol sym = new ActualSymbol(value);
-
-            // Prevent other threads from touching the intern table.
-            // This doesn't prevent the GC from removing entries!
-            synchronized (ourActualSymbols)
-            {
-                WeakReference<ActualSymbol> ref = ourActualSymbols.get(sym);
-                if (ref != null)
-                {
-                    // There's a chance that the entry for a string will exist but
-                    // the weak reference has been cleared.
-                    ActualSymbol interned = ref.get();
-                    if (interned != null) return interned;
-                }
-
-                ref = new WeakReference<>(sym);
-                ourActualSymbols.put(sym, ref);
-
-                return sym;
-            }
+            return ourActualSymbols.intern(value);
         }
 
         /**
@@ -446,9 +429,8 @@ final class FusionSymbol
      * {@link WeakReference}, so the entry will be retained at least as long as
      * the symbol is reachable.
      */
-    private static final
-    WeakHashMap<ActualSymbol, WeakReference<ActualSymbol>>
-        ourActualSymbols = new WeakHashMap<>(256);
+    private static final InternMap<String, ActualSymbol>
+        ourActualSymbols = new InternMap<>(ActualSymbol::new);
 
     /**
      * Interning table for annotated symbols.
