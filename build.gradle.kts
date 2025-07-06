@@ -93,6 +93,9 @@ tasks.test {
 
     inputs.dir(layout.projectDirectory.dir("ftst"))
 
+    systemProperty("junit.jupiter.execution.parallel.enabled", true)
+    systemProperty("junit.jupiter.execution.parallel.mode.default", "concurrent")
+
     jvmArgumentProviders.add {
         if (fcovRunning) {
             logger.lifecycle("Enabling Fusion code coverage instrumentation")
