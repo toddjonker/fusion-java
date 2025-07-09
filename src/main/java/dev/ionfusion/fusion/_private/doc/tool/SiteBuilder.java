@@ -5,7 +5,9 @@ package dev.ionfusion.fusion._private.doc.tool;
 
 import dev.ionfusion.fusion.FusionException;
 import dev.ionfusion.fusion.ModuleIdentity;
+import dev.ionfusion.fusion._private.doc.layout.MarkdownArticleLayout;
 import dev.ionfusion.fusion._private.doc.layout.ModuleLayout;
+import dev.ionfusion.fusion._private.doc.model.MarkdownArticle;
 import dev.ionfusion.fusion._private.doc.model.ModuleEntity;
 import dev.ionfusion.fusion._private.doc.model.RepoEntity;
 import dev.ionfusion.fusion._private.doc.site.HtmlArtifactGenerator;
@@ -13,6 +15,7 @@ import dev.ionfusion.fusion._private.doc.site.HtmlLayout;
 import dev.ionfusion.fusion._private.doc.site.Site;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Map;
 import java.util.function.Predicate;
 
 public class SiteBuilder
@@ -52,6 +55,22 @@ public class SiteBuilder
             Path file = Paths.get(".", id.absolutePath() + ".html");
 
             placePage(file, layout, module);
+        }
+    }
+
+
+    public void placeArticles()
+    {
+        MarkdownArticleLayout layout = new MarkdownArticleLayout();
+
+        for (Map.Entry<Path, MarkdownArticle> entry : myRepo.getArticles().entrySet())
+        {
+            MarkdownArticle article  = entry.getValue();
+            Path            location = entry.getKey();
+            String          fileName = location.getFileName().toString() + ".html";
+            Path            file     = location.resolveSibling(fileName);
+
+            placePage(file, layout, article);
         }
     }
 }
