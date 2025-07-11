@@ -6,12 +6,14 @@ package dev.ionfusion.fusion._private.doc.model;
 import static dev.ionfusion.fusion._Private_Trampoline.discoverModulesInRepository;
 import static dev.ionfusion.fusion._Private_Trampoline.instantiateModuleDocs;
 import static dev.ionfusion.fusion._Private_Trampoline.loadModule;
+import static java.nio.file.Files.isDirectory;
 
 import dev.ionfusion.fusion.FusionException;
 import dev.ionfusion.fusion.ModuleIdentity;
 import dev.ionfusion.fusion.TopLevel;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -23,7 +25,12 @@ import java.util.function.Predicate;
  */
 public class RepoEntity
 {
-    private final Map<ModuleIdentity, ModuleEntity> myModules = new HashMap<>();
+    private final Map<ModuleIdentity, ModuleEntity> myModules  = new HashMap<>();
+
+    /**
+     * Path is relative to internal docroot, does not include extension (eg ".md")
+     */
+    private final Map<Path, ArticleEntity>          myArticles = new HashMap<>();
 
 
     public RepoEntity(Path repoDir, Predicate<ModuleIdentity> selector, TopLevel top)
@@ -44,7 +51,10 @@ public class RepoEntity
 
             addModuleDocs(docs);
         }
+
+        discoverArticles(repoDir);
     }
+
 
     private ModuleEntity ensureEntityForModule(ModuleIdentity id)
     {
@@ -79,5 +89,41 @@ public class RepoEntity
         HashSet<ModuleEntity> set = new HashSet<>(myModules.values());
         assert set.size() == myModules.size();
         return set;
+    }
+
+
+    private void discoverArticles(Path repoDir)
+    {
+        discoverArticles(Paths.get(""),                     // empty path
+                         repoDir.resolve("src"));
+
+    }
+
+    private void discoverArticles(Path outDir, Path repoDir)
+    {
+        String[] fileNames = repoDir.toFile().list();
+
+        for (String fileName : fileNames)
+        {
+            Path child = repoDir.resolve(fileName);
+
+            if (fileName.endsWith(".md"))
+            {
+                String baseName = fileName.substring(0, fileName.length() - 3);
+                Path outPath = outDir.resolve(baseName);
+
+                myArticles.put(outPath, new MarkdownArticleEntity(child));
+            }
+            else if (isDirectory(child))
+            {
+                discoverArticles(outDir.resolve(fileName), child);
+            }
+        }
+    }
+
+
+    public Map<Path, ArticleEntity> getArticles()
+    {
+        return myArticles;
     }
 }

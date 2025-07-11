@@ -9,11 +9,16 @@ import com.amazon.ion.Timestamp;
 import dev.ionfusion.fusion.FusionException;
 import dev.ionfusion.fusion.FusionRuntime;
 import dev.ionfusion.fusion.ModuleIdentity;
+import dev.ionfusion.fusion._private.HtmlWriter;
+import dev.ionfusion.fusion._private.doc.model.ArticleEntity;
 import dev.ionfusion.fusion._private.doc.model.ModuleEntity;
 import dev.ionfusion.fusion._private.doc.model.RepoEntity;
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 
@@ -53,8 +58,7 @@ public final class DocGenerator
         writePermutedIndexFile(filter, outputDir, index);
 
         log("Writing Markdown pages");
-        // TODO Path extension is messy magic.
-        writeMarkdownPages(outputDir, ".", new File(repoDir, "src"));
+        renderArticles(outputDir.toPath(), repo.getArticles());
 
         log("DONE writing HTML docs to " + outputDir);
     }
@@ -104,6 +108,48 @@ public final class DocGenerator
     }
 
 
+    /**
+     * Renders a set of articles to their corresponding locations in a baseDir.
+     *
+     * @param baseDir the file-system directory in which to write files.
+     * @param articles the entities to render as files, keyed by their relative path.
+     */
+    private static void renderArticles(Path baseDir, Map<Path, ArticleEntity> articles)
+        throws IOException
+    {
+        for (Map.Entry<Path, ArticleEntity> entry : articles.entrySet())
+        {
+            renderArticle(baseDir, entry.getKey(), entry.getValue());
+        }
+    }
+
+    private static void renderArticle(Path baseDir, Path location, ArticleEntity article)
+        throws IOException
+    {
+        Path emptyPath = Paths.get("");
+
+        String fileName = location.getFileName().toString() + ".html";
+        Path   parent   = location.getParent();
+        if (parent == null)
+        {
+            parent = emptyPath;
+        }
+
+        // basePath leads up to the baseDir
+        Path basePath = parent.relativize(emptyPath);
+        Path outDir   = baseDir.resolve(parent);
+
+        try (HtmlWriter writer = new HtmlWriter(outDir.toFile(), fileName))
+        {
+            CommonPageLayout layout = new CommonPageLayout(article.getTitle(),
+                                                           basePath.toString(),
+                                                           "common.css", "doc.css"
+            );
+            layout.render(writer, article::render);
+        }
+    }
+
+
     private static void writeIndexFile(Predicate<ModuleIdentity> filter,
                                        File outputDir,
                                        DocIndex index)
@@ -129,40 +175,6 @@ public final class DocGenerator
                  new PermutedIndexWriter(filter, index, outputFile))
         {
             writer.renderIndex();
-        }
-    }
-
-
-    /**
-     * Recursively discover {@code .md} files and transform to {@code .html}.
-     */
-    private static void writeMarkdownPages(File   outputDir,
-                                           String baseUrl,
-                                           File   repoDir)
-        throws IOException
-    {
-        String[] fileNames = repoDir.list();
-
-        for (String fileName : fileNames)
-        {
-            File repoFile = new File(repoDir, fileName);
-
-            if (fileName.endsWith(".md"))
-            {
-                String docName = fileName.substring(0, fileName.length() - 2);
-                File outputFile = new File(outputDir, docName + "html");
-
-                try (MarkdownPageWriter writer =
-                         new MarkdownPageWriter(outputFile.toPath(), baseUrl, repoFile.toPath()))
-                {
-                    writer.render();
-                }
-            }
-            else if (repoFile.isDirectory())
-            {
-                File subOutputDir = new File(outputDir, fileName);
-                writeMarkdownPages(subOutputDir, baseUrl + "/..", repoFile);
-            }
         }
     }
 
