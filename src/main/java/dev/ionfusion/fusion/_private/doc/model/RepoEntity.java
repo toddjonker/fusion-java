@@ -25,7 +25,6 @@ public class RepoEntity
 {
     private final Map<ModuleIdentity, ModuleEntity> myModules = new HashMap<>();
 
-
     public RepoEntity(Path repoDir, Predicate<ModuleIdentity> selector, TopLevel top)
         throws FusionException, IOException
     {
@@ -80,4 +79,6 @@ public class RepoEntity
         assert set.size() == myModules.size();
         return set;
     }
+
+    public void addMarkdown
 }
