@@ -9,7 +9,6 @@ import com.amazon.ion.Timestamp;
 import dev.ionfusion.fusion.FusionException;
 import dev.ionfusion.fusion.FusionRuntime;
 import dev.ionfusion.fusion.ModuleIdentity;
-import dev.ionfusion.fusion._private.HtmlWriter;
 import dev.ionfusion.fusion._private.doc.model.ArticleEntity;
 import dev.ionfusion.fusion._private.doc.model.ModuleEntity;
 import dev.ionfusion.fusion._private.doc.model.RepoEntity;
@@ -135,18 +134,9 @@ public final class DocGenerator
             parent = emptyPath;
         }
 
-        // basePath leads up to the baseDir
-        Path basePath = parent.relativize(emptyPath);
-        Path outDir   = baseDir.resolve(parent);
+        Artifact artifact = new ArticleArtifact(parent.resolve(fileName), article);
 
-        try (HtmlWriter writer = new HtmlWriter(outDir.toFile(), fileName))
-        {
-            CommonPageLayout layout = new CommonPageLayout(article.getTitle(),
-                                                           basePath.toString(),
-                                                           "common.css", "doc.css"
-            );
-            layout.render(writer, article::render);
-        }
+        artifact.generate(baseDir);
     }
 
 
