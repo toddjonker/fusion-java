@@ -3,10 +3,14 @@
 
 package dev.ionfusion.fusion._private.doc.tool;
 
+import static dev.ionfusion.fusion._private.doc.tool.DocIndex.buildDocIndex;
+
 import dev.ionfusion.fusion.FusionException;
 import dev.ionfusion.fusion.ModuleIdentity;
+import dev.ionfusion.fusion._private.doc.layout.AlphabeticalIndexLayout;
 import dev.ionfusion.fusion._private.doc.layout.MarkdownArticleLayout;
 import dev.ionfusion.fusion._private.doc.layout.ModuleLayout;
+import dev.ionfusion.fusion._private.doc.layout.PermutedIndexLayout;
 import dev.ionfusion.fusion._private.doc.model.MarkdownArticle;
 import dev.ionfusion.fusion._private.doc.model.ModuleEntity;
 import dev.ionfusion.fusion._private.doc.model.RepoEntity;
@@ -43,6 +47,11 @@ public class SiteBuilder
         mySite.addArtifact(path, new HtmlArtifactGenerator<>(layout), entity);
     }
 
+    private <E> void placePage(String path, HtmlLayout<E> layout, E entity)
+    {
+        mySite.addArtifact(path, new HtmlArtifactGenerator<>(layout), entity);
+    }
+
 
     public void placeModules()
         throws FusionException
@@ -72,5 +81,18 @@ public class SiteBuilder
 
             placePage(file, layout, article);
         }
+    }
+
+    public void prepareIndexes()
+        throws FusionException
+    {
+        // The two index artifacts are different layouts of the same entity.
+        DocIndex docIndex = buildDocIndex(myRepo.getModules());
+
+        AlphabeticalIndexLayout alphaLayout = new AlphabeticalIndexLayout(myModuleSelector);
+        PermutedIndexLayout     permLayout  = new PermutedIndexLayout(myModuleSelector);
+
+        placePage("binding-index.html", alphaLayout, docIndex);
+        placePage("permuted-index.html", permLayout, docIndex);
     }
 }
