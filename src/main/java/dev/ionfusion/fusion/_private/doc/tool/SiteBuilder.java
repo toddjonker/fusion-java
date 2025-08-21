@@ -7,16 +7,17 @@ import static dev.ionfusion.fusion._private.doc.tool.DocIndex.buildDocIndex;
 
 import dev.ionfusion.fusion.FusionException;
 import dev.ionfusion.fusion.ModuleIdentity;
+import dev.ionfusion.fusion._private.StreamWriter;
 import dev.ionfusion.fusion._private.doc.layout.AlphabeticalIndexLayout;
 import dev.ionfusion.fusion._private.doc.layout.MarkdownArticleLayout;
 import dev.ionfusion.fusion._private.doc.layout.ModuleLayout;
 import dev.ionfusion.fusion._private.doc.layout.PermutedIndexLayout;
+import dev.ionfusion.fusion._private.doc.layout.StreamingTemplate;
 import dev.ionfusion.fusion._private.doc.model.MarkdownArticle;
 import dev.ionfusion.fusion._private.doc.model.ModuleEntity;
 import dev.ionfusion.fusion._private.doc.model.RepoEntity;
-import dev.ionfusion.fusion._private.doc.site.HtmlArtifactGenerator;
-import dev.ionfusion.fusion._private.doc.site.HtmlLayout;
 import dev.ionfusion.fusion._private.doc.site.Site;
+import dev.ionfusion.fusion._private.doc.site.Template;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Map;
@@ -42,36 +43,34 @@ public class SiteBuilder
     }
 
 
-    private <E> void placePage(Path path, HtmlLayout<E> layout, E entity)
+    private <E> void placePage(E entity, Path path, Template<E, StreamWriter> template)
     {
-        mySite.addArtifact(path, new HtmlArtifactGenerator<>(layout), entity);
+        mySite.addArtifact(entity, path, new StreamingTemplate<E>(template));
     }
 
-    private <E> void placePage(String path, HtmlLayout<E> layout, E entity)
+    private <E> void placePage(E entity, String path, Template<E, StreamWriter> template)
     {
-        mySite.addArtifact(path, new HtmlArtifactGenerator<>(layout), entity);
+        mySite.addArtifact(entity, path, new StreamingTemplate<E>(template));
     }
 
 
     public void placeModules()
         throws FusionException
     {
-        ModuleLayout layout = new ModuleLayout(myModuleSelector);
+        Template<ModuleEntity, StreamWriter> factory = ModuleLayout.template(myModuleSelector);
 
         for (ModuleEntity module : myRepo.getModules())
         {
             ModuleIdentity id = module.getIdentity();
             Path file = Paths.get(".", id.absolutePath() + ".html");
 
-            placePage(file, layout, module);
+            placePage(module, file, factory);
         }
     }
 
 
     public void placeArticles()
     {
-        MarkdownArticleLayout layout = new MarkdownArticleLayout();
-
         for (Map.Entry<Path, MarkdownArticle> entry : myRepo.getArticles().entrySet())
         {
             MarkdownArticle article  = entry.getValue();
@@ -79,7 +78,7 @@ public class SiteBuilder
             String          fileName = location.getFileName().toString() + ".html";
             Path            file     = location.resolveSibling(fileName);
 
-            placePage(file, layout, article);
+            placePage(article, file, MarkdownArticleLayout::new);
         }
     }
 
@@ -89,10 +88,7 @@ public class SiteBuilder
         // The two index artifacts are different layouts of the same entity.
         DocIndex docIndex = buildDocIndex(myRepo.getModules());
 
-        AlphabeticalIndexLayout alphaLayout = new AlphabeticalIndexLayout(myModuleSelector);
-        PermutedIndexLayout     permLayout  = new PermutedIndexLayout(myModuleSelector);
-
-        placePage("binding-index.html", alphaLayout, docIndex);
-        placePage("permuted-index.html", permLayout, docIndex);
+        placePage(docIndex, "binding-index.html", AlphabeticalIndexLayout.template(myModuleSelector));
+        placePage(docIndex, "permuted-index.html", PermutedIndexLayout.template(myModuleSelector));
     }
 }

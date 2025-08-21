@@ -6,6 +6,7 @@ package dev.ionfusion.fusion._private.doc.layout;
 import dev.ionfusion.fusion.ModuleIdentity;
 import dev.ionfusion.fusion._private.HtmlWriter;
 import dev.ionfusion.fusion._private.StreamWriter;
+import dev.ionfusion.fusion._private.doc.site.Generator;
 import dev.ionfusion.fusion._private.doc.tool.DocIndex;
 import java.io.IOException;
 import java.util.Map;
@@ -14,24 +15,27 @@ import java.util.function.Predicate;
 
 final class AlphabeticalIndexWriter
     extends HtmlWriter
+    implements Generator<Void>
 {
+    private final DocIndex                  myIndex;
     private final Predicate<ModuleIdentity> myFilter;
 
 
-    public AlphabeticalIndexWriter(Predicate<ModuleIdentity> filter, StreamWriter out)
+    public AlphabeticalIndexWriter(DocIndex index, Predicate<ModuleIdentity> filter, StreamWriter out)
     {
         super(out);
+        myIndex = index;
         myFilter = filter;
     }
 
-
-    void renderIndex(DocIndex index)
+    @Override
+    public void generate(Void dest)
         throws IOException
     {
         renderHeader1("Binding Index");
 
         append("<table><tbody>");
-        for (Map.Entry<String, Set<ModuleIdentity>> entry : index.getNameMap().entrySet())
+        for (Map.Entry<String, Set<ModuleIdentity>> entry : myIndex.getNameMap().entrySet())
         {
             String escapedName = escapeString(entry.getKey());
             append("<tr><td class='bound'>");

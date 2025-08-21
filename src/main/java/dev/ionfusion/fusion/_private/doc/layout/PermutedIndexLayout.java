@@ -6,6 +6,8 @@ package dev.ionfusion.fusion._private.doc.layout;
 import dev.ionfusion.fusion.ModuleIdentity;
 import dev.ionfusion.fusion._private.StreamWriter;
 import dev.ionfusion.fusion._private.doc.site.Artifact;
+import dev.ionfusion.fusion._private.doc.site.Generator;
+import dev.ionfusion.fusion._private.doc.site.Template;
 import dev.ionfusion.fusion._private.doc.tool.DocIndex;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -16,41 +18,35 @@ public final class PermutedIndexLayout
 {
     private final Predicate<ModuleIdentity> myFilter;
 
-    public PermutedIndexLayout(Predicate<ModuleIdentity> filter)
+    public PermutedIndexLayout(Artifact<DocIndex> artifact, Predicate<ModuleIdentity> filter)
     {
+        super(artifact);
         myFilter = filter;
     }
 
+    public static Template<DocIndex, StreamWriter> template(Predicate<ModuleIdentity> filter)
+    {
+        return artifact -> new PermutedIndexLayout(artifact, filter);
+    }
 
     @Override
-    protected Context makeContext(Artifact<DocIndex> artifact)
+    void addCssUrls(ArrayList<String> urls)
         throws IOException
     {
-        DocIndex index = artifact.getEntity();
+        super.addCssUrls(urls);
+        urls.add("index.css");
+    }
 
-        return new Context()
-        {
-            @Override
-            void addCssUrls(ArrayList<String> urls)
-                throws IOException
-            {
-                super.addCssUrls(urls);
-                urls.add("index.css");
-            }
+    @Override
+    String getTitle()
+        throws IOException
+    {
+        return "Fusion Binding Index (Permuted)";
+    }
 
-            @Override
-            String getTitle()
-                throws IOException
-            {
-                return "Fusion Binding Index (Permuted)";
-            }
-
-            @Override
-            void renderContent(StreamWriter out)
-                throws IOException
-            {
-                new PermutedIndexWriter(myFilter, index, out).renderIndex();
-            }
-        };
+    @Override
+    Generator<Void> contentGenerator(StreamWriter out)
+    {
+        return new PermutedIndexWriter(myFilter, getEntity(), out);
     }
 }

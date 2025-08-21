@@ -6,7 +6,8 @@ package dev.ionfusion.fusion._private.doc.layout;
 import dev.ionfusion.fusion._private.HtmlWriter;
 import dev.ionfusion.fusion._private.StreamWriter;
 import dev.ionfusion.fusion._private.doc.site.Artifact;
-import dev.ionfusion.fusion._private.doc.site.HtmlLayout;
+import dev.ionfusion.fusion._private.doc.site.ArtifactGenerator;
+import dev.ionfusion.fusion._private.doc.site.Generator;
 import java.io.IOException;
 import java.util.ArrayList;
 
@@ -16,7 +17,7 @@ import java.util.ArrayList;
  * @param <E> the type of entity providing page content.
  */
 public abstract class CommonLayout <E>
-    implements HtmlLayout<E>
+    extends ArtifactGenerator<E, StreamWriter>
 {
     /** HTML content for the masthead links */
     private static final String HEADER_LINKS =
@@ -27,53 +28,58 @@ public abstract class CommonLayout <E>
         "</div>\n";
 
 
-    protected abstract static class Context
+    protected CommonLayout(Artifact<E> artifact)
     {
-        /**
-         * Collects the URLs of CSS style sheets to include in the HTML header.
-         */
-        void addCssUrls(ArrayList<String> urls)
-            throws IOException
-        {
-            urls.add("common.css");
-        }
-
-        abstract String getTitle()
-            throws IOException;
-
-        abstract void renderContent(StreamWriter out)
-            throws IOException;
+        super(artifact);
     }
 
 
-    protected abstract Context makeContext(Artifact<E> artifact)
+    /**
+     * Collects the URLs of CSS style sheets to include in the HTML header.
+     */
+    void addCssUrls(ArrayList<String> urls)
+        throws IOException
+    {
+        urls.add("common.css");
+    }
+
+    abstract String getTitle()
         throws IOException;
+
+    void renderContent(StreamWriter out)
+        throws IOException
+    {
+        contentGenerator(out).generate(null);
+    }
+
+    Generator<Void> contentGenerator(StreamWriter out)
+    {
+        throw new UnsupportedOperationException("No content generator for " + getClass());
+    }
 
 
     @Override
-    public final void render(Artifact<E> artifact, StreamWriter out)
+    public final void generate(StreamWriter out)
         throws IOException
     {
-        Context ctx = makeContext(artifact);
-
-        String title = ctx.getTitle();
+        String title = getTitle();
         if (title == null || title.isEmpty()) title = "Ion Fusion Documentation";
 
         ArrayList<String> cssUrls = new ArrayList<>();
-        ctx.addCssUrls(cssUrls);
+        addCssUrls(cssUrls);
 
         HtmlWriter writer = new HtmlWriter(out);
         writer.openHtml();
         {
             writer.renderHead(title,
-                              artifact.getPathToBase().toString(),
+                              getArtifact().getPathToBase().toString(),
                               cssUrls.toArray(new String[0]));
 
             writer.openBody();
             {
                 writer.append(HEADER_LINKS);
 
-                ctx.renderContent(out);
+                renderContent(out);
             }
             writer.closeBody();
         }

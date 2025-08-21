@@ -10,6 +10,7 @@ import dev.ionfusion.fusion._private.StreamWriter;
 import dev.ionfusion.fusion._private.doc.model.BindingDoc;
 import dev.ionfusion.fusion._private.doc.model.ModuleDocs;
 import dev.ionfusion.fusion._private.doc.model.ModuleEntity;
+import dev.ionfusion.fusion._private.doc.site.Generator;
 import dev.ionfusion.fusion._private.doc.tool.MarkdownWriter;
 import java.io.IOException;
 import java.util.Arrays;
@@ -20,6 +21,7 @@ import java.util.function.Predicate;
 
 final class ModuleWriter
     extends MarkdownWriter
+    implements Generator<Void>
 {
     private final Predicate<ModuleIdentity> myFilter;
     private final ModuleEntity              myModuleEntity;
@@ -37,7 +39,10 @@ final class ModuleWriter
         myModuleId = myModuleEntity.getIdentity();
     }
 
-    void renderModule()
+
+
+    @Override
+    public void generate(Void dest)
         throws IOException
     {
         renderHeader();
