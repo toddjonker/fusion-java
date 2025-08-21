@@ -6,6 +6,7 @@ package dev.ionfusion.fusion._private.doc.layout;
 import dev.ionfusion.fusion.ModuleIdentity;
 import dev.ionfusion.fusion._private.HtmlWriter;
 import dev.ionfusion.fusion._private.StreamWriter;
+import dev.ionfusion.fusion._private.doc.site.Generator;
 import dev.ionfusion.fusion._private.doc.tool.DocIndex;
 import java.io.IOException;
 import java.util.Map;
@@ -15,6 +16,7 @@ import java.util.function.Predicate;
 
 final class PermutedIndexWriter
     extends HtmlWriter
+    implements Generator<Void>
 {
     private final Predicate<ModuleIdentity> myFilter;
     private final DocIndex                  myIndex;
@@ -124,7 +126,8 @@ final class PermutedIndexWriter
     }
 
 
-    void renderIndex()
+    @Override
+    public void generate(Void dest)
         throws IOException
     {
         permute();

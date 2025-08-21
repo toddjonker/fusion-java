@@ -16,34 +16,31 @@ import java.util.ArrayList;
 public class MarkdownArticleLayout
     extends CommonLayout<MarkdownArticle>
 {
+    public MarkdownArticleLayout(Artifact<MarkdownArticle> artifact)
+    {
+        super(artifact);
+    }
+
+
     @Override
-    protected Context makeContext(Artifact<MarkdownArticle> artifact)
+    void addCssUrls(ArrayList<String> urls)
         throws IOException
     {
-        MarkdownArticle article = artifact.getEntity();
+        super.addCssUrls(urls);
+        urls.add("doc.css");
+    }
 
-        return new Context() {
-            @Override
-            void addCssUrls(ArrayList<String> urls)
-                throws IOException
-            {
-                super.addCssUrls(urls);
-                urls.add("doc.css");
-            }
+    @Override
+    String getTitle()
+        throws IOException
+    {
+        return getEntity().getTitle();
+    }
 
-            @Override
-            String getTitle()
-                throws IOException
-            {
-                return article.getTitle();
-            }
-
-            @Override
-            void renderContent(StreamWriter out)
-                throws IOException
-            {
-                new MarkdownWriter(out).markdown(article.getContent());
-            }
-        };
+    @Override
+    void renderContent(StreamWriter out)
+        throws IOException
+    {
+        new MarkdownWriter(out).markdown(getEntity().getContent());
     }
 }
