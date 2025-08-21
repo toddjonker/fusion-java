@@ -5,39 +5,35 @@ package dev.ionfusion.fusion._private.doc.site;
 
 import static java.util.Objects.requireNonNull;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
- * Represents a physical artifact to be produced during site generation.
- * It ties an entity to a file and a generator that can produce it.
+ * Represents a physical artifact to be produced during site generation. It ties an entity to a path
+ * within the site root.
  *
- * @param <E> the type of entity used to generate the artifact.
+ * @param <Entity> the type of entity providing artifact content.
  */
-public final class Artifact <E>
+public class Artifact <Entity>
 {
-    private final Path                 myFile;
-    private final E                    myEntity;
-    private final ArtifactGenerator<E> myGenerator;
+    private final Entity myEntity;
+    private final Path   myPath;
 
     /**
      * Creates a new artifact.
      *
-     * @param file must be relative to the site root.
-     * @param generator must not be null.
      * @param entity must not be null.
+     * @param path must be relative to the site root.
      */
-    public Artifact(Path file, ArtifactGenerator<E> generator, E entity)
+    public Artifact(Entity entity, Path path)
     {
-        if (file.isAbsolute())
+        if (path.isAbsolute())
         {
             throw new IllegalArgumentException("File path must be relative to site root");
         }
 
-        myFile = requireNonNull(file);
-        myGenerator = requireNonNull(generator);
         myEntity = requireNonNull(entity);
+        myPath = requireNonNull(path);
     }
 
 
@@ -46,19 +42,18 @@ public final class Artifact <E>
      *
      * @return not null.
      */
-    public E getEntity()
+    public Entity getEntity()
     {
         return myEntity;
     }
 
 
     /**
-     * Returns the path to the file this Artifact will produce, relative to
-     * the site root.
+     * Returns the path to the file this Artifact will produce, relative to the site root.
      */
-    public Path getFile()
+    public Path getRelativePath()
     {
-        return myFile;
+        return myPath;
     }
 
 
@@ -70,22 +65,9 @@ public final class Artifact <E>
      */
     public Path getPathToBase()
     {
-        Path parent = myFile.getParent();
-        if (parent == null) return Paths.get("");
+        Path parent = myPath.getParent();
+        if (parent == null) { return Paths.get(""); }
 
         return parent.relativize(Paths.get(""));
-    }
-
-
-    /**
-     * Produces the physical artifact, interpreting this {@linkplain #getFile() file}
-     * relative to the given base directory.
-     *
-     * @param baseDir is full path under which to generate the artifact.
-     */
-    public void generate(Path baseDir)
-        throws IOException
-    {
-        myGenerator.generate(this, baseDir.resolve(getFile()));
     }
 }

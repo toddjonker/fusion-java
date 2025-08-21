@@ -3,22 +3,30 @@
 
 package dev.ionfusion.fusion._private.doc.site;
 
-import java.io.IOException;
-import java.nio.file.Path;
 
 /**
- * Generates a physical artifact from an entity.
+ * Convenience class for {@link Generator}s that close over an entire {@link Artifact}.
  *
- * @param <E> the type of entity consumed by the generator.
+ * @param <Entity> the type of entity providing artifact content.
+ * @param <Destination> where/how to generate content.
  */
-public interface ArtifactGenerator <E>
+public abstract class ArtifactGenerator <Entity, Destination>
+    implements Generator<Destination>
 {
-    /**
-     * Produces an artifact from an entity at a given path.
-     *
-     * @param artifact the artifact to be generated. Must not be null.
-     * @param file an absolute path to the file to be generated. Must not be null.
-     */
-    void generate(Artifact<E> artifact, Path file)
-        throws IOException;
+    private final Artifact<Entity> myArtifact;
+
+    protected ArtifactGenerator(Artifact<Entity> artifact)
+    {
+        myArtifact = artifact;
+    }
+
+    public Artifact<Entity> getArtifact()
+    {
+        return myArtifact;
+    }
+
+    public Entity getEntity()
+    {
+        return myArtifact.getEntity();
+    }
 }
