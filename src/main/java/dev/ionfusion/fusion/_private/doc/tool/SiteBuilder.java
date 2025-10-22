@@ -14,10 +14,10 @@ import dev.ionfusion.fusion._private.doc.site.FileCopyTemplate;
 import dev.ionfusion.fusion._private.doc.site.Site;
 import dev.ionfusion.fusion._private.doc.site.Template;
 import dev.ionfusion.fusion._private.doc.tool.layout.AlphabeticalIndexLayout;
-import dev.ionfusion.fusion._private.doc.tool.layout.MarkdownArticleLayout;
 import dev.ionfusion.fusion._private.doc.tool.layout.ModuleLayout;
 import dev.ionfusion.fusion._private.doc.tool.layout.PermutedIndexLayout;
 import dev.ionfusion.fusion._private.doc.tool.layout.StreamingTemplate;
+import dev.ionfusion.fusion._private.doc.tool.mustache.MustacheTemplate;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.function.Predicate;
@@ -52,6 +52,17 @@ public class SiteBuilder
         // At the moment we only support one repository.
         assert myRepo == null;
         myRepo = new RepoEntity(myIndex, repoDir, myModuleSelector, myTopLevel);
+    }
+
+
+    public <E> void placeArtifact(E entity, Path path, Template<E, Path> template)
+    {
+        mySite.placeArtifact(entity, path, template);
+    }
+
+    public <E> void placeArtifact(E entity, String path, Template<E, Path> template)
+    {
+        mySite.placeArtifact(entity, path, template);
     }
 
     private <E> void placePage(E entity, Path path, Template<E, StreamWriter> template)
@@ -112,6 +123,9 @@ public class SiteBuilder
         String[] fileNames = fromDir.toFile().list();
         if (fileNames == null) return;
 
+        MustacheTemplate<MarkdownArticle> template =
+            new MustacheTemplate<>("src/doc/templates/article.html");
+
         for (String fileName : fileNames)
         {
             Path fromPath = fromDir.resolve(fileName);
@@ -122,7 +136,7 @@ public class SiteBuilder
                 Path toPath = toDir.resolve(baseName + ".html");
 
                 MarkdownArticle article = new MarkdownArticle(fromPath);
-                placePage(article, toPath, MarkdownArticleLayout::new);
+                placeArtifact(article, toPath, template);
             }
             else if (isDirectory(fromPath))
             {
