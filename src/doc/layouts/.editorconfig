@@ -1,0 +1,7 @@
+[*]
+
+# Avoid forcefully adding a final newline to template files, since that can impact
+# HTML rendering.
+# Frustratingly, IDEA also *removes* those added manually.
+# Better to not have them than to break formatting. 🤷
+insert_final_newline = false

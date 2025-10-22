@@ -1,0 +1,11 @@
+{{! Copyright Ion Fusion contributors. All rights reserved. }}
+{{! SPDX-License-Identifier: Apache-2.0 }}
+{{<common}}
+  {{$moreCss}}
+    <link href='doc.css' rel='stylesheet' type='text/css'></link>
+  {{/moreCss}}
+  {{$title}}{{entity.title}}{{/title}}
+  {{$content}}
+    {{#md}}{{&entity.content}}{{/md}}
+  {{/content}}
+{{/common}}
