@@ -48,6 +48,10 @@ public class SiteBuilder
         return mySite;
     }
 
+    public <E> void placeArtifact(E entity, String path, Template<E, Path> template)
+    {
+        mySite.placeArtifact(entity, path, template);
+    }
 
     private <E> void placePage(E entity, Path path, Template<E, StreamWriter> template)
     {

@@ -10,6 +10,7 @@ import dev.ionfusion.fusion.FusionRuntime;
 import dev.ionfusion.fusion.ModuleIdentity;
 import dev.ionfusion.fusion._private.doc.model.RepoEntity;
 import dev.ionfusion.fusion._private.doc.tool.SiteBuilder;
+import dev.ionfusion.fusion._private.doc.tool.mustache.MustacheTemplate;
 import java.io.File;
 import java.io.PrintWriter;
 import java.nio.file.Path;
@@ -175,6 +176,10 @@ class Document
                 log.accept("Discovering static assets");
                 site.placeAssets(assets);
             }
+
+            site.placeArtifact("dummy", "protostache.html",
+                               new MustacheTemplate<>("src/doc/layouts/proto.html"));
+
 
             log.accept("Building indices");
             site.prepareIndexes();

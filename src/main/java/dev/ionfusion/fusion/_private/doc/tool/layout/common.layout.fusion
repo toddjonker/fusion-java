@@ -1,0 +1,131 @@
+/*
+
+What is a layout?
+* A template that produces a document, effectively forms the shell.
+* Can extend another layout acting as its container
+
+What does it need?
+* Accepts input "arguments" of various types
+  * Plain text (literals like a page title)
+    * But they probably need escaping too?
+  * Formatted text
+  * content blocks
+* The type matters so that we know whether escaping should be performed.
+
+What does it provide?
+* Defines parameters that can be accessed from content populated within it.
+  * Dynamic scope makes it easy to add params without having to thread them
+    through multiple layers.
+* context-sensitive syntax?
+
+What templating features would be useful?
+* Attach an id to an element (use proper bindings?)
+* Link rendering
+* Track whether a content fragment is escaped (and for what notation?)
+
+*/
+(define_parameter base_url)
+
+
+// TODO This is working too far in advance.
+//   Just start by porting the Java code.
+//   Start with a much more simple protocol for printing to stdout,
+//   and build up from there rather than designing in a vacuum.
+
+(define_layout (common title listof::url::css body)
+  // print/println act as escape-hatch directly to the output stream
+  // where content is trusted.
+  (println "<!DOCTYPE html>")
+  (<html>
+    (<head>
+      // TODO some elements don't have closing tags
+      <meta {'http-equiv': "Content-Type",
+             'content': "text/html; charset=utf-8"}>
+      <base {href: (let [(base (base_url))]
+                     (if (or (is_empty base_url) (== base_url "."))
+                       "."
+                       // TODO track that this is already properly escaped?
+                       (concat "./" (escape base_url))))}>
+     (<title> (escape title))
+     (for [(sheet css)]
+       (<link { href: sheet, rel:stylesheet type:"text/css"}>)))
+    (<body>
+      body)))
+
+(define (<> tag content)
+  (print "<" tag ">")
+  (content)
+  (print "</" tag ">"))
+
+(define (common_layout base_url css_urls title content)
+  (let [(title (if (== 0 (size title))
+                 "Ion Fusion Documentation"
+                 title))]
+    (println "<!DOCTYPE html>")
+    (<> html
+      (<> head
+        (println "<meta http-equiv='Content-Type' content='text/html; charset=utf-8'>")
+        (when base_url
+          (println "<base href='" (escape base_url) "'>"))
+        (<> title (escape title))
+        (for [(sheet css)]
+          (println "<link href='" (escape sheet) " rel='stylesheet' type='text/css'></link>")))
+     (<> "body"
+       (content)))))
+
+
+(define_template (base_layout base_url css_urls title content)
+  '''
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
+    '''
+    (when base_url
+      (^ "<base href='" (escape base_url) "'>"))
+    '''
+    <title>'''(escape title)'''</title>
+    '''
+    (for [(sheet css)]
+      '''
+      <link href="'''(escape sheet)'''" rel='stylesheet' type='text/css'></link>
+      ''')
+    '''
+  </head>
+  <body>''' (content) '''</body>
+  </html>
+  '''
+)
+
+'''
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
+  ${(when base_url
+      (^ "<base href='" (escape base_url) "'>"))}
+  <title>${(escape title)}</title>
+  ${(for [(sheet css)]
+      "<link href='${(escape sheet)}' rel='stylesheet' type='text/css'></link>")}
+  </head>
+  <body>${content}</body>
+</html>
+'''
+
+// Mustache-inspired, using {(...)} in place of lob-alike {{...}}
+'''
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
+  {(#base_url)}
+    <base href='{(base_url)}'>
+  {(/base_url)}
+  <title>{(title)}</title>
+  {(#css)}
+     <link href='{(css)}' rel='stylesheet' type='text/css'></link>
+  {(/css)}
+  </head>
+  <body>{($body)}No body provided!{(/body)}</body>
+</html>
+'''
