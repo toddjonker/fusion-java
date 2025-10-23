@@ -42,7 +42,7 @@ final class AlphabeticalIndexWriter
             boolean printedOne = false;
             for (ModuleIdentity id : entry.getValue())
             {
-                if (myFilter.test(id))
+                if (myFilter.test(id))  // Push into index
                 {
                     if (printedOne)
                     {
