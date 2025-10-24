@@ -13,9 +13,7 @@ import dev.ionfusion.fusion._private.doc.model.MarkdownArticle;
 import dev.ionfusion.fusion._private.doc.site.FileCopyTemplate;
 import dev.ionfusion.fusion._private.doc.site.Site;
 import dev.ionfusion.fusion._private.doc.site.Template;
-import dev.ionfusion.fusion._private.doc.tool.layout.AlphabeticalIndexLayout;
 import dev.ionfusion.fusion._private.doc.tool.layout.ModuleLayout;
-import dev.ionfusion.fusion._private.doc.tool.layout.PermutedIndexLayout;
 import dev.ionfusion.fusion._private.doc.tool.layout.StreamingTemplate;
 import dev.ionfusion.fusion._private.doc.tool.mustache.MustacheTemplate;
 import java.nio.file.Path;
@@ -180,7 +178,12 @@ public class SiteBuilder
         AlphaIndex alpha = myIndex.alphabetize();
         PermutedIndex permuted = myIndex.permute();
 
-        placePage(alpha, "binding-index.html", AlphabeticalIndexLayout::new);
-        placePage(permuted, "permuted-index.html", PermutedIndexLayout::new);
+        MustacheTemplate<AlphaIndex> alphaTemplate =
+            new MustacheTemplate<>("src/doc/templates/binding-index.html");
+        MustacheTemplate<PermutedIndex> permuTemplate =
+            new MustacheTemplate<>("src/doc/templates/permuted-index.html");
+
+        placeArtifact(alpha, "binding-index.html", alphaTemplate);
+        placeArtifact(permuted, "permuted-index.html", permuTemplate);
     }
 }

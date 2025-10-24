@@ -1,0 +1,16 @@
+{{! Copyright Ion Fusion contributors. All rights reserved. }}
+{{! SPDX-License-Identifier: Apache-2.0 }}
+{{<common}}
+  {{$moreCss}}
+    <link href='index.css' rel='stylesheet' type='text/css'></link>
+  {{/moreCss}}
+  {{$title}}Fusion Binding Index (Permuted){{/title}}
+  {{$content}}
+    <h1>Permuted Binding Index</h1>
+    <table><tbody>
+      {{#entity}}
+<tr><td class='prefix'>{{prefix}}</td><td class='tail'><span class='keyword'>{{keyword}}</span>{{suffix}}</td><td>{{#exports}}{{>export-link}}, {{/exports}}</td></tr>
+      {{/entity}}
+    </tbody></table>
+  {{/content}}
+{{/common}}
