@@ -1,0 +1,18 @@
+{{! Copyright Ion Fusion contributors. All rights reserved. }}
+{{! SPDX-License-Identifier: Apache-2.0 }}
+{{<common}}
+  {{$moreCss}}
+    <link href='index.css' rel='stylesheet' type='text/css'></link>
+  {{/moreCss}}
+  {{$title}}Fusion Binding Index{{/title}}
+  {{$content}}
+    <h1>Binding Index</h1>
+    <table>
+      <tbody>
+        {{#entity.alphaEntries}}{{! TODO this leaves a trailing comma; no good way to avoid it in Mustache }}
+<tr><td class='bound'>{{bindingName}}</td><td>{{#modules}}<a href='.{{.}}.html#{{bindingName}}'>{{.}}</a>, {{/modules}}</td></tr>
+        {{/entity.alphaEntries}}
+      </tbody>
+    </table>
+  {{/content}}
+{{/common}}

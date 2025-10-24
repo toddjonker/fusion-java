@@ -13,7 +13,6 @@ import dev.ionfusion.fusion._private.doc.model.MarkdownArticle;
 import dev.ionfusion.fusion._private.doc.site.FileCopyTemplate;
 import dev.ionfusion.fusion._private.doc.site.Site;
 import dev.ionfusion.fusion._private.doc.site.Template;
-import dev.ionfusion.fusion._private.doc.tool.layout.AlphabeticalIndexLayout;
 import dev.ionfusion.fusion._private.doc.tool.layout.ModuleLayout;
 import dev.ionfusion.fusion._private.doc.tool.layout.PermutedIndexLayout;
 import dev.ionfusion.fusion._private.doc.tool.layout.StreamingTemplate;
@@ -179,7 +178,10 @@ public class SiteBuilder
     {
         PermutedIndex permuted = myIndex.permute();
 
-        placePage(myIndex, "binding-index.html", AlphabeticalIndexLayout::new);
+        MustacheTemplate<DocIndex> alphaTemplate =
+            new MustacheTemplate<>("src/doc/layouts/binding-index.html");
+
+        placeArtifact(myIndex, "binding-index.html", alphaTemplate);
         placePage(permuted, "permuted-index.html", PermutedIndexLayout::new);
     }
 }
