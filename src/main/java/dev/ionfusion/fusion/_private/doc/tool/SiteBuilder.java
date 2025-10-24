@@ -15,7 +15,6 @@ import dev.ionfusion.fusion._private.doc.model.RepoEntity;
 import dev.ionfusion.fusion._private.doc.site.FileCopyTemplate;
 import dev.ionfusion.fusion._private.doc.site.Site;
 import dev.ionfusion.fusion._private.doc.site.Template;
-import dev.ionfusion.fusion._private.doc.tool.layout.AlphabeticalIndexLayout;
 import dev.ionfusion.fusion._private.doc.tool.layout.ModuleLayout;
 import dev.ionfusion.fusion._private.doc.tool.layout.PermutedIndexLayout;
 import dev.ionfusion.fusion._private.doc.tool.layout.StreamingTemplate;
@@ -171,7 +170,10 @@ public class SiteBuilder
         // The two index artifacts are different layouts of the same entity.
         DocIndex docIndex = buildDocIndex(myModuleSelector, myRepo.getModules());
 
-        placePage(docIndex, "binding-index.html", AlphabeticalIndexLayout.template(myModuleSelector));
+        MustacheTemplate<DocIndex> alphaTemplate =
+            new MustacheTemplate<>("src/doc/layouts/binding-index.html");
+
+        placeArtifact(docIndex, "binding-index.html", alphaTemplate);
         placePage(docIndex, "permuted-index.html", PermutedIndexLayout.template(myModuleSelector));
     }
 }

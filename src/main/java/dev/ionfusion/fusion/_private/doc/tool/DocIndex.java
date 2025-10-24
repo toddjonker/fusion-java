@@ -32,6 +32,35 @@ public final class DocIndex
     }
 
 
+    public final class IndexEntry
+    {
+        private final String myName;
+        private final Set<ModuleIdentity> myModuleIds;
+
+        public IndexEntry(Map.Entry<String, Set<ModuleIdentity>> entry)
+        {
+            myName = entry.getKey();
+            myModuleIds = entry.getValue();
+        }
+
+        public String getName()
+        {
+            return myName;
+        }
+
+        public Set<ModuleIdentity> getModuleIds()
+        {
+            return myModuleIds;
+        }
+    }
+
+
+    public Iterator<IndexEntry> alphaEntries()
+    {
+        return myNameMap.entrySet().stream().map(IndexEntry::new).iterator();
+    }
+
+
     //========================================================================
 
 
