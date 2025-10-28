@@ -3,15 +3,16 @@
 
 package dev.ionfusion.fusion._private.doc.tool;
 
+import static java.util.Comparator.comparing;
+
 import dev.ionfusion.fusion.ModuleIdentity;
 import dev.ionfusion.fusion._private.doc.model.BindingDoc;
 import dev.ionfusion.fusion._private.doc.model.ModuleDocs;
 import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
 import java.util.SortedMap;
+import java.util.SortedSet;
 import java.util.TreeMap;
+import java.util.TreeSet;
 
 /**
  * Holds aggregated documentation and cross-references for a module.
@@ -21,7 +22,9 @@ public class ModuleEntity
     private final DocIndex                  myIndex;
     private final ModuleIdentity            myModuleIdentity;
     private       ModuleDocs                myModuleDocs;
-    private final Map<String, ModuleEntity> myChildren;
+
+    /** Sorted by {@class ModuleIdentity}. */
+    private final SortedSet<ModuleEntity> mySubmodules;
 
     private final SortedMap<String, ExportedBinding> myExportedBindings;
 
@@ -30,7 +33,7 @@ public class ModuleEntity
     {
         myIndex = index;
         myModuleIdentity = id;
-        myChildren = new HashMap<>();
+        mySubmodules = new TreeSet<>(comparing(ModuleEntity::getIdentity));
         myExportedBindings = new TreeMap<>(index.getBoundNameComparator());
     }
 
@@ -67,22 +70,20 @@ public class ModuleEntity
     //=========================================================================
     // Submodules
 
-    void addChild(ModuleEntity child)
+    void addSubmodule(ModuleEntity child)
     {
-        myChildren.put(child.getIdentity().baseName(), child);
-    }
-
-    public ModuleEntity getChild(String name)
-    {
-        return myChildren.get(name);
+        assert child.getIdentity().parent() == myModuleIdentity;
+        mySubmodules.add(child);
     }
 
     /**
-     * Not sorted.
+     * Sorted by name.
+     *
+     * @return not null.
      */
-    public Set<String> getChildNames()
+    public Collection<ModuleEntity> submodules()
     {
-        return myChildren.keySet();
+        return mySubmodules;
     }
 
 
