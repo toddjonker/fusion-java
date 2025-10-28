@@ -13,7 +13,6 @@ import dev.ionfusion.fusion._private.doc.model.MarkdownArticle;
 import dev.ionfusion.fusion._private.doc.site.FileCopyTemplate;
 import dev.ionfusion.fusion._private.doc.site.Site;
 import dev.ionfusion.fusion._private.doc.site.Template;
-import dev.ionfusion.fusion._private.doc.tool.layout.ModuleLayout;
 import dev.ionfusion.fusion._private.doc.tool.layout.StreamingTemplate;
 import dev.ionfusion.fusion._private.doc.tool.mustache.MustacheTemplate;
 import java.nio.file.Path;
@@ -83,7 +82,8 @@ public class SiteBuilder
     public void placeModules()
         throws FusionException
     {
-        Template<ModuleEntity, StreamWriter> template = ModuleLayout.template(myModuleSelector);
+        MustacheTemplate<ModuleEntity> template =
+            new MustacheTemplate<>("src/doc/templates/module.html");
 
         for (ModuleEntity module : myRepo.getSelectedModules())
         {
@@ -92,7 +92,7 @@ public class SiteBuilder
             ModuleIdentity id = module.getIdentity();
             Path file = Paths.get(".", id.absolutePath() + ".html");
 
-            placePage(module, file, template);
+            placeArtifact(module, file, template);
         }
     }
 
