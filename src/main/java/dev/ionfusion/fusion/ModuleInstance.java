@@ -182,11 +182,6 @@ final class ModuleInstance
             doc = module.myStore.document(binding.myAddress);
         }
 
-        if (doc != null)
-        {
-            doc.addProvidingModule(myIdentity);
-        }
-
         return doc;
     }
 
