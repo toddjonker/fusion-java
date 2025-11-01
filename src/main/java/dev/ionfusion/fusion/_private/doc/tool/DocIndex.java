@@ -7,6 +7,7 @@ import dev.ionfusion.fusion.ModuleIdentity;
 import dev.ionfusion.fusion._private.doc.model.ModuleDocs;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -46,6 +47,35 @@ public final class DocIndex
     public TreeMap<String, Set<ModuleIdentity>> getNameMap()
     {
         return myNameMap;
+    }
+
+
+    public final class AlphaEntry
+    {
+        private final String                   myName;
+        private final Iterable<ModuleIdentity> myModules;
+
+        public AlphaEntry(Map.Entry<String, Set<ModuleIdentity>> entry)
+        {
+            myName = entry.getKey();
+            myModules = entry.getValue();
+        }
+
+        public String bindingName()
+        {
+            return myName;
+        }
+
+        public Iterable<ModuleIdentity> modules()
+        {
+            return myModules;
+        }
+    }
+
+
+    public Iterator<AlphaEntry> alphaEntries()
+    {
+        return myNameMap.entrySet().stream().map(AlphaEntry::new).iterator();
     }
 
 
