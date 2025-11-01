@@ -139,6 +139,7 @@ final class ModuleInstance
 
     ModuleDocs getDocs()
     {
+        // TODO This map should be constructed downstream.
         Set<BaseSymbol> names = providedNames();
         Map<String, BindingDoc> bindings =
             (names.isEmpty()
