@@ -91,7 +91,7 @@ tasks.test {
     // Collect Fusion coverage data IFF a report is being generated.
     mustRunAfter(fcovConfigure)
 
-    inputs.dir(layout.projectDirectory.dir("ftst"))
+    inputs.dir(layout.projectDirectory.dir("src/test/fusion"))
 
     jvmArgumentProviders.add {
         if (fcovRunning) {
@@ -109,7 +109,7 @@ val ftstRepo = tasks.register<Jar>("ftstRepo") {
     archiveFileName = "ftst-repo.jar"
 
     into("FUSION-REPO") {
-        from(layout.projectDirectory.dir("ftst/repo"))
+        from(layout.projectDirectory.dir("src/test/fusion/repo"))
         includeEmptyDirs = true
     }
 }

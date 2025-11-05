@@ -36,12 +36,12 @@ public class TestSetup
 
     public static Path testScriptDirectory()
     {
-        return PROJECT_DIRECTORY.resolve("ftst");
+        return PROJECT_DIRECTORY.resolve("src/test/fusion/scripts");
     }
 
     public static Path testRepositoryDirectory()
     {
-        return testScriptDirectory().resolve("repo");
+        return testScriptDirectory().resolve("../repo");
     }
 
 
