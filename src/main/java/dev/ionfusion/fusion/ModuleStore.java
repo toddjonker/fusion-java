@@ -25,6 +25,7 @@ final class ModuleStore
                 BindingDoc[]   bindingDocs)
     {
         int variableCount = definedNames.length;
+        assert bindingDocs.length <= variableCount;
 
         myRegistry = registry;
         myRequiredModules = requiredModules;
@@ -39,6 +40,7 @@ final class ModuleStore
                 BindingDoc[]   bindingDocs)
     {
         assert values.length == definedNames.length;
+        assert bindingDocs.length <= definedNames.length;
 
         myRegistry = registry;
         myRequiredModules = new ModuleStore[0];
@@ -104,6 +106,7 @@ final class ModuleStore
 
     BindingDoc document(int address)
     {
+        // Trailing slots aren't allocated for undocumented bindings.
         if (address < myBindingDocs.length)
         {
             BindingDoc doc = myBindingDocs[address];
