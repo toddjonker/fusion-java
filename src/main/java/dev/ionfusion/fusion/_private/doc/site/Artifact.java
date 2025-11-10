@@ -70,4 +70,20 @@ public class Artifact <Entity>
         Path parent = myPath.getParent();
         return (parent == null ? EMPTY_PATH : parent.relativize(EMPTY_PATH));
     }
+
+    public String baseUrl()
+    {
+        String baseUrl = getPathToBase().toString();
+        if (baseUrl.isEmpty() || baseUrl.equals("."))
+        {
+            baseUrl = ".";
+        }
+        else
+        {
+            // TODO Remove this prefix. It is not necessary but prevents
+            //  the output from changing at this time.
+            baseUrl = "./" + baseUrl;
+        }
+        return baseUrl;
+    }
 }

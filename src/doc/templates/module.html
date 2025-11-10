@@ -1,0 +1,62 @@
+{{! Copyright Ion Fusion contributors. All rights reserved. }}
+{{! SPDX-License-Identifier: Apache-2.0 }}
+{{!
+  CSS hierarchy:
+    -- should be something for the overview
+    submodules
+      oneliner
+    exports
+    binding
+      name
+      kind
+      doc
+        oneliner -- presently unused, intended to be text description
+        body -- should have usage/synopsis broken out
+        also
+}}
+{{<common}}
+  {{$moreCss}}
+    <link href='module.css' rel='stylesheet' type='text/css'></link>
+  {{/moreCss}}
+  {{$title}}{{entity.identity.absolutePath}}{{/title}}
+  {{$content}}
+    <h1>Module {{#entity.identity}}{{>breadcrumbs}}{{/entity.identity}}</h1>
+    {{#entity.moduleDocs.overview}}{{#md}}{{&.}}{{/md}}{{/entity.moduleDocs.overview}}
+
+    {{^entity.submodules.empty}}
+      <h2>Submodules</h2>
+      <ul class='submodules'>
+      {{#entity.submodules}}
+        <li>{{<module-link}}{{$id}}{{identity}}{{/id}}{{$link}}{{identity.baseName}}{{/link}}{{/module-link}}
+          {{#moduleDocs.oneLiner}} &ndash; <span class='oneliner'>{{#md}}{{&.}}{{/md}}</span>{{/moduleDocs.oneLiner}}
+        </li>
+      {{/entity.submodules}}
+      </ul>
+    {{/entity.submodules.empty}}
+
+    {{^entity.exports.empty}}
+      <h2>Exported Bindings</h2>
+      <div class='exports'>
+        {{#entity.exports}}{{<binding-link}}{{$id}}{{moduleId}}{{/id}}{{$name}}{{name}}{{/name}}{{/binding-link}}&nbsp;&nbsp;
+        {{/entity.exports}}
+      </div>
+
+      {{#entity.exports}}
+        <div class='binding' id='{{name}}'><span class='name'>{{name}}</span>
+          {{#docs.kind}}<span class='kind'>{{toString.toLowerCase}}</span>{{/docs.kind}}
+          <div class='doc'>
+            <div class='body'>
+              {{#docs.usage}}{{#md}}{{&nl}}{{&.}}{{&nl}}{{/md}}{{/docs.usage}}
+              {{#docs.body}}{{#md}}{{&nl}}{{&.}}{{&nl}}{{/md}}{{/docs.body}}
+            </div>
+            {{^alsoProvidedBy.empty}}
+               <p class='also'>Also provided by
+               {{#alsoProvidedBy}}{{>export-link}}, {{/alsoProvidedBy}}
+               </p>
+            {{/alsoProvidedBy.empty}}
+          </div>
+        </div>
+      {{/entity.exports}}
+    {{/entity.exports.empty}}
+  {{/content}}
+{{/common}}
