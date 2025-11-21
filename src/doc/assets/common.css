@@ -74,3 +74,8 @@ main {
     padding: 0 1rem;
     overflow: scroll;
 }
+
+pre {
+    padding-inline-start: 1em;
+    overflow-x: auto;
+}
