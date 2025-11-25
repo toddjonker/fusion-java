@@ -10,14 +10,14 @@
 //==========================================================================
 // raise_arity_error
 
-(expect_arity_exn
+(expect_arity_error
   (raise_arity_error /* missing name */ /* missing arity */))
 
-(expect_arity_exn
+(expect_arity_error
   (raise_arity_error "proc" /* missing arity */))
 
-(expect_argument_exn
+(expect_argument_error
   (raise_arity_error /* wrong: */ 0 0))
 
-(expect_argument_exn
+(expect_argument_error
   (raise_arity_error "proc" /* wrong: */ "0"))

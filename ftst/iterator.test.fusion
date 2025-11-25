@@ -15,7 +15,7 @@
       (if (= i len)
         (begin
           (check_false (iterator_has_next iter) "iterator should be empty")
-          (expect_contract_exn (iterator_next iter)))
+          (expect_contract_error (iterator_next iter)))
         (begin
           (check_pred iterator_has_next iter "iterator should have next")
           (let [(actual   (iterator_next iter)),
@@ -49,12 +49,12 @@
 //==========================================================================
 // sexp_iterator
 
-(expect_arity_exn (sexp_iterator))
-(expect_arity_exn (sexp_iterator (sexp) 1))
+(expect_arity_error (sexp_iterator))
+(expect_arity_error (sexp_iterator (sexp) 1))
 
-(expect_argument_exn (sexp_iterator null))
-(expect_argument_exn (sexp_iterator null.list))
-(expect_argument_exn (sexp_iterator []))
+(expect_argument_error (sexp_iterator null))
+(expect_argument_error (sexp_iterator null.list))
+(expect_argument_error (sexp_iterator []))
 
 (check_iter []              (sexp_iterator (quote null.sexp)))
 (check_iter []              (sexp_iterator (sexp)))
@@ -78,7 +78,7 @@
 (let [(i (iterator_append (value_iterator 1) (value_iterator 2)))]
   (check === 1 (iterator_next i))
   (check === 2 (iterator_next i))
-  (expect_contract_exn (iterator_next i)))
+  (expect_contract_error (iterator_next i)))
 
 
 //==========================================================================
@@ -94,11 +94,11 @@
 (let [(i (iterator_choose is_int (list_iterator [true, 1, 2, false])))]
   (check === 1 (iterator_next i))
   (check === 2 (iterator_next i))
-  (expect_contract_exn (iterator_next i)))
+  (expect_contract_error (iterator_next i)))
 
-(expect_argument_exn
+(expect_argument_error
   (iterator_choose true empty_iterator))     // 1st arg not a proc
-(expect_argument_exn
+(expect_argument_error
   (iterator_choose identity []))             // 2nd arg not an iterator
 
 
@@ -116,9 +116,9 @@
 (check_iter []     (iterator_map plus1 empty_iterator))
 (check_iter [2, 8] (iterator_map plus1 (list_iterator [1, 7])))
 
-(expect_argument_exn
+(expect_argument_error
   (iterator_map true empty_iterator))     // 1st arg not a proc
-(expect_argument_exn
+(expect_argument_error
   (iterator_map identity []))             // 2nd arg not an iterator
 
 
@@ -137,14 +137,14 @@
   (check === 1 (iterator_next i))
   (check === 2 (iterator_next i))
   (check === 3 (iterator_next i))
-  (expect_contract_exn (iterator_next i)))
+  (expect_contract_error (iterator_next i)))
 
-(expect_argument_exn
+(expect_argument_error
   (iterator_map_splicing true empty_iterator))     // 1st arg not a proc
-(expect_argument_exn
+(expect_argument_error
   (iterator_map_splicing identity []))             // 2nd arg not an iterator
 
 // Proc doesn't return an iterator
-(expect_result_exn
+(expect_result_error
   (let [(i (iterator_map_splicing identity (list_iterator [1])))]
     (iterator_has_next i)))
