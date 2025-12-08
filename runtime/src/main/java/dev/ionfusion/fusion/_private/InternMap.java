@@ -3,11 +3,10 @@
 
 package dev.ionfusion.fusion._private;
 
-import static java.util.Objects.requireNonNull;
-
+import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
 import java.util.Map;
-import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 /**
@@ -17,8 +16,9 @@ import java.util.function.Function;
  */
 public class InternMap <K, V>
 {
-    private final Map<V, WeakReference<V>> myMap;
+    private final Map<K, WeakReference<V>> myMap;
     private final Function<K, V>           myValueFactory;
+    private final ReferenceQueue<V>        myCleanupQueue = new ReferenceQueue<>();
 
 
     public InternMap(Function<K, V> valueFactory)
@@ -29,7 +29,24 @@ public class InternMap <K, V>
     public InternMap(Function<K, V> valueFactory, int initialCapacity)
     {
         myValueFactory = valueFactory;
-        myMap = new WeakHashMap<>(initialCapacity);
+        myMap = new ConcurrentHashMap<>(initialCapacity);
+    }
+
+
+    /**
+     * Tracks the key that maps to an interned value, so when a value is
+     * collected, we can remove its map entry.
+     */
+    private static class CleanupRef <K, V>
+        extends WeakReference<V>
+    {
+        private final K myKey;
+
+        CleanupRef(V value, ReferenceQueue<V> queue, K key)
+        {
+            super(value, queue);
+            myKey = key;
+        }
     }
 
 
@@ -41,40 +58,54 @@ public class InternMap <K, V>
      */
     public V intern(K key)
     {
-        // We do not want to assume that the key is held strongly by the value.
-        // We therefore cannot use the key directly with a WeakHashMap: it
-        // could be collected at any time, and then the corresponding map entry
-        // and our reference to a still-needed interned value.
+        cleanup();
 
-        V val = myValueFactory.apply(requireNonNull(key));
+        // This "box" ensures that we keep a strong reference to the value
+        // even after the remapping function loses it.
+        Object[] box = new Object[1];
 
-        // Prevent other threads from touching the intern table.
-        // This doesn't prevent the GC from removing entries!
-        synchronized (myMap)
-        {
-            WeakReference<V> ref = myMap.get(val);
-            if (ref != null)
+        myMap.compute(key, (k, ref) -> {
+            V value = (ref != null) ? ref.get() : null;
+            if (value == null)
             {
-                // There's a chance that the entry for a string will exist but
-                // the weak reference has been cleared.
-                V interned = ref.get();
-                if (interned != null) return interned;
+                value = myValueFactory.apply(key);
+                ref = new CleanupRef<>(value, myCleanupQueue, key);
             }
 
-            ref = new WeakReference<>(val);
-            myMap.put(val, ref);
+            // Stash the interned value, otherwise it could be GCed here!
+            box[0] = value;
 
-            return val;
-        }
+            return ref;
+        });
+
+        @SuppressWarnings("unchecked")
+        V result = (V) box[0];
+
+        return result;
     }
 
 
     /**
-     * Returns the number of entries in the map.
-     * This may not reflect unreachable values.
+     * Remove any entries with garbage-collected values.
      */
+    @SuppressWarnings("unchecked")
+    public void cleanup()
+    {
+        CleanupRef<K, V> ref;
+        while ((ref = (CleanupRef<K, V>) myCleanupQueue.poll()) != null)
+        {
+            // CRITICAL: Use two-argument remove to avoid race condition.
+            // The map entry may have been replaced with a new reference
+            // for the same key after this reference was queued for cleanup.
+            // Only remove if the exact reference still matches.
+            myMap.remove(ref.myKey, ref);
+        }
+    }
+
+
     public int size()
     {
+        cleanup();
         return myMap.size();
     }
 }
