@@ -102,7 +102,7 @@ final class FusionSymbol
         @Override
         public BaseSymbol annotate(Evaluator eval, BaseSymbol[] annotations)
         {
-            return FusionSymbol.annotate(this, annotations);
+            return FusionSymbol.annotate(eval.vspace(), this, annotations);
         }
 
         @Override
@@ -436,12 +436,6 @@ final class FusionSymbol
     private static final InternMap<String, ActualSymbol>
         ourActualSymbols = new InternMap<>(ActualSymbol::new, 256);
 
-    /**
-     * Interning table for annotated symbols.
-     */
-    private static final InternMap<AnnotatedSymbol, AnnotatedSymbol>
-        ourAnnotatedSymbols = new InternMap<>((s) -> s, 256);
-
     // TODO Perhaps add expungeStaleEntries() to force GC of intern tables.
     // Because WeakHashMap only purges entries on access, we could end up with
     // a bunch of garbage in there after code compilation is done, and unless
@@ -462,7 +456,8 @@ final class FusionSymbol
     }
 
 
-    private static BaseSymbol annotate(BaseSymbol unannotated,
+    private static BaseSymbol annotate(ValueSpace vspace,
+                                       BaseSymbol unannotated,
                                        BaseSymbol[] annotations)
     {
         assert ! (unannotated instanceof AnnotatedSymbol);
@@ -472,7 +467,7 @@ final class FusionSymbol
         // No way to avoid allocating a key aggregating the value+annotations.
         AnnotatedSymbol sym = new AnnotatedSymbol(annotations, unannotated);
 
-        return ourAnnotatedSymbols.intern(sym);
+        return vspace.intern(sym);
     }
 
 
@@ -489,7 +484,7 @@ final class FusionSymbol
                                  String    value)
     {
         BaseSymbol base = makeSymbol(eval, value);
-        return annotate(base, BaseSymbol.internSymbols(annotations));
+        return annotate(eval.vspace(), base, BaseSymbol.internSymbols(annotations));
     }
 
 
