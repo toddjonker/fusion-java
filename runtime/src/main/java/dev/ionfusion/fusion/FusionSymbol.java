@@ -27,7 +27,9 @@ final class FusionSymbol
 
 
     abstract static class BaseSymbol
-        extends FusionText.BaseText
+        // This qualified use is necessary in some build contexts.
+        // See https://github.com/ion-fusion/fusion-java/pull/383 for example.
+        extends FusionText.BaseText<BaseSymbol>
     {
         static final BaseSymbol[] EMPTY_ARRAY = new BaseSymbol[0];
 
@@ -500,8 +502,7 @@ final class FusionSymbol
                                            Object fusionSymbol,
                                            String[] annotations)
     {
-        BaseSymbol base = (BaseSymbol) fusionSymbol;
-        return base.annotate(eval, BaseSymbol.internSymbols(annotations));
+        return ((BaseSymbol) fusionSymbol).annotate(eval, annotations);
     }
 
 
