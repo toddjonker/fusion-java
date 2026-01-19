@@ -4,6 +4,7 @@
 package dev.ionfusion.fusion;
 
 import static dev.ionfusion.fusion.FusionString.makeString;
+import static dev.ionfusion.fusion.FusionSymbol.BaseSymbol.internSymbol;
 import static dev.ionfusion.fusion.FusionValue.UNDEF;
 
 import com.amazon.ion.IonReader;
@@ -66,6 +67,13 @@ final class GlobalState
     final Binding myKernelRenameOutBinding;
     final Binding myKernelRequireBinding;
 
+    /**
+     * The value of {@code (quote origin)}, used as a syntax property to mark
+     * original code.
+     */
+    final Object myStxPropOrigin;
+
+
     private GlobalState(IonSystem                  ionSystem,
                         FusionRuntimeBuilder       builder,
                         IonReaderBuilder           ionReaderBuilder,
@@ -100,6 +108,8 @@ final class GlobalState
         myKernelRequireBinding       = kernelBinding(REQUIRE);
         myKernelRenameInBinding      = kernelBinding(RENAME_IN);
         myKernelRenameOutBinding     = kernelBinding(RENAME_OUT);
+
+        myStxPropOrigin = internSymbol("origin");
     }
 
 
