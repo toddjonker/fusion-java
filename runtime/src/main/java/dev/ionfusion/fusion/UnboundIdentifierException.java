@@ -25,7 +25,7 @@ public final class UnboundIdentifierException
     }
 
     @Override
-    String getBaseMessage()
+    public String getBaseMessage()
     {
         return "unbound identifier. The symbol " + IonTextUtils.printQuotedSymbol(myText) +
                    " has no binding where it's used, so check for correct spelling and imports.";

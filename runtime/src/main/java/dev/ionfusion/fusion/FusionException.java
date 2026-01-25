@@ -20,6 +20,14 @@ import java.util.Objects;
  * one to throw arbitrary values, not just "exception" types.  Within the
  * FusionJava implementation, all such values are wrapped in
  * {@link FusionException}s.
+ * <p>
+ * In order to show Fusion stack traces when these Java exceptions are printed,
+ * {@link #getMessage()} consists of two parts: the <em>base message</em>} (a
+ * description of the exception) and the <em>context</em> (the Fusion stack
+ * trace).
+ * Rather than simply printing the Java exception, applications and tools may
+ * produce better messages by getting the components individually via
+ * {@link #getBaseMessage()} and {@link #getContext()}.
  */
 @SuppressWarnings("serial")
 public class FusionException
@@ -31,31 +39,29 @@ public class FusionException
      */
     private List<SourceLocation> myContext;
 
-    // Constructors aren't public because I don't want applications to create
-    // exceptions directly or subclass them.
 
-    FusionException(String message)
+    public FusionException(String message)
     {
         super(message);
     }
 
-    FusionException(String message, Throwable cause)
+    public FusionException(String message, Throwable cause)
     {
         super(message, cause);
     }
 
-    FusionException(Throwable cause)
+    public FusionException(Throwable cause)
     {
         super(cause.getMessage(), cause);
     }
 
 
     /**
-     * Prepends a now location to the continuation of this exception.
+     * Prepends a location to the continuation trace of this exception.
      *
      * @param location can be null to indicate an unknown location.
      */
-    void addContext(SourceLocation location)
+    public void addContext(SourceLocation location)
     {
         if (myContext == null)
         {
@@ -123,7 +129,7 @@ public class FusionException
      *
      * @return the Fusion value raised by Fusion code.
      */
-    Object getRaisedValue()
+    public Object getRaisedValue()
     {
         return this;
     }
@@ -132,12 +138,71 @@ public class FusionException
      * Returns the message string given to the exception constructor.
      * This should be used instead of {@link #getMessage()} since the latter is
      * overridden here to delegate to {@link #displayMessage}.
+     *
+     * @return the base message.
      */
-    String getBaseMessage()
+    public String getBaseMessage()
     {
         return super.getMessage();
     }
 
+    /** XXX Method uses package-private class Evaluator.
+     * However, that's always `null` when invoked from getMessage()!
+     * There's a core problem here that displaying the exception in tools
+     * does not have access to the Evaluator, so anything we print needs to
+     * be able to do so without running Fusion code.
+     *
+     * Most overrides need to write general FVs:
+     *   * ArgumentException writes FVs
+     *   * ArityFailure write FVs
+     *   * CheckException has complex processing to display check frames
+     *   * FusionUserException simply `write`s the raised FV
+     *   * ResultFailure writes the FV results
+     *
+     * Some overrides write syntax objects:
+     *   * FusionAssertionException writes its expression at compile time.
+     *   * SyntaxException writes its expression lazily.
+     *
+     * Subclasses need to be able to display and/or write arbitrary FVs,
+     * which we expect should generalize to running Fusion code.
+     *
+     * Do we really want to do that?  That sounds risky; it should probably
+     * happen in a tight sandbox so we don't load code, perform arbitrary IO,
+     * etc.  It at least needs to be have a continuation guard to trap exns.
+     *
+     * Perhaps we don't support that when called from Java code?  I guess that's
+     * basically what we have here, implicitly.  And probably causes a crash.
+     *
+     * Use case: replacing our FExn subclasses with Fusion records that print
+     * themselves from Fusion code.
+     *
+     * -> Racket exn message is a struct field, so printing is handled before
+     *    construction.
+     *
+     * This loses the structure of the information, and IMO grants rendering
+     * decisions to the wrong code. The component reporting the error, for
+     * human or machine, should determine the layout and value display within
+     * the overall report.  This would allow things like fully structured
+     * logging, pretty UX components that don't require parsing and decoding
+     * the message back to its constituents.
+     *
+     * ??? Add embedding APIs to
+     *   * generate the message dynamically
+     *   * get structured info out of the exn
+     *
+     * Options to consider for getMessage():
+     *
+     * PREWRITE the message in all cases (like Racket), and/or:
+     * PRESERVE the arguments for tooling and custom displays.
+     *
+     * HACK the output if a callback is needed and there's no Evaluator.
+     * Similar to `safeWrite` trapping exceptions, output placeholder text,
+     * like a default rendering of records and JValues.
+     *
+     * CAPTURE the Evaluator in subclasses that need it.
+     * Make some sense, its like doing call/cc, ensures a parameterized
+     * context to render in. Violates the normal rules of engagement.
+     */
     void displayMessage(Evaluator eval, Appendable out)
         throws IOException, FusionException
     {
