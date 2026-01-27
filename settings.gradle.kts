@@ -12,4 +12,15 @@
 // Among other things, this becomes the module name in IDEA.
 rootProject.name = "fusion-java"
 
+pluginManagement {
+    repositories {
+        mavenCentral()
+    }
+    plugins {
+        // Enforce our desired inter-package dependency structure.
+        // https://github.com/adrianczuczka/structural
+        id("com.adrianczuczka.structural") version "1.0.0"
+    }
+}
+
 include("testing", "runtime", "sdk")

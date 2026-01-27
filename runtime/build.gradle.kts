@@ -3,6 +3,7 @@
 
 plugins {
     id("buildlogic.java-library-conventions")
+    id("com.adrianczuczka.structural")
     jacoco
 }
 
