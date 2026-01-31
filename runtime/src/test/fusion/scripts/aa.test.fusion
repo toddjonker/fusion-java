@@ -1,0 +1,22 @@
+(require "/fusion/experimental/check")
+
+//(+ (values 1 2) 3)
+
+//(define t (values 1 2))
+
+(define_values (a b) (values 1 2))  // Good
+//  (define_values (c d) (values 1))     // Bad
+//(define_values (e f) (values 1 2 3)) // Bad
+
+(module M "/fusion"
+  (define_values (a b) (values 1 2))  // Good
+//  (define_values (c d) (values 1))     // Bad
+//  (define_values (e f) (values 1 2 3)) // Bad
+
+//  (define x (values 1 2))
+)
+(require M)
+
+//(check = 3 (let_values [((a b) (values 1 2 3))] true))
+
+//(check = 3 (let_values [((a b) 1)] true))
