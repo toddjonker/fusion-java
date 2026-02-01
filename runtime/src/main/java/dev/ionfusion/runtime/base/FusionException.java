@@ -96,6 +96,10 @@ public class FusionException
     }
 
 
+    /**
+     *
+     * @see Throwable#printStackTrace()
+     */
     private void displayContinuation(Appendable out)
         throws IOException
     {
@@ -173,4 +177,6 @@ public class FusionException
 
         return out.toString();
     }
+
+    // TODO Override toString() to not print the Java class?
 }
