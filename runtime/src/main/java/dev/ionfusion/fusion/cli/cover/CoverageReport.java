@@ -134,6 +134,9 @@ public class CoverageReport
         {
             noteFile(file);
         }
+        else {
+            System.err.println("Ignoring script " + file);
+        }
     }
 
     /**
@@ -175,6 +178,7 @@ public class CoverageReport
             }
         };
 
+        System.err.println("Scanning for scripts in " + scriptDirs);
         for (Path dir : scriptDirs)
         {
             walkFileTree(dir, visitor);
@@ -230,6 +234,7 @@ public class CoverageReport
         if (id != null)
         {
             CoveredModule module = myCoveredModules.get(id);
+            assert module != null : "No CoveredModule for " + name;
 
             // Use a SourceLocation with the module's preferred SourceName.
             loc = module.normalizeLocation(loc);

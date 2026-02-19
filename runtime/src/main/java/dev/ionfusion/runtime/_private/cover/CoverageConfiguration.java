@@ -163,7 +163,7 @@ public final class CoverageConfiguration
             {
                 if (source.isEmpty()) continue;
 
-                Path p = Paths.get(source).toAbsolutePath();
+                Path p = Paths.get(source).toAbsolutePath().normalize();
                 if (Files.isDirectory(p))
                 {
                     includedSourceDirs.add(p);
@@ -178,6 +178,8 @@ public final class CoverageConfiguration
                 }
             }
         }
+
+        System.out.println("Coverage configuration including sources: " + includedSourceDirs);
 
         return new CoverageConfiguration(moduleSelector, includedSourceDirs);
     }
