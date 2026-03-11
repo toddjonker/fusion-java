@@ -50,6 +50,9 @@ tasks.test {
     dependsOn(ftstRepo)
 
     inputs.dir(testFusionRepo)
+
+    systemProperty("junit.jupiter.execution.parallel.enabled", true)
+    systemProperty("junit.jupiter.execution.parallel.mode.default", "concurrent")
 }
 
 val ftstRepo = tasks.register<Jar>("ftstRepo") {
