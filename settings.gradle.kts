@@ -12,4 +12,4 @@
 // Among other things, this becomes the module name in IDEA.
 rootProject.name = "fusion-java"
 
-include("testing", "runtime", "fusioncli", "sdk")
+include("testing", "runtime", "fusioncli", "plugin", "sdk")
