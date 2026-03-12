@@ -46,6 +46,23 @@ tasks.test {
 //=============================================================================
 // Documentation
 
+// This configuration is used to declare dependencies only.
+// It is neither resolvable nor consumable.
+val cliRuntimeDeps by configurations.dependencyScope("cliRuntimeDeps")
+
+dependencies {
+    // Declare a project dependency on the producer's runtime output
+    cliRuntimeDeps(project(":fusioncli"))
+}
+
+// This resolvable configuration is used to resolve the CLI's classpath.
+// It extends from the dependency-declaring configuration above.
+val cliRuntime by configurations.resolvable("cliRuntime") {
+    // Wire the dependency declarations
+    extendsFrom(cliRuntimeDeps)
+}
+
+
 val fusiondoc = tasks.register<JavaExec>("fusiondoc") {
     group = "Documentation"
     description = "Generates Fusion language and library documentation."
@@ -60,7 +77,7 @@ val fusiondoc = tasks.register<JavaExec>("fusiondoc") {
         languageVersion = java.toolchain.languageVersion
     }
 
-    classpath = project(":fusioncli").sourceSets["main"].runtimeClasspath
+    classpath = cliRuntime
     mainClass = "dev.ionfusion.fusioncli.Cli"
     args = listOf("document",
                   "--modules",  mainFusionRepo.toString(),
