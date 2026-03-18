@@ -13,7 +13,6 @@ import static dev.ionfusion.fusion.FusionCompare.EqualityTier.TIGHT_EQUAL;
 import static dev.ionfusion.fusion.FusionIo.dispatchIonize;
 import static dev.ionfusion.fusion.FusionIo.dispatchWrite;
 import static dev.ionfusion.fusion.FusionIo.makeIonizeError;
-import static dev.ionfusion.fusion.FusionSymbol.BaseSymbol.internSymbols;
 import static dev.ionfusion.fusion.FusionVoid.voidValue;
 
 import com.amazon.ion.IonSequence;
@@ -154,7 +153,7 @@ final class FusionSexp
                                   String[]  annotations,
                                   Object[]  elements)
     {
-        return immutableSexp(eval, internSymbols(annotations), elements);
+        return immutableSexp(eval, eval.vspace().makeActualSymbols(annotations), elements);
     }
 
 
@@ -197,7 +196,7 @@ final class FusionSexp
                                   String[]  annotations,
                                   List<?>   elements)
     {
-        return immutableSexp(eval, internSymbols(annotations), elements);
+        return immutableSexp(eval, eval.vspace().makeActualSymbols(annotations), elements);
     }
 
 
@@ -216,7 +215,7 @@ final class FusionSexp
     static ImmutablePair pair(Evaluator eval, String[] annotations,
                               Object head, Object tail)
     {
-        return pair(eval, internSymbols(annotations), head, tail);
+        return pair(eval, eval.vspace().makeActualSymbols(annotations), head, tail);
     }
 
 

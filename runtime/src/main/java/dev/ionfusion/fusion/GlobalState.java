@@ -4,7 +4,6 @@
 package dev.ionfusion.fusion;
 
 import static dev.ionfusion.fusion.FusionString.makeString;
-import static dev.ionfusion.fusion.FusionSymbol.BaseSymbol.internSymbol;
 import static dev.ionfusion.fusion.FusionValue.UNDEF;
 
 import com.amazon.ion.IonReader;
@@ -118,7 +117,7 @@ final class GlobalState
         myKernelRenameInBinding      = kernelBinding(RENAME_IN);
         myKernelRenameOutBinding     = kernelBinding(RENAME_OUT);
 
-        myStxPropOrigin = internSymbol("origin");
+        myStxPropOrigin = vspace.makeActualSymbol("origin");
     }
 
 
@@ -233,7 +232,7 @@ final class GlobalState
      */
     private ModuleDefinedBinding kernelBinding(String name)
     {
-        BaseSymbol sym = FusionSymbol.makeSymbol(null, name);
+        BaseSymbol sym = myVspace.makeSymbol(name);
         ModuleDefinedBinding b = myKernelModule.resolveProvidedName(sym).target();
         assert b != null;
         return b;
@@ -258,7 +257,7 @@ final class GlobalState
         BaseSymbol sym = b.getName();
         assert sym.stringValue().equals(name);
 
-        return SyntaxSymbol.make(null, sym).copyReplacingBinding(b);
+        return myVspace.makeSyntaxSymbol(sym).copyReplacingBinding(b);
     }
 
     private static IonStruct kernelDocs(IonSystem system)
