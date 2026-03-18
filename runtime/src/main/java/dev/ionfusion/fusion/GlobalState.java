@@ -49,6 +49,7 @@ final class GlobalState
 
     final IonSystem                  myIonSystem;
     final IonReaderBuilder           myIonReaderBuilder;
+    final StandardValueSpace         myVspace;
     final FileSystemSpecialist       myFileSystemSpecialist;
     final ModuleInstance             myKernelModule;
     final ModuleNameResolver         myModuleNameResolver;
@@ -82,6 +83,7 @@ final class GlobalState
 
     private GlobalState(IonSystem                  ionSystem,
                         StandardFusionRuntimeBuilder builder,
+                        StandardValueSpace         vspace,
                         IonReaderBuilder           ionReaderBuilder,
                         FileSystemSpecialist       fileSystemSpecialist,
                         ModuleInstance             kernel,
@@ -90,6 +92,7 @@ final class GlobalState
     {
         myIonSystem             = ionSystem;
         myIonReaderBuilder      = ionReaderBuilder;
+        myVspace                = vspace;
         myFileSystemSpecialist  = fileSystemSpecialist;
         myKernelModule          = kernel;
         myModuleNameResolver    = resolver;
@@ -121,6 +124,7 @@ final class GlobalState
 
     static GlobalState initialize(IonSystem system,
                                   StandardFusionRuntimeBuilder builder,
+                                  StandardValueSpace vspace,
                                   ModuleRegistry registry,
                                   Namespace initialCurrentNamespace)
         throws FusionException
@@ -161,7 +165,7 @@ final class GlobalState
                                    makeRepositories(builder));
 
         ModuleBuilderImpl ns =
-            new ModuleBuilderImpl(resolver, registry, KERNEL_MODULE_IDENTITY,
+            new ModuleBuilderImpl(vspace, resolver, registry, KERNEL_MODULE_IDENTITY,
                                   kernelDocs(system));
 
         ns.define(ALL_DEFINED_OUT, new ProvideForm.AllDefinedOutForm());
@@ -194,7 +198,8 @@ final class GlobalState
         ModuleInstance kernel = registry.lookup(KERNEL_MODULE_IDENTITY);
 
         GlobalState globals =
-            new GlobalState(system, builder, readerBuilder, fs, kernel, resolver, loadHandler);
+            new GlobalState(system, builder, vspace, readerBuilder, fs,
+                            kernel, resolver, loadHandler);
         return globals;
     }
 

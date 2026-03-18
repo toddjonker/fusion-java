@@ -268,7 +268,8 @@ abstract class Namespace
     }
 
 
-    private final ModuleRegistry myRegistry;
+    private final StandardValueSpace myVspace;
+    private final ModuleRegistry     myRegistry;
     private final ModuleIdentity myModuleId;
 
     /**
@@ -280,11 +281,11 @@ abstract class Namespace
     private final ArrayList<ModuleStore> myRequiredModuleStores =
         new ArrayList<>();
 
-    private final SyntaxWraps          myWraps;
+    private final SyntaxWraps           myWraps;
     private final BoundIdMap<NsBinding> myBindings = new BoundIdMap<>();
     private       int                   myDefinitionCount;
-    private final ArrayList<Object>    myValues   = new ArrayList<>();
-    private ArrayList<BindingDoc> myBindingDocs;
+    private final ArrayList<Object>     myValues   = new ArrayList<>();
+    private       ArrayList<BindingDoc> myBindingDocs;
 
 
     /**
@@ -293,10 +294,12 @@ abstract class Namespace
      * @param wraps generates the {@link SyntaxWraps} for this namespace, given
      *   a reference to {@code this}.
      */
-    Namespace(ModuleRegistry                   registry,
+    Namespace(StandardValueSpace               vspace,
+              ModuleRegistry                   registry,
               ModuleIdentity                   id,
               Function<Namespace, SyntaxWraps> wraps)
     {
+        myVspace   = vspace;
         myRegistry = registry;
         myModuleId = id;
         myWraps    = wraps.apply(this);
@@ -710,7 +713,7 @@ abstract class Namespace
      * This is used by {@code (require module_path)}.
      */
     final void require(Evaluator      eval,
-                       SyntaxText     context,
+                       SyntaxText<?>  context,
                        ModuleIdentity moduleId)
         throws FusionException
     {
