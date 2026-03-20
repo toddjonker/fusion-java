@@ -5,6 +5,7 @@ plugins {
     id("buildlogic.fusion-common-conventions")
     id("buildlogic.java-library-conventions")
     id("buildlogic.jacoco-conventions")
+    id("com.adrianczuczka.structural")
 }
 
 dependencies {
