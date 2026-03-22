@@ -46,7 +46,7 @@ final class FusionAssertionException
         }
 
         out.append("\nExpression: ");
-        safeWrite(eval, out, expression);
+        out.append(expression);
 
         out.append("\nResult:     ");
         safeWrite(eval, out, result);

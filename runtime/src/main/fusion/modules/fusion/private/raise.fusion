@@ -6,7 +6,6 @@
   (require "/fusion/ffi/java")
 
   (provide
-    assert
     raise
     raise_argument_error
     raise_arity_error
@@ -25,14 +24,6 @@ procedures to raise subtypes of `exn`.
     '''
     (java_new "dev.ionfusion.fusion.RaiseProc"))
 
-  (define_syntax assert
-    '''
-    (assert expr message ...)
-
-Evaluates the `expr`, throwing an exception if the result isn't truthy.
-The exception `display`s the `message`s, which are only evaluated on failure.
-    '''
-    (java_new "dev.ionfusion.fusion.AssertForm"))
 
   (define_values (raise_argument_error)
     '''
