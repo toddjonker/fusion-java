@@ -1,14 +1,10 @@
 // Copyright Ion Fusion contributors. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package dev.ionfusion.fusioncli;
+package dev.ionfusion.fusioncli.framework;
 
-import static dev.ionfusion.fusioncli.framework.OptionParser.extractOptions;
 
-import dev.ionfusion.fusioncli.framework.Executor;
-import dev.ionfusion.fusioncli.framework.UsageException;
-
-public abstract class Command
+public class Command<Context>
 {
     private final String   myCommand;
     private final String[] myAliases;
@@ -30,13 +26,10 @@ public abstract class Command
 
     /**
      * Sets the help text for this command.
-     * <p>
-     * Nomenclature: this is called "put" to hide it from the
-     * BeanUtils.copyProperty call in extractOptions
      *
      * @param oneLiner must be non-empty. It should start with a verb and end
      * with a period.
-     * @param usage must be non-empty, and must start with the primary command.
+     * @param usage must be non-empty and must start with the primary command.
      * @param body must be non-empty.  It should not be indented, and it must
      * not end with a newline.  It should be (explicitly) wrapped to display
      * within 80 columns.
@@ -56,7 +49,7 @@ public abstract class Command
     //=========================================================================
     // Property Accessors
 
-    String getCommand()
+    public String getCommand()
     {
         return myCommand;
     }
@@ -67,25 +60,26 @@ public abstract class Command
      *
      * @return the array of aliases, not null.
      */
-    String[] getAliases()
+    public String[] getAliases()
     {
         return myAliases;
     }
 
+
     /**
-     * If null, the command will not be listed by `help`.
+     * If null, the command will not be listed by help mechanisms.
      */
-    String getHelpOneLiner()
+    public String getHelpOneLiner()
     {
         return myHelpOneLiner;
     }
 
-    String getHelpUsage()
+    public String getHelpUsage()
     {
         return myHelpUsage;
     }
 
-    String getHelpBody()
+    public String getHelpBody()
     {
         return myHelpBody;
     }
@@ -110,94 +104,49 @@ public abstract class Command
 
 
     /**
-     * Create a new object to receive command-specific options via injection.
-     * Subclasses should override this if they have options.
-     *
-     * @param globals the populated global options.
-     *
-     * @return null if there are no command options.
-     */
-    Object makeOptions(GlobalOptions globals)
-    {
-        return null;
-    }
-
-
-    /**
      * Perform pre-processing, including in particular argument processing.
      * A null result causes the framework to emit command-specific usage help.
+     * <p>
+     * This implementation ignores the {@code context} and invokes
+     * {@link #makeExecutor(String[])}. Subclasses must override one of these variants.
      *
      * @param args to process
      *
-     * @return an {@link Executor} to execute the command; null if there are
-     * usage errors.
+     * @return an {@link Executor} to execute the command; null indicates a usage error.
      *
-     * @throws UsageException if there are
-     * command-line errors preventing the command from being used.
+     * @throws UsageException if there are command-line errors preventing the command
+     * from being used.
      */
-    Executor prepare(GlobalOptions globals, String[] args)
+    public Executor makeExecutor(Context context, String[] args)
         throws UsageException
     {
-        Object options = makeOptions(globals);
-
-        args = extractOptions(options, args, true);
-
-        return makeExecutor(globals, options, args);
+        return makeExecutor(args);
     }
-
-
-    /**
-     * Prepare a command executor based on the global options, any local options,
-     * and the remaining command-line arguments.
-     * <p>
-     * This implementation ignores the {@code options} and invokes
-     * {@link #makeExecutor(GlobalOptions, String[])}.
-     *
-     * @return null if the arguments are inappropriate or insufficient.
-     *
-     * @throws UsageException if there are command-line errors preventing the
-     * command from being used.
-     */
-    Executor makeExecutor(GlobalOptions globals,
-                          Object        options,
-                          String[]      arguments)
-        throws UsageException
-    {
-        return makeExecutor(globals, arguments);
-    }
-
-
-    Executor makeExecutor(GlobalOptions globals,
-                          String[]      arguments)
-        throws UsageException
-    {
-        return makeExecutor(arguments);
-    }
-
 
     /**
      * Parses the command-line arguments to build a {@link Executor} for
      * execution.
-     * Note that any options (<em>i.e.</em>, arguments prefixed by
-     * {@code "--"}) will have already been extracted from the
-     * {@code arguments} array.
      *
      * @param arguments to parse
-     * @return null if the arguments are inappropriate or insufficient.
+     *
+     * @return an {@link Executor} to execute the command; null indicates a usage error.
+     *
+     * @throws UsageException if there are command-line errors preventing the command
+     * from being used.
      */
-    Executor makeExecutor(String[] arguments)
+    protected Executor makeExecutor(String[] arguments)
         throws UsageException
     {
         return null;
     }
 
 
-    UsageException usage()
+    protected UsageException usage()
     {
         return new UsageException(this, null);
     }
 
-    UsageException usage(String message)
+    protected UsageException usage(String message)
     {
         return new UsageException(this, message);
     }
