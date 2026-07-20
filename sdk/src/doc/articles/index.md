@@ -6,7 +6,7 @@
 This is the documentation for the [Ion Fusion Programming Language][home].
 
 While the project has a long history, this site is very much **Work In Progress**. If you have any
-questions, requests, or other feedback, please post to our [Discussion boards][discuss] or 
+questions, requests, or other feedback, please post to our [Discussion boards][discuss] or
 [create a GitHub issue][new-issue] so we can keep improving.
 
 [discuss]:   https://github.com/orgs/ion-fusion/discussions
@@ -27,6 +27,7 @@ questions, requests, or other feedback, please post to our [Discussion boards][d
 ## Explanation
 
 * [About the `fusion` CLI](about_cli.html)
+* [About Fusion Security Mechanisms](about_security.html)
 
 
 ## Reference

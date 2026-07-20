@@ -104,21 +104,18 @@ Currently accessible only via the Java embedding APIs, sandboxed evaluation is i
 of the [`TopLevel`][TopLevel] interface produced by a `SandboxBuilder`. In a typical use case, this
 embedding code:
 
-```java
-TopLevel top = myFusionRuntime.makeTopLevel();
-```
+    TopLevel top = myFusionRuntime.makeTopLevel();
 
 is replaced with this:
 
-```java
-SandboxBuilder b = myFusionRuntime.makeSandboxBuilder();
-b.setLanguage("/fusion");
-TopLevel top = b.build();
-```
+    SandboxBuilder b = myFusionRuntime.makeSandboxBuilder();
+    b.setLanguage("/fusion");
+    TopLevel top = b.build();
 
-> [!WARNING]
-> The runtime currently has no guards around module loading, which would be needed to block access
-> to the [FFI][] and to private modules in the standard library or other repositories.
+**WARNING:**
+The runtime currently has no guards around module loading, which would be needed to
+block access to the [FFI][] and to private modules in the standard library or other
+repositories.
 
 [Sandboxed Evaluation]: https://docs.racket-lang.org/reference/Sandboxed_Evaluation.html
 [Security Guards]:      https://docs.racket-lang.org/reference/securityguards.html
