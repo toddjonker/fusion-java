@@ -63,7 +63,7 @@ The mechanism for doing this is straightforward. When a namespace is created, th
 the identity of a single module representing the desired dialect. The new namespace is initialized
 with exactly the set of bindings exported by that module. The invoker can then add more bindings as
 necessary before evaluating code. The same thing happens when declaring a module. Every module
-declares it’s dialect explicitly: in the canonical prologue `(module M "/fusion" ...)` the new
+declares its dialect explicitly: in the canonical prologue `(module M "/fusion" ...)` the new
 module `M` declares its dialect to be the `/fusion` module. That dialect is generally the default
 for non-module scripts and ad-hoc evaluation from a programmatic invoker, but all such facilities
 allow explicit dialect control.
@@ -104,21 +104,18 @@ Currently accessible only via the Java embedding APIs, sandboxed evaluation is i
 of the [`TopLevel`][TopLevel] interface produced by a `SandboxBuilder`. In a typical use case, this
 embedding code:
 
-```java
-TopLevel top = myFusionRuntime.makeTopLevel();
-```
+    TopLevel top = myFusionRuntime.makeTopLevel();
 
 is replaced with this:
 
-```java
-SandboxBuilder b = myFusionRuntime.makeSandboxBuilder();
-b.setLanguage("/fusion");
-TopLevel top = b.build();
-```
+    SandboxBuilder b = myFusionRuntime.makeSandboxBuilder();
+    b.setLanguage("/fusion");
+    TopLevel top = b.build();
 
-> [!WARNING]
-> The runtime currently has no guards around module loading, which would be needed to block access
-> to the [FFI][] and to private modules in the standard library or other repositories.
+**WARNING:**
+The runtime currently has no guards around module loading, which would be needed to
+block access to the [FFI][] and to private modules in the standard library or other
+repositories.
 
 [Sandboxed Evaluation]: https://docs.racket-lang.org/reference/Sandboxed_Evaluation.html
 [Security Guards]:      https://docs.racket-lang.org/reference/securityguards.html
