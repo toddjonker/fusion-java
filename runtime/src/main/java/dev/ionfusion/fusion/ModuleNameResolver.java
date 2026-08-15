@@ -9,6 +9,7 @@ import static dev.ionfusion.fusion.FusionSexp.unsafePairTail;
 import static dev.ionfusion.fusion.FusionSexp.unsafeSexpToJavaList;
 import static dev.ionfusion.fusion.FusionText.isText;
 import static dev.ionfusion.fusion.FusionText.unsafeTextToJavaString;
+import static dev.ionfusion.fusion.StandardReader.openIonReader;
 import static dev.ionfusion.fusion.SyntaxException.makeSyntaxError;
 import static dev.ionfusion.runtime.base.ModuleIdentity.isValidAbsoluteModulePath;
 import static dev.ionfusion.runtime.base.ModuleIdentity.isValidModulePath;
@@ -17,6 +18,7 @@ import com.amazon.ion.IonReader;
 import dev.ionfusion.fusion.Evaluator.Thunk;
 import dev.ionfusion.runtime.base.FusionException;
 import dev.ionfusion.runtime.base.ModuleIdentity;
+import dev.ionfusion.runtime.base.ResourceIdentifier;
 import dev.ionfusion.runtime.base.SourceName;
 import java.util.HashSet;
 import java.util.List;
@@ -197,7 +199,13 @@ final class ModuleNameResolver
         ModuleLocation loc = locate(eval, id, stxForErrors);
         if (loc != null)
         {
-            if (load) loadModule(eval, loc::openReader, loc.sourceName(), id, false /* don't reload */);
+            if (load)
+            {
+                SourceName         name = loc.sourceName();
+                ResourceIdentifier rsrc = name.getResourceId();
+                Thunk<IonReader> openReader = (e) -> openIonReader(e, rsrc);
+                loadModule(eval, openReader, name, id, false /* don't reload */);
+            }
             return id;
         }
 

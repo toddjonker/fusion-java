@@ -15,6 +15,7 @@ import static dev.ionfusion.fusion.FusionSexp.nullSexp;
 import static dev.ionfusion.fusion.FusionString.makeString;
 import static dev.ionfusion.fusion.FusionStruct.nullStruct;
 import static dev.ionfusion.fusion.FusionSymbol.makeSymbol;
+import static dev.ionfusion.fusion.FusionSyntax.isSyntax;
 import static dev.ionfusion.fusion.FusionTimestamp.makeTimestamp;
 import static dev.ionfusion.fusion.SyntaxValue.STX_PROPERTY_ORIGINAL;
 import static dev.ionfusion.runtime.base.SourceLocation.forCurrentSpan;
@@ -29,8 +30,11 @@ import com.amazon.ion.Timestamp;
 import dev.ionfusion.fusion.FusionList.BaseList;
 import dev.ionfusion.fusion.FusionSexp.BaseSexp;
 import dev.ionfusion.runtime.base.FusionException;
+import dev.ionfusion.runtime.base.ResourceIdentifier;
 import dev.ionfusion.runtime.base.SourceLocation;
 import dev.ionfusion.runtime.base.SourceName;
+import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
@@ -40,6 +44,35 @@ import java.util.List;
  */
 class StandardReader
 {
+    static IonReader openIonReader(Evaluator eval, ResourceIdentifier rsrc)
+        throws FusionException
+    {
+        try
+        {
+            IonReader   reader = null;
+            InputStream in     = rsrc.openStream();
+            try
+            {
+                reader = eval.getIonReaderBuilder().build(in);
+                return reader;
+            }
+            finally
+            {
+                if (reader == null)
+                {
+                    // We failed to construct the IonReader, don't leak the InputStream.
+                    in.close();
+                }
+            }
+        }
+        catch (IOException | IonException e)
+        {
+            String message = "Error reading " + rsrc + ": " + e.getMessage();
+            throw new FusionException(message, e);
+        }
+    }
+
+
     /**
      * Reads a single Ion datum.
      *
@@ -230,6 +263,7 @@ class StandardReader
             }
         }
 
+        assert ! isSyntax(eval, datum);
         if (readingSyntax)
         {
             SyntaxValue stx = datum.makeOriginalSyntax(eval, loc);
