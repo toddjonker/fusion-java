@@ -5,6 +5,7 @@ package dev.ionfusion.fusion;
 
 import static dev.ionfusion.fusion.FusionIo.read;
 import static dev.ionfusion.fusion.FusionSexp.isPair;
+import static dev.ionfusion.fusion.StandardReader.openIonReader;
 import static dev.ionfusion.testing.ProjectLayout.PROJECT_DIRECTORY;
 import static dev.ionfusion.testing.ProjectLayout.testRepositoryDirectory;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -51,7 +52,7 @@ public class ClassLoaderModuleRepositoryTest
         assertTrue(name.display().contains("/ftst/symbol.fusion"));
 
         Evaluator eval       = evaluator();
-        IonReader ionReader  = loc.openReader(eval);
+        IonReader ionReader  = openIonReader(eval, name.getResourceId());
         Object    moduleSexp = read(eval, ionReader);
         assertTrue(isPair(eval, moduleSexp));
     }
