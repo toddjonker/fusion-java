@@ -39,10 +39,7 @@ public class SourceLocationTest
 
     private void assertNoLocation(IonReader ir)
     {
-        SourceLocation loc = SourceLocation.forCurrentSpan(ir);
-        assertNull(loc, "expected null SourceLocation");
-
-        loc = SourceLocation.forCurrentSpan(ir, null);
+        SourceLocation loc = SourceLocation.forCurrentSpan(ir, null);
         assertNull(loc, "expected null SourceLocation");
 
         SourceName name = SourceName.forDisplay("test source");
@@ -59,11 +56,7 @@ public class SourceLocationTest
 
     private void assertLocation(String expectedOffsets, IonReader ir)
     {
-        SourceLocation loc = SourceLocation.forCurrentSpan(ir);
-        assertEquals(expectedOffsets, loc.display());
-        checkConsistency(null, loc);
-
-        loc = SourceLocation.forCurrentSpan(ir, null);
+        SourceLocation loc = SourceLocation.forCurrentSpan(ir, null);
         assertEquals(expectedOffsets, loc.display());
         checkConsistency(null, loc);
 
