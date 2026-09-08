@@ -20,12 +20,6 @@ public interface SourceName
     extends ResourceDescriptor
 {
     /**
-     * The standard extension for Fusion source code files.
-     */
-    String FUSION_SOURCE_EXTENSION = ".fusion";
-
-
-    /**
      * It is not guaranteed that the module declaration is the only content of
      * the file or URL.
      * The resource could be a script with several modules inside, and module
