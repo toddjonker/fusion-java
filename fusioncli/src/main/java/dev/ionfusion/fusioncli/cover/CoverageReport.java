@@ -4,7 +4,7 @@
 package dev.ionfusion.fusioncli.cover;
 
 import static dev.ionfusion.fusion._Private_Trampoline.discoverModulesInRepository;
-import static dev.ionfusion.runtime.base.SourceName.FUSION_SOURCE_EXTENSION;
+import static dev.ionfusion.runtime.embed.FusionRuntime.FUSION_SOURCE_CODE_FILE_EXTENSION;
 import static java.nio.file.Files.walkFileTree;
 import static java.util.stream.Collectors.toList;
 
@@ -166,7 +166,8 @@ public class CoverageReport
             @Override
             public FileVisitResult visitFile(Path entry, BasicFileAttributes attrs)
             {
-                if (entry.getFileName().toString().endsWith(FUSION_SOURCE_EXTENSION))
+                if (entry.getFileName().toString().endsWith(
+                    FUSION_SOURCE_CODE_FILE_EXTENSION))
                 {
                     noteScript(entry);
                 }

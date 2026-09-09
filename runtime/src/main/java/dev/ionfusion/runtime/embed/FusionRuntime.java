@@ -36,6 +36,12 @@ import dev.ionfusion.runtime.base.FusionException;
 public interface FusionRuntime
 {
     /**
+     * The standard extension for Fusion source code files.
+     */
+    String FUSION_SOURCE_CODE_FILE_EXTENSION = ".fusion";
+
+
+    /**
      * Gets the identifier for this runtime's default language, which supplies
      * the initial bindings for its {@link TopLevel} namespaces.
      * Unless configured otherwise by the {@link FusionRuntimeBuilder}, this

@@ -4,7 +4,7 @@
 package dev.ionfusion.fusion;
 
 import static dev.ionfusion.runtime.base.ModuleIdentity.isValidModuleName;
-import static dev.ionfusion.runtime.base.SourceName.FUSION_SOURCE_EXTENSION;
+import static dev.ionfusion.runtime.embed.FusionRuntime.FUSION_SOURCE_CODE_FILE_EXTENSION;
 import static java.nio.file.Files.isDirectory;
 
 import dev.ionfusion.runtime.base.FusionException;
@@ -46,7 +46,7 @@ final class FileSystemModuleRepository
         if (mySrcDir == null) return null;
 
         String path = id.absolutePath();
-        String fileName = path.substring(1) + FUSION_SOURCE_EXTENSION;
+        String fileName = path.substring(1) + FUSION_SOURCE_CODE_FILE_EXTENSION;
 
         final File libFile = new File(mySrcDir, fileName);
         if (libFile.exists())
@@ -74,11 +74,11 @@ final class FileSystemModuleRepository
         // First pass: build all "real" modules
         for (String fileName : fileNames)
         {
-            if (fileName.endsWith(FUSION_SOURCE_EXTENSION))
+            if (fileName.endsWith(FUSION_SOURCE_CODE_FILE_EXTENSION))
             {
                 // We assume that all .fusion files are modules.
                 int endIndex =
-                    fileName.length() - FUSION_SOURCE_EXTENSION.length();
+                    fileName.length() - FUSION_SOURCE_CODE_FILE_EXTENSION.length();
                 String moduleName = fileName.substring(0, endIndex);
                 if (isValidModuleName(moduleName))
                 {

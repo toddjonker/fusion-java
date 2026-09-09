@@ -3,7 +3,7 @@
 
 package dev.ionfusion.fusion;
 
-import static dev.ionfusion.runtime.base.SourceName.FUSION_SOURCE_EXTENSION;
+import static dev.ionfusion.runtime.embed.FusionRuntime.FUSION_SOURCE_CODE_FILE_EXTENSION;
 
 import dev.ionfusion.runtime.base.FusionException;
 import dev.ionfusion.runtime.base.ModuleIdentity;
@@ -40,7 +40,7 @@ final class ClassLoaderModuleRepository
         throws FusionException
     {
         final String resourceName =
-            myPathPrefix + id.absolutePath() + FUSION_SOURCE_EXTENSION;
+            myPathPrefix + id.absolutePath() + FUSION_SOURCE_CODE_FILE_EXTENSION;
 
         // The protocol could be a jar: or file: (at least!)
         URL url = myClassLoader.getResource(resourceName);
