@@ -10,8 +10,6 @@ import static dev.ionfusion.runtime.base.ModuleIdentity.isValidAbsoluteModulePat
 import com.amazon.ion.IonCatalog;
 import com.amazon.ion.IonReader;
 import com.amazon.ion.IonSystem;
-import com.amazon.ion.IonValue;
-import com.amazon.ion.ValueFactory;
 import com.amazon.ion.system.IonSystemBuilder;
 import dev.ionfusion.runtime._private.cover.CoverageCollector;
 import dev.ionfusion.runtime.base.FusionException;
@@ -194,27 +192,6 @@ final class StandardRuntime
         return new ModuleBuilderImpl(myGlobalState.myModuleNameResolver,
                                      myRegistry,
                                      id);
-    }
-
-
-
-
-
-    @Override
-    public IonValue ionize(Object fusionValue, ValueFactory factory)
-        throws FusionException
-    {
-        return myTopLevel.withEvaluator(eval ->
-                                            FusionValue.copyToIonValue(eval, fusionValue, factory));
-    }
-
-
-    @Override
-    public IonValue ionizeMaybe(Object fusionValue, ValueFactory factory)
-        throws FusionException
-    {
-        return myTopLevel.withEvaluator(eval ->
-                                            FusionValue.copyToIonValueMaybe(eval, fusionValue, factory));
     }
 
 

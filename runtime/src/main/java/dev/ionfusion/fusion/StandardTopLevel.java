@@ -11,6 +11,9 @@ import static dev.ionfusion.runtime._private.util.Ordinals.friendlyIndex;
 import static dev.ionfusion.runtime.base.ModuleIdentity.isValidAbsoluteModulePath;
 import static java.util.Objects.requireNonNull;
 
+import com.amazon.ion.IonValue;
+import com.amazon.ion.ValueFactory;
+
 import com.amazon.ion.IonReader;
 import com.amazon.ion.IonWriter;
 import dev.ionfusion.runtime._private.cover.CoverageCollector;
@@ -346,4 +349,23 @@ final class StandardTopLevel
             return null;
         });
     }
+
+
+    @Override
+    public IonValue ionize(Object fusionValue, ValueFactory factory)
+        throws FusionException
+    {
+        return withEvaluator(eval ->
+                                 FusionValue.copyToIonValue(eval, fusionValue, factory));
+    }
+
+
+    @Override
+    public IonValue ionizeMaybe(Object fusionValue, ValueFactory factory)
+        throws FusionException
+    {
+        return withEvaluator(eval ->
+                                 FusionValue.copyToIonValueMaybe(eval, fusionValue, factory));
+    }
+
 }
