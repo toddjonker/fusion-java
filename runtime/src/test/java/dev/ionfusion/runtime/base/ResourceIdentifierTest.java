@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.amazon.ion.IonReader;
 import com.amazon.ion.system.IonReaderBuilder;
+import dev.ionfusion.commons.resources.ResourceIdentifier;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;

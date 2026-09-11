@@ -3,9 +3,9 @@
 
 package dev.ionfusion.runtime.base;
 
-import static dev.ionfusion.runtime.base.ResourceIdentifier.forFile;
-import static dev.ionfusion.runtime.base.ResourcePosition.forCurrentSpan;
-import static dev.ionfusion.runtime.base.ResourcePosition.forPosition;
+import static dev.ionfusion.commons.resources.ResourceIdentifier.forFile;
+import static dev.ionfusion.commons.resources.ResourcePosition.forCurrentSpan;
+import static dev.ionfusion.commons.resources.ResourcePosition.forPosition;
 import static dev.ionfusion.testing.Assertions.assertHashEquals;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.matchesPattern;
@@ -18,6 +18,9 @@ import com.amazon.ion.IonReader;
 import com.amazon.ion.IonSystem;
 import com.amazon.ion.system.IonReaderBuilder;
 import com.amazon.ion.system.IonSystemBuilder;
+import dev.ionfusion.commons.resources.ResourceDescriptor;
+import dev.ionfusion.commons.resources.ResourceIdentifier;
+import dev.ionfusion.commons.resources.ResourcePosition;
 import org.junit.jupiter.api.Test;
 
 
@@ -32,7 +35,7 @@ public class ResourcePositionTest
     private void assertNoLocation(IonReader ir)
     {
         ResourceDescriptor desc = ResourceDescriptor.named("test source");
-        ResourcePosition loc = forCurrentSpan(desc, ir);
+        ResourcePosition   loc  = forCurrentSpan(desc, ir);
         assertSame(desc, loc.getResourceDesc());
         assertEquals("unknown position of test source", loc.display());
 

@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import dev.ionfusion.commons.attributes.Attribute;
+import dev.ionfusion.commons.attributes.AttributeSet;
 import org.junit.jupiter.api.Test;
 
 public class AttributeSetTest
