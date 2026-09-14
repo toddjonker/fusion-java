@@ -39,6 +39,14 @@ final class SyntaxStruct
     }
 
 
+
+    @Override
+    SyntaxStruct copyReplacing(SyntaxWraps wraps, Object[] properties)
+    {
+        return new SyntaxStruct(getPosition(), properties, wraps, myStruct);
+    }
+
+
     static SyntaxStruct makeOriginal(Evaluator eval,
                                      ResourcePosition pos,
                                      ImmutableStruct struct)
@@ -63,19 +71,6 @@ final class SyntaxStruct
     Object visit(Visitor v) throws FusionException
     {
         return v.accept(this);
-    }
-
-
-    @Override
-    SyntaxStruct copyReplacingProperties(Object[] properties)
-    {
-        return new SyntaxStruct(getPosition(), properties, myWraps, myStruct);
-    }
-
-    @Override
-    SyntaxStruct copyReplacingWraps(SyntaxWraps wraps)
-    {
-        return new SyntaxStruct(getPosition(), getProperties(), wraps, myStruct);
     }
 
 

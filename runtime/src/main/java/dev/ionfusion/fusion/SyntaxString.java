@@ -38,18 +38,9 @@ final class SyntaxString
 
 
     @Override
-    SyntaxString copyReplacingWraps(SyntaxWraps wraps)
+    SyntaxString copyReplacing(SyntaxWraps wraps, Object[] properties)
     {
         return new SyntaxString(wraps,
-                                getPosition(),
-                                getProperties(),
-                                (BaseString) myDatum);
-    }
-
-    @Override
-    SyntaxString copyReplacingProperties(Object[] properties)
-    {
-        return new SyntaxString(myWraps,
                                 getPosition(),
                                 properties,
                                 (BaseString) myDatum);

@@ -3,8 +3,8 @@
 
 package dev.ionfusion.fusion;
 
-import static dev.ionfusion.fusion.SyntaxException.makeSyntaxError;
 import static dev.ionfusion.commons.util.Empties.EMPTY_OBJECT_ARRAY;
+import static dev.ionfusion.fusion.SyntaxException.makeSyntaxError;
 
 import com.amazon.ion.IonException;
 import com.amazon.ion.IonWriter;
@@ -57,18 +57,9 @@ final class SyntaxKeyword
 
 
     @Override
-    SyntaxKeyword copyReplacingWraps(SyntaxWraps wraps)
+    SyntaxKeyword copyReplacing(SyntaxWraps wraps, Object[] properties)
     {
         return new SyntaxKeyword(wraps,
-                                 getPosition(),
-                                 getProperties(),
-                                 (BaseSymbol) myDatum);
-    }
-
-    @Override
-    SyntaxKeyword copyReplacingProperties(Object[] properties)
-    {
-        return new SyntaxKeyword(myWraps,
                                  getPosition(),
                                  properties,
                                  (BaseSymbol) myDatum);

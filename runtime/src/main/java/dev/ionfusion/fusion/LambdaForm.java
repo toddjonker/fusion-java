@@ -3,10 +3,10 @@
 
 package dev.ionfusion.fusion;
 
+import static dev.ionfusion.commons.util.Empties.EMPTY_STRING_ARRAY;
 import static dev.ionfusion.fusion.FusionSexp.immutableSexp;
 import static dev.ionfusion.fusion.FusionString.isString;
 import static dev.ionfusion.fusion.SyntaxSymbol.ensureUniqueIdentifiers;
-import static dev.ionfusion.commons.util.Empties.EMPTY_STRING_ARRAY;
 
 import dev.ionfusion.runtime.base.FusionException;
 
@@ -70,7 +70,7 @@ final class LambdaForm
         for (int i = 0; i < args.length; i++)
         {
             SyntaxSymbol arg = args[i];
-            arg = arg.addWrap(localWrap);
+            arg = (SyntaxSymbol) arg.addWrap(localWrap);
             arg.resolve();           // Caches the binding in the identifier
             args[i] = arg;
         }

@@ -55,6 +55,13 @@ final class SyntaxList
 
 
     @Override
+    SyntaxValue copyReplacing(SyntaxWraps wraps, Object[] properties)
+    {
+        return new SyntaxList(getPosition(), properties, wraps, myImmutableList);
+    }
+
+
+    @Override
     Object visit(Visitor v) throws FusionException
     {
         return v.accept(this);
@@ -88,19 +95,6 @@ final class SyntaxList
                               ? nullList(eval, annotations)
                               : immutableList(eval, annotations, children));
         return new SyntaxList(getPosition(), getProperties(), myWraps, datum);
-    }
-
-
-    @Override
-    SyntaxList copyReplacingProperties(Object[] properties)
-    {
-        return new SyntaxList(getPosition(), properties, myWraps, myImmutableList);
-    }
-
-    @Override
-    SyntaxList copyReplacingWraps(SyntaxWraps wraps)
-    {
-        return new SyntaxList(getPosition(), getProperties(), wraps, myImmutableList);
     }
 
 

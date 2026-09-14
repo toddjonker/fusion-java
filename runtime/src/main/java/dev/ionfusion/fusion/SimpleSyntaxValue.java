@@ -22,15 +22,29 @@ class SimpleSyntaxValue
 
 
     /**
+     * @param wraps can be null.
+     * @param pos can be null.
+     * @param properties must not be null.
+     * @param datum must not be null and must not be a {@link SyntaxValue}.
+     */
+    SimpleSyntaxValue(SyntaxWraps wraps,
+                      ResourcePosition pos,
+                      Object[] properties,
+                      BaseValue datum)
+    {
+        super(wraps, pos, properties);
+        assert !(datum instanceof SyntaxValue);
+        myDatum = datum;
+    }
+
+    /**
      * @param pos can be null.
      * @param properties must not be null.
      * @param datum must not be null and must not be a {@link SyntaxValue}.
      */
     SimpleSyntaxValue(ResourcePosition pos, Object[] properties, BaseValue datum)
     {
-        super(pos, properties);
-        assert ! (datum instanceof SyntaxValue);
-        myDatum = datum;
+        this(null, pos, properties, datum);
     }
 
     /**
@@ -39,7 +53,14 @@ class SimpleSyntaxValue
      */
     SimpleSyntaxValue(ResourcePosition pos, BaseValue datum)
     {
-        this(pos, EMPTY_OBJECT_ARRAY, datum);
+        this(null, pos, EMPTY_OBJECT_ARRAY, datum);
+    }
+
+
+    @Override
+    SimpleSyntaxValue copyReplacing(SyntaxWraps wraps, Object[] properties)
+    {
+        return new SimpleSyntaxValue(wraps, getPosition(), properties, myDatum);
     }
 
 
@@ -84,13 +105,6 @@ class SimpleSyntaxValue
     Object visit(Visitor v) throws FusionException
     {
         return v.accept(this);
-    }
-
-
-    @Override
-    SyntaxValue copyReplacingProperties(Object[] properties)
-    {
-        return new SimpleSyntaxValue(getPosition(), properties, myDatum);
     }
 
 

@@ -103,29 +103,20 @@ final class SyntaxSymbol
 
     SyntaxSymbol stripLexicalInfo()
     {
-        return myWraps == null ? this : copyReplacingWraps(null);
+        return myWraps == null ? this : (SyntaxSymbol) copyReplacingWraps(null);
     }
 
 
     @Override
-    SyntaxSymbol copyReplacingProperties(Object[] properties)
+    SyntaxSymbol copyReplacing(SyntaxWraps wraps, Object[] properties)
     {
-        SyntaxSymbol id =
-            new SyntaxSymbol(myWraps, getPosition(), properties, getName());
-        id.myBoundId = myBoundId;
+        SyntaxSymbol id = new SyntaxSymbol(wraps, getPosition(), properties, getName());
+        if (getWraps() == wraps)
+        {
+            // Avoid re-resolving when the lexical context is the same.
+            id.myBoundId = myBoundId;
+        }
         return id;
-    }
-
-
-    /**
-     * @param wraps may be null.
-     */
-    @Override
-    SyntaxSymbol copyReplacingWraps(SyntaxWraps wraps)
-    {
-        // We intentionally don't copy the binding, since the wraps are
-        // probably different, so the binding may be different.
-        return new SyntaxSymbol(wraps, getPosition(), getProperties(), getName());
     }
 
 
@@ -162,6 +153,7 @@ final class SyntaxSymbol
     @Override
     boolean hasMarks(Evaluator eval)
     {
+        // Avoid recomputing the mark set; it's been cached on the binding.
         if (myBoundId != null) return myBoundId.hasMarks();
         return super.hasMarks(eval);
     }
