@@ -45,7 +45,7 @@ final class LetrecForm
         for (int i = 0; i < numBindings; i++)
         {
             // Wrap the bound names so they resolve to their own binding.
-            SyntaxSymbol name = boundNames[i].addWrap(localWrap);
+            SyntaxSymbol name = (SyntaxSymbol) boundNames[i].addWrap(localWrap);
             name.resolve();
 
             // Already type- and arity-checked this above

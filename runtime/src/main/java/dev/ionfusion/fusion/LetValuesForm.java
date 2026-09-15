@@ -86,7 +86,7 @@ final class LetValuesForm
                 SyntaxSymbol name = boundNames[bindingPos];
                 assert name == wrappedNames[j];
 
-                name = name.addWrap(localWrap);
+                name = (SyntaxSymbol) name.addWrap(localWrap);
                 name.resolve();
                 wrappedNames[j] = name;
                 bindingPos++;

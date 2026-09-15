@@ -40,6 +40,15 @@ abstract class SyntaxValue
         new Object[] { STX_PROPERTY_ORIGINAL, Boolean.TRUE };
 
 
+    /**
+     * The lexical context collected during expansion.
+     * It is not final because we uses mutation to lazily propagate context to children.
+     *
+     * TODO make private to control mutation.
+     * TODO make non-null to streamline logic.
+     */
+    SyntaxWraps myWraps;
+
     private final ResourcePosition myPosition;
 
     /** Not null, to streamline things. */
@@ -50,11 +59,25 @@ abstract class SyntaxValue
      * @param pos can be null.
      * @param properties must not be null.
      */
-    SyntaxValue(ResourcePosition pos, Object[] properties)
+    SyntaxValue(SyntaxWraps wraps, ResourcePosition pos, Object[] properties)
     {
         assert properties != null;
+        myWraps = wraps;
         myPosition = pos;
         myProperties = properties;
+    }
+
+    abstract SyntaxValue copyReplacing(SyntaxWraps wraps, Object[] properties);
+
+
+    final SyntaxValue copyReplacingWraps(SyntaxWraps wraps)
+    {
+        return copyReplacing(wraps, getProperties());
+    }
+
+    final SyntaxValue copyReplacingProperties(Object[] properties)
+    {
+        return copyReplacing(getWraps(), properties);
     }
 
 
@@ -98,9 +121,6 @@ abstract class SyntaxValue
         }
         return FusionVoid.voidValue(eval);
     }
-
-
-    abstract SyntaxValue copyReplacingProperties(Object[] properties);
 
 
     SyntaxValue copyWithProperty(Evaluator eval, Object key, Object value)
@@ -228,32 +248,73 @@ abstract class SyntaxValue
     }
 
 
+    /**
+     * Per Racket:
+     *
+     * "Returns #t if stx has the property that read-syntax attaches to the syntax
+     * objects that they generate, and if stx’s lexical information does not include any
+     * macro-introduction scopes (which indicate that the object was introduced by a
+     * syntax transformer)."
+     */
     final boolean isOriginal(Evaluator eval)
         throws FusionException
     {
+        // Implementation in expander/syntax/scope.rkt:
+        //
+        // (define (syntax-any-macro-scopes? s)
+        //   (for/or ([sc (in-set (syntax-scopes s))])
+        //     (eq? (scope-kind sc) 'macro)))
+
         Object o = findProperty(eval, STX_PROPERTY_ORIGINAL);
         return o == TRUE && ! hasMarks(eval);
     }
 
 
+    final SyntaxWraps getWraps()
+    {
+        return myWraps;
+    }
+
     /**
      * Prepends a wrap onto our existing wraps.
      * This will return a new instance as necessary to preserve immutability.
      */
-    SyntaxValue addWrap(SyntaxWrap wrap)
+    final SyntaxValue addWrap(SyntaxWrap wrap)
         throws FusionException
     {
-        return this;
+        assert wrap != null;
+
+        SyntaxWraps newWraps;
+        if (myWraps == null)
+        {
+            newWraps = SyntaxWraps.make(wrap);
+        }
+        else
+        {
+            newWraps = myWraps.addWrap(wrap);
+        }
+        return copyReplacingWraps(newWraps);
     }
 
     /**
      * Prepends a sequence of wraps onto our existing wraps.
      * This will return a new instance as necessary to preserve immutability.
      */
-    SyntaxValue addWraps(SyntaxWraps wraps)
+    final SyntaxValue addWraps(SyntaxWraps wraps)
         throws FusionException
     {
-        return this;
+        assert wraps != null;
+
+        SyntaxWraps newWraps;
+        if (myWraps == null)
+        {
+            newWraps = wraps;
+        }
+        else
+        {
+            newWraps = myWraps.addWraps(wraps);
+        }
+        return copyReplacingWraps(newWraps);
     }
 
 
@@ -268,7 +329,7 @@ abstract class SyntaxValue
 
     boolean hasMarks(Evaluator eval)
     {
-        return false;
+        return (myWraps != null && myWraps.hasMarks(eval));
     }
 
 

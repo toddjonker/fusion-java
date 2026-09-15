@@ -60,6 +60,13 @@ final class SyntaxSexp
 
 
     @Override
+    SyntaxSexp copyReplacing(SyntaxWraps wraps, Object[] properties)
+    {
+        return new SyntaxSexp(getPosition(), properties, wraps, mySexp);
+    }
+
+
+    @Override
     Object visit(Visitor v) throws FusionException
     {
         return v.accept(this);
@@ -136,22 +143,6 @@ final class SyntaxSexp
                               ? nullSexp(eval, annotations)
                               : immutableSexp(eval, annotations, children));
         return new SyntaxSexp(getPosition(), getProperties(), myWraps, datum);
-    }
-
-
-    @Override
-    SyntaxSexp copyReplacingProperties(Object[] properties)
-    {
-        return new SyntaxSexp(getPosition(), properties, myWraps, mySexp);
-    }
-
-
-    @Override
-    SyntaxSexp copyReplacingWraps(SyntaxWraps wraps)
-        throws FusionException
-    {
-        assert wraps != null;
-        return new SyntaxSexp(getPosition(), getProperties(), wraps, mySexp);
     }
 
 

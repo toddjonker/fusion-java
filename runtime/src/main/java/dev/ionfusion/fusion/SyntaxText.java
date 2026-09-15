@@ -10,8 +10,6 @@ import dev.ionfusion.runtime.base.FusionException;
 abstract class SyntaxText<Sub extends SyntaxText>
     extends SimpleSyntaxValue
 {
-    final SyntaxWraps myWraps;   // TODO make non-null to streamline logic.
-
     /**
      * @param wraps can be null.
      * @param pos can be null.
@@ -23,58 +21,13 @@ abstract class SyntaxText<Sub extends SyntaxText>
                Object[]       properties,
                BaseText       datum)
     {
-        super(pos, properties, datum);
-        myWraps = wraps;
+        super(wraps, pos, properties, datum);
     }
 
 
     final String stringValue()
     {
         return ((BaseText) myDatum).stringValue();
-    }
-
-
-    @Override
-    boolean hasMarks(Evaluator eval)
-    {
-        return (myWraps != null && myWraps.hasMarks(eval));
-    }
-
-
-    abstract Sub copyReplacingWraps(SyntaxWraps wraps);
-
-    @Override
-    abstract Sub copyReplacingProperties(Object[] properties);
-
-
-    @Override
-    final Sub addWrap(SyntaxWrap wrap)
-    {
-        SyntaxWraps newWraps;
-        if (myWraps == null)
-        {
-            newWraps = SyntaxWraps.make(wrap);
-        }
-        else
-        {
-            newWraps = myWraps.addWrap(wrap);
-        }
-        return copyReplacingWraps(newWraps);
-    }
-
-    @Override
-    final Sub addWraps(SyntaxWraps wraps)
-    {
-        SyntaxWraps newWraps;
-        if (myWraps == null)
-        {
-            newWraps = wraps;
-        }
-        else
-        {
-            newWraps = myWraps.addWraps(wraps);
-        }
-        return copyReplacingWraps(newWraps);
     }
 
 
