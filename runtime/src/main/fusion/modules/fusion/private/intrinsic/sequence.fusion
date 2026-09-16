@@ -1,0 +1,49 @@
+// Copyright Ion Fusion contributors. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+(module intrinsic_sequence "/fusion/private/kernel"
+
+  (provide (all_defined_out))
+
+
+  (define_values (add)
+    '''
+    (add sequence element)
+
+Returns a sequence with all the elements of `sequence` and the `element`.  The
+result sequence is similar to the input, its size is one greater, and it may
+share structure with other sequences.
+
+In general, the position of `element` within the result is not specified, but
+particular sequence types may do so.
+
+  * For lists, the `element` becomes the last element of the result.
+  * For sexps, the `element` becomes the head of the result.
+    '''
+    (java_new "dev.ionfusion.fusion.AddProc"))
+
+
+  (define_values (append)
+    '''
+    (append sequence ...+)
+
+Returns a sequence with the concatenation of all the elements of the `sequence`s.
+The result has same type and annotations as the first `sequence`.
+Any argument that is `null.list` (or `null.sexp`) is treated as if it were an
+empty list (or empty sexp).
+    '''
+    (java_new "dev.ionfusion.fusion.FusionSequence$AppendProc"))
+
+
+  (define_values (append_m)
+    '''
+    (append_m sequence ...+)
+
+Returns a sequence with the concatenation of all the elements of the `sequence`s,
+mutating the first argument when possible.
+The result has same type and annotations as the first `sequence`.
+Any argument that is `null.list` (or `null.sexp`) is treated as if it were an
+empty list (or empty sexp).
+    '''
+    (java_new "dev.ionfusion.fusion.FusionSequence$AppendMProc"))
+)

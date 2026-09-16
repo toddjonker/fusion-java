@@ -149,8 +149,11 @@ Other alternative traversal forms include [iterators][] and [comprehensions][].
     "/fusion/ffi/java"
     "/fusion/iterator"
     "/fusion/private/builtins"
-    "/fusion/sequence"
+    "/fusion/private/sequence"
     "/fusion/unsafe/list")         // NOT exported!
+
+  (provide_public_sequence)
+
 
   // Pass-through bindings from kernel
   (provide is_list)
@@ -158,11 +161,6 @@ Other alternative traversal forms include [iterators][] and [comprehensions][].
   // Pass-through bindings from builtins
   (provide is_immutable_list is_mutable_list is_stretchy_list)
   (provide list mutable_list stretchy_list)
-
-  // Pass-through bindings from /fusion/sequence
-  (provide . add any append append_m choose do element elt every
-    find first fold_left has_key
-    is_collection is_empty is_sequence last map none size subseq)
 
 
   //==========================================================================
