@@ -23,22 +23,30 @@ sexps.
   [Issue #87]:      https://github.com/ion-fusion/fusion-java/issues/87
   '''
 
-  (require "/fusion/private/sexp")
-  (provide head is_pair is_sexp pair reverse sexp tail)
+  (require
+    "/fusion/exception"
+    "/fusion/private/sequence"
+    "/fusion/private/sexp"
+    "/fusion/unsafe/sexp"
+  )
 
-  (require "/fusion/sequence")
-  (provide . add any append append_m choose do element elt every
-    find first fold_left has_key
-    is_collection is_empty is_sequence last map none size subseq)
+  (provide_public_sequence)
+
+  (provide
+    head
+    is_pair
+    is_sexp
+    pair
+    reverse
+    sexp
+    sexp_iterator
+    tail
+  )
 
 
-  (require "/fusion/unsafe/sexp" "/fusion/exception")
-
-  (provide sexp_iterator)
   (define (sexp_iterator sexp)
     "Returns an iterator over the elements of `sexp`."
     (if (is_sexp sexp)
       (unsafe_sexp_iterator sexp)
       (raise_argument_error "sexp" "sexp" 0 sexp)))
-
 )
