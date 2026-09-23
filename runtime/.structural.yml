@@ -27,7 +27,8 @@ rules:
         - "dev.ionfusion.commons.resources"
 
     "dev.ionfusion.fusion!":
-#        - "dev.ionfusion.commons.**"                    # XXX Does not work
+        # XXX Enabling the next line causes seemingly unrelated errors
+#        - "dev.ionfusion.commons.**"
         - "dev.ionfusion.commons.attributes"
         - "dev.ionfusion.commons.resources"
         - "dev.ionfusion.commons.util"
