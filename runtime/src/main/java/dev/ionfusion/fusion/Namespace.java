@@ -274,7 +274,7 @@ abstract class Namespace
     private final ModuleIdentity myModuleId;
 
     /**
-     * Assigns required modules to integer addresses, for use in compiled
+     * Assigns required modules to integer addresses for use in compiled
      * forms.
      */
     private final HashMap<ModuleIdentity,Integer> myRequiredModules =
@@ -296,7 +296,7 @@ abstract class Namespace
     /**
      * @param registry must not be null.
      * @param id must not be null.
-     * @param wraps generates the {@link SyntaxWraps} for this namespace, given
+     * @param initialWrap generates the {@link SyntaxWraps} for this namespace, given
      *   a reference to {@code this}.
      */
     Namespace(ModuleRegistry                   registry,
@@ -482,20 +482,10 @@ abstract class Namespace
      *
      * @return null is equivalent to a {@link FreeBinding}.
      */
-    final Binding resolveMaybe(BaseSymbol name)
-    {
-        return myWraps.resolveMaybe(name);
-    }
-
-    /**
-     * @param name must be non-empty.
-     *
-     * @return null is equivalent to a {@link FreeBinding}.
-     */
     final Binding resolveMaybe(String name)
     {
         BaseSymbol symbol = makeSymbol(null, name);
-        return resolveMaybe(symbol);
+        return myWraps.resolveMaybe(symbol);
     }
 
 
@@ -856,6 +846,9 @@ abstract class Namespace
     /**
      * Looks for a binding's value in this namespace, finding both definitions
      * and imports.
+     * <p>
+     * TODO #676 This name could be ambiguous, for example due to macro-introduced
+     *   definitions. Clarify the semantics when there are multiple matches.
      *
      * @return the binding's value, or null if there is none.
      */

@@ -126,24 +126,6 @@ final class SyntaxSymbol
     }
 
 
-    /**
-     * @return not null.
-     */
-    Set<MarkWrap> computeMarks()
-    {
-        return myWraps.computeMarks();
-    }
-
-
-    @Override
-    boolean hasMarks(Evaluator eval)
-    {
-        // Avoid recomputing the mark set; it's been cached on the binding.
-        if (myBoundId != null) return myBoundId.hasMarks();
-        return super.hasMarks(eval);
-    }
-
-
     /** Not set until {@link #resolve} or {@link #doExpand}. */
     Binding getBinding()
     {
@@ -373,7 +355,7 @@ final class SyntaxSymbol
     String debugString()
     {
         String base = getName().toString();
-        Set<MarkWrap> marks = this.computeMarks();
+        Set<MarkWrap> marks = myWraps.computeMarks();
         if (! marks.isEmpty())
         {
             StringBuilder buf = new StringBuilder(base);

@@ -317,7 +317,7 @@ abstract class SyntaxValue<Content>
 
     /**
      * Per Racket:
-     *
+     * <p>
      * "Returns #t if stx has the property that read-syntax attaches to the syntax
      * objects that they generate, and if stx’s lexical information does not include any
      * macro-introduction scopes (which indicate that the object was introduced by a
@@ -333,7 +333,7 @@ abstract class SyntaxValue<Content>
         //     (eq? (scope-kind sc) 'macro)))
 
         Object o = findProperty(eval, STX_PROPERTY_ORIGINAL);
-        return o == TRUE && ! hasMarks(eval);
+        return o == TRUE && !myWraps.hasMarks(eval);
     }
 
 
@@ -438,11 +438,6 @@ abstract class SyntaxValue<Content>
         //            Eliminating those didn't increase that count.
         // 2016-08-17 I bet that's because the mark has usually been pushed.
         return addWrap(mark);
-    }
-
-    boolean hasMarks(Evaluator eval)
-    {
-        return myWraps.hasMarks(eval);
     }
 
 
