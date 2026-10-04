@@ -37,12 +37,6 @@ final class BoundIdentifier
     }
 
 
-    public boolean hasMarks()
-    {
-        return ! myMarks.isEmpty();
-    }
-
-
     /**
      * Semantics are of {@code bound-identifier=?}, so two instances can match
      * even when {@link #getBinding()} returns different objects.
