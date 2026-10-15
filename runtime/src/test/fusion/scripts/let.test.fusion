@@ -107,6 +107,14 @@
 
 (check === 303
   (let_values [(() (values))] 303))
+
+// Check that the binding exprs are run when no values are produced.
+(check_true
+  (let [(mutated false)]
+    (let_values [(() (begin (set mutated true)
+                            (values)))]
+      mutated)))
+
 (check === 112
   (let [(dummy -1), (x 1)]
     (let_values [((x y) (values 10 x)),
@@ -139,6 +147,18 @@
 // letrec
 
 (check === 1 (letrec [] 1))
+
+(check === "r"
+  (let [(r "r")]
+    (letrec [] r)))
+(check === "r"
+  (let [(r "r")]
+    (let [(s "s")]
+      (letrec [] r))))
+(check === "s"
+  (let [(r "r")]
+    (let [(s "s")]
+      (letrec [] s))))
 
 (check === 5 (letrec ((v 5)) v))
 
